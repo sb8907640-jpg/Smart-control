@@ -38,7 +38,7 @@ class FirestoreSafetyAlertRepository @Inject constructor(
             .update("acknowledged", true, "acknowledgedBy", uid).await()
     }
 
-    override fun observe(deviceId: String): Flow<List<SafetyAlert>> = callbackFlow {
+    override suspend fun observe(deviceId: String): Flow<List<SafetyAlert>> = callbackFlow {
         val registration = firestore.collection("devices").document(deviceId)
             .collection("statusAlerts")
             .orderBy("createdAt", Query.Direction.DESCENDING)
