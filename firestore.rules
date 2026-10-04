@@ -14,6 +14,30 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    match /mediaSessions/{sessionId} {
+      allow create: if request.auth != null
+        && request.resource.data.controllerUid == request.auth.uid
+        && request.resource.data.targetDeviceId is string
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid;
+
+      allow read, update: if request.auth != null
+        && (resource.data.controllerUid == request.auth.uid
+            || resource.data.targetDeviceId == request.auth.uid);
+
+      allow delete: if request.auth != null
+        && resource.data.controllerUid == request.auth.uid;
+
+      match /iceCandidates/{candidateId} {
+        allow create: if request.auth != null
+          && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+        allow read: if request.auth != null
+          && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+        allow update, delete: if false;
+      }
+    }
+
     match /devices/{uid} {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
