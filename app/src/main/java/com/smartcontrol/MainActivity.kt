@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
+import com.smartcontrol.presentation.profile.ProfileScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
             var settings by remember { mutableStateOf(false) }
             var pairing by remember { mutableStateOf(false) }
             var permissions by remember { mutableStateOf(false) }
+            var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -48,13 +50,14 @@ class MainActivity : ComponentActivity() {
                 when {
                     pairing -> PairingScreen(onBack = { pairing = false })
                     permissions -> PermissionCenterScreen(onBack = { permissions = false })
+                    profile -> ProfileScreen(onBack = { profile = false })
                     settings -> SettingsScreen(
                         onBack = { settings = false },
                         onEndSession = { settings = false },
                         onPairing = { pairing = true },
                         onPermissions = { permissions = true }
                     )
-                    else -> SessionScreen(onSettings = { settings = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true })
                 }
             }
         }
