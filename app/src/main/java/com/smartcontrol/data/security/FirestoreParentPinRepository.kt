@@ -26,6 +26,14 @@ class FirestoreParentPinRepository @Inject constructor(
         return result.data is Map<*, *> && (result.data as Map<*, *>)["ok"] == true
     }
 
+    override suspend fun verifyAndStopSession(pin: String): Boolean {
+        if (pin.length != 4 || !pin.all(Char::isDigit)) return false
+        val result = functions.getHttpsCallable("stopSessionWithPin")
+            .call(mapOf("pin" to pin))
+            .await()
+        return result.data is Map<*, *> && (result.data as Map<*, *>)["ok"] == true
+    }
+
     override suspend fun changePin(newPin: String): Result<Unit> = runCatching {
         require(newPin.length == 4 && newPin.all(Char::isDigit)) {
             "PIN must be 4 digits."
