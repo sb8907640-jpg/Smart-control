@@ -31,7 +31,7 @@ class FirestoreParentPinRepository @Inject constructor(
         val result = functions.getHttpsCallable("stopSessionWithPin")
             .call(mapOf("pin" to pin))
             .await()
-        return result.data is Map<*, *> && (result.data as Map<*, *>)["ok"] == true
+        return (result.getData() as? Map<*, *>)?.get("ok") == true
     }
 
     override suspend fun changePin(newPin: String): Result<Unit> = runCatching {
