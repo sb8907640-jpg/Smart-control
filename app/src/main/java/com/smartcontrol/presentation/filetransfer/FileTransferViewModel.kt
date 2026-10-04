@@ -28,6 +28,10 @@ class FileTransferViewModel @Inject constructor(
 ) : ViewModel() {
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val incoming = auth.currentUser?.uid?.let { pairingRepository.observeControlledDevice() }
+        ?.let { kotlinx.coroutines.flow.emptyFlow<FileTransferRequest>() }
+        ?: kotlinx.coroutines.flow.emptyFlow()
+
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
 
