@@ -37,6 +37,21 @@ class FirestoreFileTransferRepository @Inject constructor(
             .update("status", status.name).await()
     }
 
+    suspend fun get(transferId: String): FileTransferRequest? {
+        val data = firestore.collection("fileTransfers").document(transferId).get().await().data ?: return null
+        return FileTransferRequest(
+            transferId = transferId,
+            senderDeviceId = data["senderDeviceId"] as? String ?: return null,
+            receiverDeviceId = data["receiverDeviceId"] as? String ?: return null,
+            fileName = data["fileName"] as? String ?: return null,
+            mimeType = data["mimeType"] as? String,
+            sizeBytes = (data["sizeBytes"] as? Number)?.toLong() ?: -1L,
+            createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
+            status = runCatching { FileTransferRequest.Status.valueOf(data["status"] as? String ?: "") }
+                .getOrElse { FileTransferRequest.Status.CANCELLED }
+        )
+    }
+
     fun observeIncoming(deviceId: String): Flow<List<FileTransferRequest>> = callbackFlow {
         val registration = firestore.collection("fileTransfers")
             .whereEqualTo("receiverDeviceId", deviceId)
