@@ -70,3 +70,60 @@ exports.verifyParentPin = onCall(async (request) => {
 
   return { ok: matches };
 });
+
+
+exports.stopSessionWithPin = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in first.");
+  }
+
+  const pin = request.data?.pin;
+  if (!validatePin(pin)) {
+    throw new HttpsError("invalid-argument", "PIN must contain exactly 4 digits.");
+  }
+
+  const deviceSnap = await db.collection("devices").doc(request.auth.uid).get();
+  if (!deviceSnap.exists) {
+    throw new HttpsError("permission-denied", "Device is not paired.");
+  }
+
+  const parentUid = deviceSnap.get("controllerUid");
+  if (typeof parentUid !== "string") {
+    throw new HttpsError("permission-denied", "No controller is paired.");
+  }
+
+  const secretSnap = await db.collection("parentSecurity").doc(parentUid).get();
+  if (!secretSnap.exists) {
+    throw new HttpsError("failed-precondition", "Parent PIN has not been configured.");
+  }
+
+  const salt = secretSnap.get("salt");
+  const expected = secretSnap.get("pinHash");
+  if (typeof salt !== "string" || typeof expected !== "string") {
+    throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
+  }
+
+  const actual = hashPin(pin, salt);
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const actualBuffer = Buffer.from(actual, "hex");
+  if (expectedBuffer.length !== actualBuffer.length ||
+      !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
+    return { ok: false, stoppedCount: 0 };
+  }
+
+  const snapshot = await db.collection("mediaSessions")
+    .where("targetDeviceId", "==", request.auth.uid)
+    .where("controllerUid", "==", parentUid)
+    .where("status", "in", ["REQUESTED", "APPROVED", "ACTIVE"])
+    .get();
+
+  const batch = db.batch();
+  snapshot.docs.forEach((doc) => batch.update(doc.ref, {
+    status: "STOPPED",
+    stoppedAt: Date.now(),
+    stoppedBy: request.auth.uid
+  }));
+  if (!snapshot.empty) await batch.commit();
+
+  return { ok: true, stoppedCount: snapshot.size };
+});
