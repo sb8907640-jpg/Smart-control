@@ -1,4 +1,6 @@
 package com.smartcontrol.presentation.audit
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,12 +17,12 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class AuditLogViewModel @Inject constructor(
     private val repository: AuditRepository
-) : androidx.lifecycle.ViewModel() {
+) : ViewModel() {
     var events by mutableStateOf(emptyList<com.smartcontrol.domain.audit.ConsentAuditEvent>())
         private set
 
     fun load(deviceId: String) {
-        androidx.lifecycle.viewModelScope.launch {
+        viewModelScope.launch {
             events = repository.list(deviceId, 100)
         }
     }
