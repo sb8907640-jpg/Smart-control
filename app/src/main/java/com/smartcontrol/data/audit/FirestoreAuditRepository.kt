@@ -35,7 +35,7 @@ class FirestoreAuditRepository @Inject constructor(
             .whereEqualTo("userId", uid)
             .whereEqualTo("deviceId", deviceId)
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(limit.coerceIn(1, 100))
+            .limit(limit.coerceIn(1, 100).toLong())
             .get().await().documents.mapNotNull { doc ->
                 ConsentAuditEvent(
                     eventId = doc.id,
