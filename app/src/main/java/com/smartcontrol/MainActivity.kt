@@ -15,6 +15,7 @@ import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
 import com.smartcontrol.presentation.profile.ProfileScreen
 import com.smartcontrol.presentation.session.SessionScreen
+import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
             var location by remember { mutableStateOf(false) }
             var fileTransfer by remember { mutableStateOf(false) }
             var deviceStatus by remember { mutableStateOf(false) }
+            var safetyAlerts by remember { mutableStateOf(false) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -54,6 +56,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
+                    safetyAlerts -> SafetyAlertsScreen(onBack = { safetyAlerts = false })
                     deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
                     location -> LocationSharingScreen(onBack = { location = false })
                     fileTransfer -> FileTransferScreen(onBack = { fileTransfer = false })
@@ -66,7 +69,7 @@ class MainActivity : ComponentActivity() {
                         onPairing = { pairing = true },
                         onPermissions = { permissions = true }
                     )
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true })
                 }
             }
         }
