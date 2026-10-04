@@ -30,6 +30,7 @@ data class OwnerSettings(
 )
 
 interface OwnerSettingsRepository {
+    suspend fun isAdmin(): Boolean
     suspend fun observe(): kotlinx.coroutines.flow.Flow<OwnerSettings>
     suspend fun save(settings: OwnerSettings): Result<Unit>
 }
