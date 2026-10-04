@@ -48,6 +48,7 @@ class WebRtcMediaEngine(
 ) {
     private val initialized = AtomicBoolean(false)
     private val peerConnections = mutableMapOf<String, PeerConnection>()
+    private val candidateJobs = mutableMapOf<String, Job>()
     private val captures = mutableMapOf<String, List<AutoCloseable>>()
     private val eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
@@ -114,13 +115,14 @@ class WebRtcMediaEngine(
         val answer = createAnswer(pc)
         pc.setLocalDescriptionAwait(answer)
         signaling.writeAnswer(sessionId, answer.description).getOrThrow()
-        collectRemoteCandidates(sessionId, pc)
+        candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
         signaling.markActive(sessionId).getOrThrow()
     }
 
     suspend fun stop(sessionId: String) {
         signaling.stopSession(sessionId)
         captures.remove(sessionId)?.forEach { runCatching { it.close() } }
+        candidateJobs.remove(sessionId)?.cancel()
         peerConnections.remove(sessionId)?.close()
     }
 
@@ -129,6 +131,8 @@ class WebRtcMediaEngine(
         peerConnections.clear()
         captures.values.flatten().forEach { runCatching { it.close() } }
         captures.clear()
+        candidateJobs.values.forEach(Job::cancel)
+        candidateJobs.clear()
         if (initialized.get()) {
             factory.dispose()
             eglBase.release()
@@ -181,7 +185,6 @@ class WebRtcMediaEngine(
             override fun onRenegotiationNeeded() = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) = Unit
             override fun onSelectedCandidatePairChanged(event: PeerConnection.CandidatePairChangeEvent?) = Unit
-            override fun onIceConnectionReceivingChange(receiving: Boolean, timestamp: Long) = Unit
         }
         return factory.createPeerConnection(config, observer)
             ?: error("Unable to create PeerConnection")
@@ -191,7 +194,7 @@ class WebRtcMediaEngine(
     private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
         val session = signaling.observeSession(sessionId).filterNotNull().first { !it.answerSdp.isNullOrBlank() }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp!!))
-        collectRemoteCandidates(sessionId, pc)
+        candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
     }
 
     private suspend fun collectRemoteCandidates(sessionId: String, pc: PeerConnection) {
