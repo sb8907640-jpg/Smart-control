@@ -14,6 +14,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.smartcontrol.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await
 
 class FamilySafetyService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
