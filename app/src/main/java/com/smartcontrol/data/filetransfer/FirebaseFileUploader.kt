@@ -4,13 +4,14 @@ import android.content.Context
 import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.storage.FirebaseStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.tasks.await
 
 @Singleton
 class FirebaseFileUploader @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val auth: FirebaseAuth,
     private val storage: FirebaseStorage
 ) {
