@@ -1,4 +1,5 @@
 package com.smartcontrol.presentation.filetransfer
+
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -28,12 +29,14 @@ class FileTransferViewModel @Inject constructor(
 ) : ViewModel() {
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val incoming = auth.currentUser?.uid?.let { pairingRepository.observeControlledDevice() }
-        ?.let { kotlinx.coroutines.flow.emptyFlow<FileTransferRequest>() }
-        ?: kotlinx.coroutines.flow.emptyFlow()
+
+    val incoming = repository.observeIncoming(auth.currentUser?.uid.orEmpty())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
+    private var pendingTransferId: String? = null
+    private var pendingUri: Uri? = null
 
     fun uploadSelectedFile(uri: Uri) = viewModelScope.launch {
         val sender = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
@@ -47,15 +50,33 @@ class FileTransferViewModel @Inject constructor(
         val size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         val id = UUID.randomUUID().toString()
         repository.request(FileTransferRequest(id, sender, receiver, fileName, mime, size, System.currentTimeMillis(), FileTransferRequest.Status.REQUESTED))
-        _status.value = "Transfer request created."
+        pendingTransferId = id
+        pendingUri = uri
+        _status.value = "Transfer request created. Wait for receiver approval."
+    }
+
+    fun approve(transferId: String) = viewModelScope.launch {
+        repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED)
+        _status.value = "Transfer approved."
+    }
+
+    fun uploadApproved() = viewModelScope.launch {
+        val id = pendingTransferId ?: run { _status.value = "No pending transfer."; return@launch }
+        val uri = pendingUri ?: run { _status.value = "Select the file again."; return@launch }
+        val request = repository.get(id) ?: run { _status.value = "Transfer request not found."; return@launch }
+        if (request.status != FileTransferRequest.Status.APPROVED) {
+            _status.value = "Receiver approval is required first."
+            return@launch
+        }
         runCatching {
             repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
-            uploader.uploadSelectedFile(id, uri, fileName, mime)
+            uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
             repository.updateStatus(id, FileTransferRequest.Status.READY)
-        }.onSuccess { _status.value = "File uploaded and marked ready." }
-         .onFailure {
+        }.onSuccess {
+            _status.value = "File uploaded and marked ready."
+        }.onFailure {
             repository.updateStatus(id, FileTransferRequest.Status.CANCELLED)
             _status.value = it.message ?: "File upload failed."
-         }
+        }
     }
 }
