@@ -1,0 +1,5 @@
+{
+ "project_info":{"project_number":"REPLACE_WITH_PROJECT_NUMBER","project_id":"REPLACE_WITH_PROJECT_ID","storage_bucket":"REPLACE_WITH_STORAGE_BUCKET"},
+ "client":[{"client_info":{"mobilesdk_app_id":"REPLACE_WITH_ANDROID_APP_ID","android_client_info":{"package_name":"com.smartcontrol"}},"oauth_client":[{"client_id":"REPLACE_WITH_WEB_CLIENT_ID","client_type":3}],"api_key":[{"current_key":"REPLACE_WITH_API_KEY"}]}],
+ "configuration_version":"1"
+}
