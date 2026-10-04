@@ -92,6 +92,23 @@ service cloud.firestore {
             || resource.data.receiverDeviceId == request.auth.uid);
     }
 
+
+    match /auditLogs/{eventId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.deviceId is string
+        && request.resource.data.feature is string
+        && request.resource.data.action is string
+        && request.resource.data.createdAt is int;
+      allow read: if request.auth != null
+        && (
+          resource.data.userId == request.auth.uid
+          || get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.controllerUid == request.auth.uid
+          || resource.data.deviceId == request.auth.uid
+        );
+      allow update, delete: if false;
+    }
+
     match /devices/{uid} {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
