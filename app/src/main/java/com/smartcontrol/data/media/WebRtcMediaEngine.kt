@@ -130,6 +130,8 @@ class WebRtcMediaEngine(
 
     fun eglBase(): EglBase = eglBase
 
+    fun eglBase(): EglBase = eglBase
+
     fun release() {
         peerConnections.values.forEach { it.close() }
         peerConnections.clear()
