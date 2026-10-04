@@ -15,6 +15,8 @@ import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
 import com.smartcontrol.presentation.profile.ProfileScreen
 import com.smartcontrol.presentation.owner.OwnerAdminScreen
+import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
+import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
             var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }
             var ownerAdmin by remember { mutableStateOf(false) }
+            var emergencyContacts by remember { mutableStateOf(false) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -65,9 +68,11 @@ class MainActivity : ComponentActivity() {
                     pairing -> PairingScreen(onBack = { pairing = false })
                     permissions -> PermissionCenterScreen(onBack = { permissions = false })
                     ownerAdmin -> OwnerAdminScreen(onBack = { ownerAdmin = false })
+                    emergencyContacts -> EmergencyContactsScreen(ownerUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(), onBack = { emergencyContacts = false })
                     profile -> ProfileScreen(
                         onBack = { profile = false },
-                        onOwnerAdmin = { ownerAdmin = true }
+                        onOwnerAdmin = { ownerAdmin = true },
+                        onEmergencyContacts = { emergencyContacts = true }
                     )
                     settings -> SettingsScreen(
                         onBack = { settings = false },
