@@ -1,7 +1,6 @@
 package com.smartcontrol.presentation.media
 
 import android.Manifest
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -22,28 +21,17 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
     val context = LocalContext.current
-    val context = LocalContext.current
     val renderer = remember { SurfaceViewRenderer(context) }
-
     var pendingStart by remember { mutableStateOf<com.smartcontrol.domain.media.MediaSession?>(null) }
 
     val projectionLauncher = rememberMediaProjectionConsentLauncher { result ->
-        pendingStart?.let { current ->
-            if (result != null) viewModel.startPublishing(current, result)
-        }
+        pendingStart?.let { current -> if (result != null) viewModel.startPublishing(current, result) }
         pendingStart = null
     }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         pendingStart?.let { current ->
-            if (MediaCapability.SCREEN_SHARING in current.capabilities) {
-                projectionLauncher()
-            } else {
-                viewModel.startPublishing(current, null)
-                pendingStart = null
-            }
+            if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
+            else { viewModel.startPublishing(current, null); pendingStart = null }
         }
     }
 
@@ -82,29 +70,18 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
                     }
                     if (permissions.isEmpty()) {
                         if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
-                        else viewModel.startPublishing(current, null)
-                    } else {
-                        permissionLauncher.launch(permissions.toTypedArray())
-                    }
+                        else { viewModel.startPublishing(current, null); pendingStart = null }
+                    } else permissionLauncher.launch(permissions.toTypedArray())
                 }) { Text("Start sharing (visible)") }
             }
             if (device != null && current.status == MediaSessionStatus.ACTIVE) {
-                WebRtcVideoRenderer(
-                    viewModel.eglBase(),
-                    renderer,
-                    Modifier.fillMaxWidth().height(220.dp)
-                )
-                LaunchedEffect(current.sessionId) {
-                    viewModel.connectViewer(current, renderer)
-                }
+                WebRtcVideoRenderer(viewModel.eglBase(), renderer, Modifier.fillMaxWidth().height(220.dp))
+                LaunchedEffect(current.sessionId) { viewModel.connectViewer(current, renderer) }
             }
-            if (current.status == MediaSessionStatus.REQUESTED ||
-                current.status == MediaSessionStatus.APPROVED ||
-                current.status == MediaSessionStatus.ACTIVE) {
+            if (current.status == MediaSessionStatus.REQUESTED || current.status == MediaSessionStatus.APPROVED || current.status == MediaSessionStatus.ACTIVE) {
                 OutlinedButton({ viewModel.stop(current.sessionId) }) { Text("Stop session") }
             }
         }
-
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
