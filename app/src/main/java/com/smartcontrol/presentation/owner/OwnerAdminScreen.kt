@@ -14,6 +14,7 @@ import com.smartcontrol.domain.owner.OwnerSettingsRepository
 import com.smartcontrol.domain.spec.FeatureCatalog
 import com.smartcontrol.domain.spec.FeatureId
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
