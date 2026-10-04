@@ -21,6 +21,7 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
     val pending by viewModel.pending.collectAsState()
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
+    val context = LocalContext.current
     val renderer = remember { SurfaceViewRenderer(context) }
 
     var pendingStart by remember { mutableStateOf<com.smartcontrol.domain.media.MediaSession?>(null) }
