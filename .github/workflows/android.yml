@@ -27,9 +27,9 @@ jobs:
           gradle-version: "8.11.1"
 
       - name: Materialize Firebase config
-        if: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
         env:
           FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
 
       - name: Build debug and release APKs
