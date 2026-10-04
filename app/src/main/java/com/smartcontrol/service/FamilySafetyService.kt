@@ -49,7 +49,7 @@ class FamilySafetyService : Service() {
 
     private fun updateVisibleNotification() {
         val intent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, MainActivity::class.java).putExtra(EXTRA_OPEN_PROFILE, true),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CHANNEL)
@@ -137,6 +137,7 @@ class FamilySafetyService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_SYNCING = "com.smartcontrol.action.SYNCING_DEVICE"
         const val ACTION_IDLE = "com.smartcontrol.action.FAMILY_SAFETY_IDLE"
+        const val EXTRA_OPEN_PROFILE = "open_profile"
 
         fun start(context: android.content.Context) =
             ContextCompat.startForegroundService(context, Intent(context, FamilySafetyService::class.java))
