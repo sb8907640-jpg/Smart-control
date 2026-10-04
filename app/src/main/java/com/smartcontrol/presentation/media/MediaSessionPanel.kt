@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import org.webrtc.SurfaceViewRenderer
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -88,9 +87,14 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
                 }) { Text("Start sharing (visible)") }
             }
             if (device != null && current.status == MediaSessionStatus.ACTIVE) {
-                AndroidView(factory = { renderer }, modifier = Modifier.fillMaxWidth().height(220.dp), update = { view ->
-                    viewModel.connectViewer(current, view)
-                })
+                WebRtcVideoRenderer(
+                    viewModel.eglBase(),
+                    renderer,
+                    Modifier.fillMaxWidth().height(220.dp)
+                )
+                LaunchedEffect(current.sessionId) {
+                    viewModel.connectViewer(current, renderer)
+                }
             }
             if (current.status == MediaSessionStatus.REQUESTED ||
                 current.status == MediaSessionStatus.APPROVED ||
