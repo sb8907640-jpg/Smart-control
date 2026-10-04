@@ -15,6 +15,7 @@ import com.smartcontrol.presentation.media.MediaSessionViewModel
 fun ProfileScreen(
     onBack: () -> Unit,
     onOwnerAdmin: () -> Unit,
+    onEmergencyContacts: () -> Unit,
     viewModel: MediaSessionViewModel = hiltViewModel()
 ) {
     val session by viewModel.selectedSession.collectAsState()
@@ -53,6 +54,9 @@ fun ProfileScreen(
 
         OutlinedButton(onClick = onOwnerAdmin, modifier = Modifier.fillMaxWidth()) {
             Text("Owner / Admin Settings")
+        }
+        OutlinedButton(onClick = onEmergencyContacts, modifier = Modifier.fillMaxWidth()) {
+            Text("Emergency Contacts")
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
