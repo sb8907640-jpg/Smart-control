@@ -1,6 +1,8 @@
 package com.smartcontrol.di
 import com.smartcontrol.data.security.FirestoreParentPinRepository
 import com.smartcontrol.domain.security.ParentPinRepository
+import com.smartcontrol.domain.audit.AuditRepository
+import com.smartcontrol.data.audit.FirestoreAuditRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
