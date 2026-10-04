@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import org.webrtc.SurfaceViewRenderer
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.smartcontrol.domain.media.MediaCapability
@@ -20,6 +22,7 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
     val pending by viewModel.pending.collectAsState()
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
+    val renderer = remember { SurfaceViewRenderer(context) }
 
     var pendingStart by remember { mutableStateOf<com.smartcontrol.domain.media.MediaSession?>(null) }
 
@@ -83,6 +86,11 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
                         permissionLauncher.launch(permissions.toTypedArray())
                     }
                 }) { Text("Start sharing (visible)") }
+            }
+            if (device != null && current.status == MediaSessionStatus.ACTIVE) {
+                AndroidView(factory = { renderer }, modifier = Modifier.fillMaxWidth().height(220.dp), update = { view ->
+                    viewModel.connectViewer(current, view)
+                })
             }
             if (current.status == MediaSessionStatus.REQUESTED ||
                 current.status == MediaSessionStatus.APPROVED ||
