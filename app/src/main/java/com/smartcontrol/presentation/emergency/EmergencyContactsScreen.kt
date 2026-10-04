@@ -1,4 +1,6 @@
 package com.smartcontrol.presentation.emergency
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +19,7 @@ import java.util.UUID
 @HiltViewModel
 class EmergencyContactsViewModel @Inject constructor(
     private val repository: EmergencyContactRepository
-) : androidx.lifecycle.ViewModel() {
+) : ViewModel() {
     var contacts by mutableStateOf(emptyList<EmergencyContact>())
         private set
     var name by mutableStateOf("")
@@ -26,7 +28,7 @@ class EmergencyContactsViewModel @Inject constructor(
         private set
 
     fun load(uid: String) {
-        androidx.lifecycle.viewModelScope.launch { contacts = repository.list(uid) }
+        viewModelScope.launch { contacts = repository.list(uid) }
     }
 
     fun add(uid: String) {
