@@ -73,6 +73,7 @@ class FirestorePairingRepository @Inject constructor(
                 db.collection("devices").document(deviceUid),
                 mapOf(
                     "controllerUid" to controllerUid,
+                    "pairingToken" to token,
                     "pairedAt" to System.currentTimeMillis(),
                     "pairingActive" to true
                 ),
