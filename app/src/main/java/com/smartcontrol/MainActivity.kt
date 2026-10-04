@@ -31,6 +31,8 @@ class MainActivity : ComponentActivity() {
             var pairing by remember { mutableStateOf(false) }
             var permissions by remember { mutableStateOf(false) }
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
+            var location by remember { mutableStateOf(false) }
+            var fileTransfer by remember { mutableStateOf(false) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -48,6 +50,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
+                    location -> LocationSharingScreen(onBack = { location = false })
+                    fileTransfer -> FileTransferScreen(onBack = { fileTransfer = false })
                     pairing -> PairingScreen(onBack = { pairing = false })
                     permissions -> PermissionCenterScreen(onBack = { permissions = false })
                     profile -> ProfileScreen(onBack = { profile = false })
@@ -57,7 +61,7 @@ class MainActivity : ComponentActivity() {
                         onPairing = { pairing = true },
                         onPermissions = { permissions = true }
                     )
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true })
                 }
             }
         }
