@@ -23,7 +23,7 @@ class FirestoreParentPinRepository @Inject constructor(
         val result = functions.getHttpsCallable("verifyParentPin")
             .call(mapOf("parentUid" to parentUid, "pin" to pin))
             .await()
-        return result.data is Map<*, *> && (result.data as Map<*, *>)["ok"] == true
+        return (result.getData() as? Map<*, *>)?.get("ok") == true
     }
 
     override suspend fun verifyAndStopSession(pin: String): Boolean {
