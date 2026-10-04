@@ -66,6 +66,8 @@ class MediaSessionViewModel @Inject constructor(
             .onFailure { lastError.value = it.message }
     }
 
+    fun eglBase() = engine.eglBase()
+
     fun connectViewer(session: MediaSession, sink: VideoSink?) = viewModelScope.launch {
         engine.view(session.sessionId, sink).onFailure { lastError.value = it.message }
     }
