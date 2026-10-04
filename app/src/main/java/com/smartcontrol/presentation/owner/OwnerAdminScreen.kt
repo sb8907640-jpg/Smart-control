@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.domain.owner.FeatureOverride
 import com.smartcontrol.domain.owner.OwnerSettings
 import com.smartcontrol.domain.owner.OwnerSettingsRepository
@@ -70,6 +71,11 @@ fun OwnerAdminScreen(
                 Text("Sign in with an account that has the Firebase admin custom claim.")
             }
             true -> {
+                val user = FirebaseAuth.getInstance().currentUser
+                Text("Owner login identity", style = MaterialTheme.typography.titleMedium)
+                Text("UID: " + (user?.uid ?: "Unavailable"))
+                user?.email?.let { Text("Email: " + it) }
+                user?.phoneNumber?.let { Text("Phone: " + it) }
                 Text("Signed-in admin controls availability and policy. Android permissions and user consent remain required.")
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
