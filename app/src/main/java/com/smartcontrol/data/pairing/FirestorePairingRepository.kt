@@ -2,7 +2,6 @@ package com.smartcontrol.data.pairing
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.smartcontrol.domain.pairing.PairingCode
 import com.smartcontrol.domain.pairing.PairedDevice
@@ -23,29 +22,35 @@ class FirestorePairingRepository @Inject constructor(
     private val random = SecureRandom()
 
     override fun observePairing(): Flow<PairedDevice?> = callbackFlow {
-        val uid = auth.currentUser?.uid
-        if (uid == null) {
-            trySend(null)
-            close()
-            return@callbackFlow
+        val uid = auth.currentUser?.uid ?: run { trySend(null); close(); return@callbackFlow }
+        val registration = db.collection("devices").document(uid).addSnapshotListener { snapshot, error ->
+            if (error != null) { close(error); return@addSnapshotListener }
+            val controllerUid = snapshot?.getString("controllerUid")
+            trySend(
+                if (!controllerUid.isNullOrBlank()) PairedDevice(
+                    uid, controllerUid, snapshot.getLong("pairedAt") ?: 0L,
+                    snapshot.getBoolean("pairingActive") ?: true
+                ) else null
+            )
         }
-        val registration: ListenerRegistration =
-            db.collection("devices").document(uid).addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                val controllerUid = snapshot?.getString("controllerUid")
-                trySend(
-                    if (!controllerUid.isNullOrBlank()) {
-                        PairedDevice(
-                            uid,
-                            controllerUid,
-                            snapshot.getLong("pairedAt") ?: 0L,
-                            snapshot.getBoolean("pairingActive") ?: true
-                        )
-                    } else null
-                )
+        awaitClose { registration.remove() }
+    }
+
+    override fun observeControlledDevice(): Flow<PairedDevice?> = callbackFlow {
+        val uid = auth.currentUser?.uid ?: run { trySend(null); close(); return@callbackFlow }
+        val registration = db.collection("devices")
+            .whereEqualTo("controllerUid", uid)
+            .whereEqualTo("pairingActive", true)
+            .limit(1)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
+                val doc = snapshot?.documents?.firstOrNull()
+                trySend(doc?.let {
+                    PairedDevice(
+                        it.id, uid, it.getLong("pairedAt") ?: 0L,
+                        it.getBoolean("pairingActive") ?: true
+                    )
+                })
             }
         awaitClose { registration.remove() }
     }
@@ -69,16 +74,12 @@ class FirestorePairingRepository @Inject constructor(
             val deviceUid = snap.getString("deviceUid") ?: error("Invalid pairing token")
             val expires = snap.getLong("expiresAt") ?: 0L
             require(expires > System.currentTimeMillis()) { "Pairing token expired" }
-            tx.set(
-                db.collection("devices").document(deviceUid),
-                mapOf(
-                    "controllerUid" to controllerUid,
-                    "pairingToken" to token,
-                    "pairedAt" to System.currentTimeMillis(),
-                    "pairingActive" to true
-                ),
-                SetOptions.merge()
-            )
+            tx.set(db.collection("devices").document(deviceUid), mapOf(
+                "controllerUid" to controllerUid,
+                "pairingToken" to token,
+                "pairedAt" to System.currentTimeMillis(),
+                "pairingActive" to true
+            ), SetOptions.merge())
             tx.delete(ref)
             deviceUid
         }.await()
@@ -88,8 +89,7 @@ class FirestorePairingRepository @Inject constructor(
     override suspend fun unpair(): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         db.collection("devices").document(uid).set(
-            mapOf("controllerUid" to null, "pairingActive" to false),
-            SetOptions.merge()
+            mapOf("controllerUid" to null, "pairingActive" to false), SetOptions.merge()
         ).await()
     }
 
