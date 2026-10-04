@@ -1,4 +1,6 @@
 package com.smartcontrol.presentation.owner
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,7 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class OwnerAdminViewModel @Inject constructor(
     private val repository: OwnerSettingsRepository
-) : androidx.lifecycle.ViewModel() {
+) : ViewModel() {
     var admin by mutableStateOf<Boolean?>(null)
         private set
     var settings by mutableStateOf(OwnerSettings(true, emptyMap(), emptyList(), true, false, false, true, true, false, true))
@@ -32,7 +34,7 @@ class OwnerAdminViewModel @Inject constructor(
         private set
 
     init {
-        androidx.lifecycle.viewModelScope.launch {
+        viewModelScope.launch {
             admin = repository.isAdmin()
             if (admin == true) {
                 repository.observe().collect { settings = it }
