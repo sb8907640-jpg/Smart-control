@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.filetransfer.FileTransferScreen
+import com.smartcontrol.presentation.health.DeviceStatusScreen
 import com.smartcontrol.presentation.location.LocationSharingScreen
 import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
             var location by remember { mutableStateOf(false) }
             var fileTransfer by remember { mutableStateOf(false) }
+            var deviceStatus by remember { mutableStateOf(false) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -52,6 +54,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
+                    deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
                     location -> LocationSharingScreen(onBack = { location = false })
                     fileTransfer -> FileTransferScreen(onBack = { fileTransfer = false })
                     pairing -> PairingScreen(onBack = { pairing = false })
@@ -63,7 +66,7 @@ class MainActivity : ComponentActivity() {
                         onPairing = { pairing = true },
                         onPermissions = { permissions = true }
                     )
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true })
                 }
             }
         }
