@@ -4,11 +4,18 @@ import android.app.Activity
 import android.content.Intent
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.firebase.auth.*
+import com.google.firebase.FirebaseException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
 import com.smartcontrol.BuildConfig
 import com.smartcontrol.domain.auth.AuthRepository
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -27,15 +34,14 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
         return GoogleSignIn.getClient(
             activity,
             GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                .requestEmail().build()
+                .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID).requestEmail().build()
         ).signInIntent
     }
 
     override suspend fun signInWithGoogle(activity: Activity, intent: Intent): Result<FirebaseUser> = runCatching {
         val account = GoogleSignIn.getSignedInAccountFromIntent(intent).await()
-        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-        auth.signInWithCredential(credential).await().user ?: error("Firebase returned no user.")
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(account.idToken, null)).await().user
+            ?: error("Firebase returned no user.")
     }
 
     override fun sendOtp(activity: Activity, phoneNumber: String, onCodeSent: (String) -> Unit, onFailure: (Exception) -> Unit) {
@@ -44,9 +50,13 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
             override fun onVerificationFailed(e: FirebaseException) = onFailure(e)
             override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) = onCodeSent(id)
         }
-        PhoneAuthProvider.getInstance().verifyPhoneNumber(
-            PhoneAuthProvider.Options.newBuilder(auth).setPhoneNumber(phoneNumber)
-                .setTimeout(60L, TimeUnit.SECONDS).setActivity(activity).setCallbacks(callbacks).build()
+        PhoneAuthProvider.verifyPhoneNumber(
+            PhoneAuthOptions.newBuilder(auth)
+                .setPhoneNumber(phoneNumber)
+                .setTimeout(60L, TimeUnit.SECONDS)
+                .setActivity(activity)
+                .setCallbacks(callbacks)
+                .build()
         )
     }
 
