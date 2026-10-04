@@ -42,7 +42,7 @@ jobs:
 
       - name: Validate Firebase Functions
         run: |
-          npm --prefix functions ci
+          npm --prefix functions install --no-audit --no-fund
           node --check functions/index.js
 
       - uses: actions/upload-artifact@v4
