@@ -9,6 +9,7 @@ import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSession
 import com.smartcontrol.domain.media.MediaSignalingRepository
 import com.smartcontrol.domain.pairing.PairingRepository
+import com.smartcontrol.service.FamilySafetyService
 import com.smartcontrol.service.MediaProjectionForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,6 +28,7 @@ class MediaSessionViewModel @Inject constructor(
 ) : ViewModel() {
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val pending = signaling.observePendingSessionsForDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -47,7 +49,9 @@ class MediaSessionViewModel @Inject constructor(
             .onFailure { lastError.value = it.message }
     }
 
-    fun select(id: String) { selectedId.value = id }
+    fun select(id: String) {
+        selectedId.value = id
+    }
 
     fun approve(id: String) = viewModelScope.launch {
         signaling.approveSession(id).onFailure { lastError.value = it.message }
@@ -62,8 +66,16 @@ class MediaSessionViewModel @Inject constructor(
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
+
         engine.publish(session.sessionId, session.capabilities, projectionIntent)
-            .onFailure { lastError.value = it.message }
+            .onSuccess {
+                FamilySafetyService.setSyncing(context)
+            }
+            .onFailure {
+                MediaProjectionForegroundService.stop(context)
+                FamilySafetyService.setIdle(context)
+                lastError.value = it.message
+            }
     }
 
     fun eglBase() = engine.eglBase()
@@ -75,10 +87,12 @@ class MediaSessionViewModel @Inject constructor(
     fun stop(sessionId: String) = viewModelScope.launch {
         engine.stop(sessionId)
         MediaProjectionForegroundService.stop(context)
+        FamilySafetyService.setIdle(context)
     }
 
     override fun onCleared() {
         engine.release()
+        FamilySafetyService.setIdle(context)
         super.onCleared()
     }
 }
