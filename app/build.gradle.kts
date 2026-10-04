@@ -2,9 +2,11 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.kapt")
     id("com.google.dagger.hilt.android")
 }
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
+val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").get()
 android {
     namespace="com.smartcontrol"
     compileSdk=35
@@ -12,9 +14,10 @@ android {
         applicationId="com.smartcontrol"
         minSdk=26
         targetSdk=35
-        versionCode=1
-        versionName="0.1.0"
+        versionCode=2
+        versionName="0.2.0"
         testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String","GOOGLE_WEB_CLIENT_ID","\"$googleWebClientId\"")
     }
     buildFeatures { compose=true; buildConfig=true }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
@@ -29,6 +32,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("com.google.dagger:hilt-android:2.52")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     kapt("com.google.dagger:hilt-compiler:2.52")
