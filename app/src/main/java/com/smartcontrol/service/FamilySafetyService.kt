@@ -84,6 +84,7 @@ class FamilySafetyService: Service() {
  }
 
  private fun granted(permission:String)=ContextCompat.checkSelfPermission(this,permission)==PackageManager.PERMISSION_GRANTED
+ override fun onTimeout(startId:Int){ stopSelf() }
  override fun onDestroy(){scope.cancel();super.onDestroy()}
  override fun onBind(intent:Intent?):IBinder?=null
 
