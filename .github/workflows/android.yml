@@ -24,7 +24,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.11.1"
 
       - name: Materialize Firebase config
         if: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
@@ -35,7 +35,10 @@ jobs:
       - name: Build debug and release APKs
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
-        run: gradle test assembleDebug assembleRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"
+          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
+          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
+          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
+        run: gradle test assembleDebug assembleRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"
 
       - name: Validate Firebase Functions
         run: |
