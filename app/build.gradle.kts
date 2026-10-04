@@ -7,6 +7,10 @@ plugins {
 }
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
 val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").get()
+val turnUrls = providers.gradleProperty("SMARTCONTROL_TURN_URLS").orElse("").get()
+val turnUsername = providers.gradleProperty("SMARTCONTROL_TURN_USERNAME").orElse("").get()
+val turnCredential = providers.gradleProperty("SMARTCONTROL_TURN_CREDENTIAL").orElse("").get()
+
 android {
     namespace="com.smartcontrol"
     compileSdk=35
@@ -14,10 +18,13 @@ android {
         applicationId="com.smartcontrol"
         minSdk=26
         targetSdk=35
-        versionCode=2
-        versionName="0.2.0"
+        versionCode=3
+        versionName="0.3.0"
         testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String","GOOGLE_WEB_CLIENT_ID","\"$googleWebClientId\"")
+        buildConfigField("String","TURN_URLS","\"$turnUrls\"")
+        buildConfigField("String","TURN_USERNAME","\"$turnUsername\"")
+        buildConfigField("String","TURN_CREDENTIAL","\"$turnCredential\"")
     }
     buildFeatures { compose=true; buildConfig=true }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
