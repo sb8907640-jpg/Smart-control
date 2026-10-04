@@ -14,6 +14,7 @@ import com.smartcontrol.presentation.media.MediaSessionViewModel
 @Composable
 fun ProfileScreen(
     onBack: () -> Unit,
+    onOwnerAdmin: () -> Unit,
     viewModel: MediaSessionViewModel = hiltViewModel()
 ) {
     val session by viewModel.selectedSession.collectAsState()
@@ -50,6 +51,9 @@ fun ProfileScreen(
             Text("No active remote support session.")
         }
 
+        OutlinedButton(onClick = onOwnerAdmin, modifier = Modifier.fillMaxWidth()) {
+            Text("Owner / Admin Settings")
+        }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
         }
