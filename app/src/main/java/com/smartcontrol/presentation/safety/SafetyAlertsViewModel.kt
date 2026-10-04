@@ -1,1 +1,52 @@
-package com.smartcontrol.presentation.safety\n\nimport androidx.lifecycle.ViewModel\nimport androidx.lifecycle.viewModelScope\nimport com.google.firebase.auth.FirebaseAuth\nimport com.smartcontrol.domain.safety.SafetyAlert\nimport com.smartcontrol.domain.safety.SafetyAlertRepository\nimport dagger.hilt.android.lifecycle.HiltViewModel\nimport kotlinx.coroutines.flow.MutableStateFlow\nimport kotlinx.coroutines.flow.StateFlow\nimport kotlinx.coroutines.flow.asStateFlow\nimport kotlinx.coroutines.launch\nimport java.util.UUID\nimport javax.inject.Inject\n\n@HiltViewModel\nclass SafetyAlertsViewModel @Inject constructor(\n    private val repository: SafetyAlertRepository,\n    private val auth: FirebaseAuth\n) : ViewModel() {\n    private val _alerts = MutableStateFlow<List<SafetyAlert>>(emptyList())\n    val alerts: StateFlow<List<SafetyAlert>> = _alerts.asStateFlow()\n    private val deviceId get() = auth.currentUser?.uid.orEmpty()\n    init {\n        if (deviceId.isNotBlank()) viewModelScope.launch { repository.observe(deviceId).collect { _alerts.value = it } }\n    }\n    fun createTestAlert() {\n        val id = deviceId\n        if (id.isBlank()) return\n        viewModelScope.launch { repository.create(SafetyAlert(UUID.randomUUID().toString(), id, "TEST", "Safety alert created by the signed-in device user.", System.currentTimeMillis())) }\n    }\n    fun acknowledge(alertId: String) { viewModelScope.launch { repository.acknowledge(alertId) } }\n}
+package com.smartcontrol.presentation.safety
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
+import com.smartcontrol.domain.safety.SafetyAlert
+import com.smartcontrol.domain.safety.SafetyAlertRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.util.UUID
+import javax.inject.Inject
+
+@HiltViewModel
+class SafetyAlertsViewModel @Inject constructor(
+    private val repository: SafetyAlertRepository,
+    private val auth: FirebaseAuth
+) : ViewModel() {
+    private val _alerts = MutableStateFlow<List<SafetyAlert>>(emptyList())
+    val alerts: StateFlow<List<SafetyAlert>> = _alerts.asStateFlow()
+    private val deviceId get() = auth.currentUser?.uid.orEmpty()
+
+    init {
+        if (deviceId.isNotBlank()) {
+            viewModelScope.launch {
+                repository.observe(deviceId).collect { _alerts.value = it }
+            }
+        }
+    }
+
+    fun createTestAlert() {
+        val id = deviceId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            repository.create(
+                SafetyAlert(
+                    UUID.randomUUID().toString(),
+                    id,
+                    "TEST",
+                    "Safety alert created by the signed-in device user.",
+                    System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun acknowledge(alertId: String) {
+        viewModelScope.launch { repository.acknowledge(alertId) }
+    }
+}
