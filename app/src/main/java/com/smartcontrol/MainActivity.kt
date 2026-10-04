@@ -14,6 +14,7 @@ import com.smartcontrol.presentation.location.LocationSharingScreen
 import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
 import com.smartcontrol.presentation.profile.ProfileScreen
+import com.smartcontrol.presentation.owner.OwnerAdminScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
             var fileTransfer by remember { mutableStateOf(false) }
             var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }
+            var ownerAdmin by remember { mutableStateOf(false) }
 
             if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
@@ -62,7 +64,11 @@ class MainActivity : ComponentActivity() {
                     fileTransfer -> FileTransferScreen(onBack = { fileTransfer = false })
                     pairing -> PairingScreen(onBack = { pairing = false })
                     permissions -> PermissionCenterScreen(onBack = { permissions = false })
-                    profile -> ProfileScreen(onBack = { profile = false })
+                    ownerAdmin -> OwnerAdminScreen(onBack = { ownerAdmin = false })
+                    profile -> ProfileScreen(
+                        onBack = { profile = false },
+                        onOwnerAdmin = { ownerAdmin = true }
+                    )
                     settings -> SettingsScreen(
                         onBack = { settings = false },
                         onEndSession = { settings = false },
