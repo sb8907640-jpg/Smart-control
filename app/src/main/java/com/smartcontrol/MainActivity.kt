@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import com.smartcontrol.presentation.auth.AuthScreen
+import com.smartcontrol.presentation.filetransfer.FileTransferScreen
+import com.smartcontrol.presentation.location.LocationSharingScreen
 import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.permission.PermissionCenterScreen
 import com.smartcontrol.presentation.profile.ProfileScreen
