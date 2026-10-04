@@ -143,7 +143,9 @@ class WebRtcMediaEngine(
             override fun onRenegotiationNeeded() = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) = Unit
         }
-        return factory.createPeerConnection(config, observer) ?: error("Unable to create PeerConnection").also { peerConnections[sessionId] = it }
+        val pc = factory.createPeerConnection(config, observer) ?: error("Unable to create PeerConnection")
+        peerConnections[sessionId] = pc
+        return pc
     }
 
     private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
