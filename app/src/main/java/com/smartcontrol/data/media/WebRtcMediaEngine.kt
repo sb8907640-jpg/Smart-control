@@ -128,6 +128,8 @@ class WebRtcMediaEngine(
         peerConnections.remove(sessionId)?.close()
     }
 
+    fun eglBase(): EglBase = eglBase
+
     fun release() {
         peerConnections.values.forEach { it.close() }
         peerConnections.clear()
@@ -186,7 +188,6 @@ class WebRtcMediaEngine(
             override fun onDataChannel(channel: DataChannel?) = Unit
             override fun onRenegotiationNeeded() = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) = Unit
-            override fun onSelectedCandidatePairChanged(event: PeerConnection.CandidatePairChangeEvent?) = Unit
         }
         return factory.createPeerConnection(config, observer)
             ?: error("Unable to create PeerConnection")
