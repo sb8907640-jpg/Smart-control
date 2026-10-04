@@ -2,7 +2,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /parentSecurity/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      // Parent PIN material is server-only; the callable functions are the only writers/readers.
+      allow read, write: if false;
     }
 
     match /pairingCodes/{token} {
@@ -65,6 +66,32 @@ service cloud.firestore {
       }
     }
 
+
+
+    match /fileTransfers/{transferId} {
+      allow create: if request.auth != null
+        && request.resource.data.senderDeviceId == request.auth.uid
+        && request.resource.data.receiverDeviceId is string
+        && request.resource.data.status == "REQUESTED";
+
+      allow read: if request.auth != null
+        && (resource.data.senderDeviceId == request.auth.uid
+            || resource.data.receiverDeviceId == request.auth.uid);
+
+      allow update: if request.auth != null
+        && (resource.data.senderDeviceId == request.auth.uid
+            || resource.data.receiverDeviceId == request.auth.uid)
+        && resource.data.senderDeviceId == request.resource.data.senderDeviceId
+        && resource.data.receiverDeviceId == request.resource.data.receiverDeviceId
+        && resource.data.fileName == request.resource.data.fileName
+        && resource.data.sizeBytes == request.resource.data.sizeBytes
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "storagePath", "updatedAt"]);
+
+      allow delete: if request.auth != null
+        && (resource.data.senderDeviceId == request.auth.uid
+            || resource.data.receiverDeviceId == request.auth.uid);
+    }
+
     match /devices/{uid} {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
@@ -77,6 +104,14 @@ service cloud.firestore {
 
       allow update: if request.auth != null &&
         (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+
+      match /sharedLocation/{locationId} {
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null &&
+          (request.auth.uid == uid ||
+           request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
 
       match /statusAlerts/{alertId} {
         allow create: if request.auth != null && request.auth.uid == uid;
