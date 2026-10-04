@@ -28,42 +28,28 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
         auth.addAuthStateListener(listener)
         awaitClose { auth.removeAuthStateListener(listener) }
     }
-
     override fun googleSignInIntent(activity: Activity): Intent {
         check(BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) { "SMARTCONTROL_GOOGLE_WEB_CLIENT_ID is not configured." }
-        return GoogleSignIn.getClient(
-            activity,
-            GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID).requestEmail().build()
-        ).signInIntent
+        return GoogleSignIn.getClient(activity, GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID).requestEmail().build()).signInIntent
     }
-
     override suspend fun signInWithGoogle(activity: Activity, intent: Intent): Result<FirebaseUser> = runCatching {
         val account = GoogleSignIn.getSignedInAccountFromIntent(intent).await()
         auth.signInWithCredential(GoogleAuthProvider.getCredential(account.idToken, null)).await().user
             ?: error("Firebase returned no user.")
     }
-
     override fun sendOtp(activity: Activity, phoneNumber: String, onCodeSent: (String) -> Unit, onFailure: (Exception) -> Unit) {
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
             override fun onVerificationCompleted(credential: PhoneAuthCredential) = Unit
             override fun onVerificationFailed(e: FirebaseException) = onFailure(e)
             override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) = onCodeSent(id)
         }
-        PhoneAuthProvider.verifyPhoneNumber(
-            PhoneAuthOptions.newBuilder(auth)
-                .setPhoneNumber(phoneNumber)
-                .setTimeout(60L, TimeUnit.SECONDS)
-                .setActivity(activity)
-                .setCallbacks(callbacks)
-                .build()
-        )
+        PhoneAuthProvider.verifyPhoneNumber(PhoneAuthOptions.newBuilder(auth)
+            .setPhoneNumber(phoneNumber).setTimeout(60L, TimeUnit.SECONDS).setActivity(activity).setCallbacks(callbacks).build())
     }
-
     override suspend fun verifyOtp(verificationId: String, code: String): Result<FirebaseUser> = runCatching {
         auth.signInWithCredential(PhoneAuthProvider.getCredential(verificationId, code)).await().user
             ?: error("Firebase returned no user.")
     }
-
     override fun signOut() = auth.signOut()
 }
