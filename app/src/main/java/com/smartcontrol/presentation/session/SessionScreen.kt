@@ -11,6 +11,7 @@ import com.smartcontrol.presentation.media.MediaSessionPanel
 @Composable
 fun SessionScreen(
     onSettings: () -> Unit,
+    onProfile: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel()
 ) {
     val active by viewModel.active.collectAsState()
@@ -49,6 +50,9 @@ fun SessionScreen(
         MediaSessionPanel()
 
         Button(viewModel::demoRequest) { Text("Create legacy test request") }
-        Button(onClick = onSettings) { Text("Settings") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onProfile, modifier = Modifier.weight(1f)) { Text("Profile") }
+            Button(onClick = onSettings, modifier = Modifier.weight(1f)) { Text("Settings") }
+        }
     }
 }
