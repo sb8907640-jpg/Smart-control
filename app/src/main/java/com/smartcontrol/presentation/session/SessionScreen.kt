@@ -14,6 +14,7 @@ fun SessionScreen(
     onProfile: () -> Unit,
     onLocation: () -> Unit,
     onFileTransfer: () -> Unit,
+    onDeviceStatus: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel()
 ) {
     val active by viewModel.active.collectAsState()
@@ -57,6 +58,7 @@ fun SessionScreen(
             OutlinedButton(onClick = onFileTransfer, modifier = Modifier.weight(1f)) { Text("File Transfer") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onDeviceStatus, modifier = Modifier.weight(1f)) { Text("Device Status") }
             OutlinedButton(onClick = onProfile, modifier = Modifier.weight(1f)) { Text("Profile") }
             Button(onClick = onSettings, modifier = Modifier.weight(1f)) { Text("Settings") }
         }
