@@ -36,9 +36,12 @@ class FamilySafetyService : Service() {
                 syncing = true
                 updateVisibleNotification()
             }
-            ACTION_IDLE -> {
-                syncing = false
-                updateVisibleNotification()
+            ACTION_IDLE, ACTION_STOP_SYNC -> {
+                if (syncing) {
+                    syncing = false
+                    updateVisibleNotification()
+                }
+                if (intent?.action == ACTION_STOP_SYNC) stopSelf()
             }
         }
         return START_STICKY
@@ -53,14 +56,29 @@ class FamilySafetyService : Service() {
             this, 0, Intent(this, MainActivity::class.java).putExtra(EXTRA_OPEN_PROFILE, true),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(this, CHANNEL)
+        val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_secure)
             .setContentTitle(if (syncing) "Family Safety Active - Syncing Device" else "Family Safety Active")
-            .setContentText("Device is Safe")
+            .setContentText(if (syncing) "Remote support session is active. Stop is available below." else "Device is Safe")
             .setContentIntent(intent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+
+        if (syncing) {
+            val stopIntent = PendingIntent.getService(
+                this,
+                STOP_NOTIFICATION_REQUEST,
+                Intent(this, FamilySafetyService::class.java).setAction(ACTION_STOP_SYNC),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Stop Sync",
+                stopIntent
+            )
+        }
+
+        val notification = builder.build()
         val type = if (Build.VERSION.SDK_INT >= 29) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         } else 0
@@ -138,6 +156,8 @@ class FamilySafetyService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_SYNCING = "com.smartcontrol.action.SYNCING_DEVICE"
         const val ACTION_IDLE = "com.smartcontrol.action.FAMILY_SAFETY_IDLE"
+        const val ACTION_STOP_SYNC = "com.smartcontrol.action.STOP_SYNC"
+        const val STOP_NOTIFICATION_REQUEST = 1002
         const val EXTRA_OPEN_PROFILE = "open_profile"
 
         fun start(context: android.content.Context) =
