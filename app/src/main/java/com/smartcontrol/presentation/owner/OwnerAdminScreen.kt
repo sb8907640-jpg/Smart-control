@@ -17,6 +17,7 @@ import com.smartcontrol.domain.billing.FreeGrant
 import com.smartcontrol.domain.billing.Plan
 import com.smartcontrol.domain.owner.OwnerSettings
 import com.smartcontrol.domain.owner.OwnerSettingsRepository
+import com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry
 import com.smartcontrol.domain.spec.FeatureCatalog
 import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.domain.spec.MasterSpecification
@@ -57,6 +58,8 @@ class OwnerAdminViewModel @Inject constructor(
         private set
     var freeGrants by mutableStateOf<List<FreeGrant>>(emptyList())
         private set
+    var history by mutableStateOf<List<OwnerSettingsHistoryEntry>>(emptyList())
+        private set
 
     init {
         viewModelScope.launch {
@@ -65,6 +68,7 @@ class OwnerAdminViewModel @Inject constructor(
                 ownerProfile = runCatching { billingRepository.getOwnerProfile() }.getOrDefault(OwnerProfile())
                 launch { billingRepository.observePlans().collect { plans = it } }
                 launch { billingRepository.observeFreeGrants().collect { freeGrants = it } }
+                launch { repository.observeHistory().collect { history = it } }
                 repository.observe().collect { settings = it }
             }
         }
@@ -155,6 +159,13 @@ class OwnerAdminViewModel @Inject constructor(
         viewModelScope.launch {
             message = billingRepository.revokeFreeAccess(grant)
                 .fold({ "Free access revoked." }, { it.message ?: "Free access revoke failed." })
+        }
+    }
+
+    fun rollback(historyId: String) {
+        viewModelScope.launch {
+            message = repository.rollback(historyId)
+                .fold({ "Settings rolled back." }, { it.message ?: "Rollback failed." })
         }
     }
 
@@ -264,6 +275,13 @@ fun OwnerAdminScreen(
                                 onValueChange = viewModel::editOwnerValue
                             )
                         }
+                    }
+
+                    item {
+                        OwnerHistoryPanel(
+                            history = viewModel.history,
+                            onRollback = viewModel::rollback
+                        )
                     }
 
                     item {
@@ -532,6 +550,38 @@ private fun OwnerBillingPanel(
                                 if (grant.revokedAtEpochMs == null) {
                                     OutlinedButton(onClick = { onGrantRevoke(grant) }) { Text("Revoke") }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun OwnerHistoryPanel(
+    history: List<OwnerSettingsHistoryEntry>,
+    onRollback: (String) -> Unit
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Change Log & Rollback", style = MaterialTheme.typography.titleLarge)
+            if (history.isEmpty()) {
+                Text("No owner-setting history yet. Saving changes will create snapshots when Change Log is enabled.")
+            } else {
+                history.forEach { entry ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(8.dp)) {
+                            Text(entry.summary)
+                            Text("Changed by: ${entry.changedBy}")
+                            Text(
+                                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                    .format(java.util.Date(entry.changedAtEpochMs))
+                            )
+                            OutlinedButton(onClick = { onRollback(entry.id) }) {
+                                Text("Restore this version")
                             }
                         }
                     }
