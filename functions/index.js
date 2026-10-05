@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 
 initializeApp();
 const db = getFirestore();
@@ -126,4 +127,72 @@ exports.stopSessionWithPin = onCall(async (request) => {
   if (!snapshot.empty) await batch.commit();
 
   return { ok: true, stoppedCount: snapshot.size };
+});
+
+
+function requireAdmin(request) {
+  if (!request.auth || request.auth.token?.admin !== true) {
+    throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+}
+
+async function findAuthUser(identifier) {
+  try {
+    if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
+    if (identifier.startsWith("+")) return await getAuth().getUserByPhoneNumber(identifier);
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") return null;
+    throw error;
+  }
+  return null;
+}
+
+exports.syncOwnerAccounts = onCall(async (request) => {
+  requireAdmin(request);
+
+  const emails = Array.isArray(request.data?.emails)
+    ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const mobiles = Array.isArray(request.data?.mobiles)
+    ? request.data.mobiles.map(String).map(v => v.trim()).filter(Boolean)
+    : [];
+
+  const requestedIdentifiers = new Set([...emails, ...mobiles]);
+  if (requestedIdentifiers.size === 0) {
+    throw new HttpsError("invalid-argument", "At least one owner email or mobile is required.");
+  }
+
+  const currentProfile = await db.collection("ownerAccounts").doc("config").get();
+  const previous = currentProfile.exists ? currentProfile.data() : {};
+  const previousIdentifiers = new Set([
+    ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(v => v.trim().toLowerCase()) : []),
+    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
+  ]);
+
+  let granted = 0;
+  let revoked = 0;
+  const unresolved = [];
+
+  for (const identifier of requestedIdentifiers) {
+    const user = await findAuthUser(identifier);
+    if (!user) {
+      unresolved.push(identifier);
+      continue;
+    }
+    const claims = { ...(user.customClaims || {}), admin: true };
+    await getAuth().setCustomUserClaims(user.uid, claims);
+    granted += 1;
+  }
+
+  for (const identifier of previousIdentifiers) {
+    if (requestedIdentifiers.has(identifier)) continue;
+    const user = await findAuthUser(identifier);
+    if (!user || user.uid === request.auth.uid) continue;
+    const claims = { ...(user.customClaims || {}) };
+    delete claims.admin;
+    await getAuth().setCustomUserClaims(user.uid, claims);
+    revoked += 1;
+  }
+
+  return { ok: true, granted, revoked, unresolved };
 });
