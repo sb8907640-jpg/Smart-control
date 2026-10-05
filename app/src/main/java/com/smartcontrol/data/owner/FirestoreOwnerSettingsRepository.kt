@@ -77,7 +77,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
                         snapshot?.documents.orEmpty().mapNotNull { doc ->
                             val data = doc.data.orEmpty()
                             val raw = data["settings"] as? Map<*, *> ?: return@mapNotNull null
-                            val typed = raw.entries.associate { it.key.toString() to it.value }
+                            val typed = raw.entries.filter { it.value != null }.associate { it.key.toString() to it.value!! }
                             com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry(
                                 id = doc.id,
                                 changedBy = data["changedBy"]?.toString().orEmpty(),
