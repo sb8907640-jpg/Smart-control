@@ -710,7 +710,6 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       return;
     }
 
-    const paymentId = webhookPaymentId;
     const ref = db.collection("payments").doc(paymentId);
     const snap = await ref.get();
     if (!snap.exists) {
