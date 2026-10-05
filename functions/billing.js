@@ -460,3 +460,18 @@ exports.getMySubscription = onCall(async (request) => {
     subscription: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }
   };
 });
+
+exports.duplicatePlan = onCall(async (request) => {
+  requireAdmin(request);
+  const sourceId = String(request.data?.sourcePlanId || "").trim();
+  const newId = String(request.data?.newPlanId || "").trim();
+  if (!sourceId || !newId) throw new HttpsError("invalid-argument", "Source and new plan IDs are required.");
+  if (sourceId === newId) throw new HttpsError("invalid-argument", "New plan ID must differ from source.");
+  const source = await db.collection("plans").doc(sourceId).get();
+  if (!source.exists) throw new HttpsError("not-found", "Source plan not found.");
+  const target = db.collection("plans").doc(newId);
+  if ((await target.get()).exists) throw new HttpsError("already-exists", "New plan ID already exists.");
+  const data = { ...source.data(), name: String(request.data?.newName || source.data()?.name || newId), createdAtEpochMs: Date.now(), updatedAtEpochMs: Date.now() };
+  await target.set(data);
+  return { ok: true, plan: { id: newId, ...data } };
+});
