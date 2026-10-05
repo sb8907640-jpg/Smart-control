@@ -147,6 +147,71 @@ async function findAuthUser(identifier) {
   return null;
 }
 
+exports.listOwnerUsers = onCall(async (request) => {
+  requireAdmin(request);
+  const result = [];
+  let pageToken;
+  do {
+    const page = await getAuth().listUsers(1000, pageToken);
+    page.users.forEach((user) => {
+      const claims = user.customClaims || {};
+      result.push({
+        uid: user.uid,
+        displayName: user.displayName || "",
+        email: user.email || "",
+        phoneNumber: user.phoneNumber || "",
+        disabled: Boolean(user.disabled),
+        role: typeof claims.role === "string" ? claims.role : "USER",
+        admin: claims.admin === true
+      });
+    });
+    pageToken = page.pageToken;
+  } while (pageToken);
+  return { users: result };
+});
+
+exports.updateOwnerUser = onCall(async (request) => {
+  requireAdmin(request);
+  const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
+  if (!uid) throw new HttpsError("invalid-argument", "User ID is required.");
+
+  const target = await getAuth().getUser(uid);
+  const action = typeof request.data?.action === "string" ? request.data.action : "set";
+  const allowedRoles = new Set(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPPORT", "USER"]);
+  const role = typeof request.data?.role === "string" ? request.data.role : "USER";
+
+  if (action === "set") {
+    if (!allowedRoles.has(role)) {
+      throw new HttpsError("invalid-argument", "Unsupported user role.");
+    }
+    const access = request.data?.access === true;
+    const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
+    const claims = { ...(target.customClaims || {}), role, access };
+    if (role === "SUPER_ADMIN") claims.admin = true;
+    if (role !== "SUPER_ADMIN" && target.uid !== request.auth.uid && claims.admin !== true) delete claims.admin;
+    await getAuth().setCustomUserClaims(uid, claims);
+    await db.collection("userAccess").doc(uid).set({
+      uid,
+      accessGranted: access,
+      accessExpiresAtEpochMs: expiresAtEpochMs > 0 ? expiresAtEpochMs : null,
+      role,
+      updatedAtEpochMs: Date.now(),
+      updatedBy: request.auth.uid
+    }, { merge: true });
+    return { ok: true };
+  }
+
+  if (action === "block" || action === "unblock") {
+    if (uid === request.auth.uid && action === "block") {
+      throw new HttpsError("failed-precondition", "You cannot block your own admin account.");
+    }
+    await getAuth().updateUser(uid, { disabled: action === "block" });
+    return { ok: true, disabled: action === "block" };
+  }
+
+  throw new HttpsError("invalid-argument", "Unsupported user-management action.");
+});
+
 exports.syncOwnerAccounts = onCall(async (request) => {
   requireAdmin(request);
 
