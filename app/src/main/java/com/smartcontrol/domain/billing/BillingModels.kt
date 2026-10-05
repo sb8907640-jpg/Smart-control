@@ -100,6 +100,27 @@ data class FreeGrant(
             startsAtEpochMs <= nowEpochMs
 }
 
+
+data class Coupon(
+    val code: String,
+    val discountPercent: Double = 0.0,
+    val discountMinor: Long = 0L,
+    val usageLimit: Long = 0L,
+    val usageCount: Long = 0L,
+    val enabled: Boolean = true,
+    val expiresAtEpochMs: Long? = null
+)
+
+data class PayoutRecord(
+    val id: String,
+    val amountMinor: Long,
+    val currency: String,
+    val method: String,
+    val accountLabel: String,
+    val status: String,
+    val createdAtEpochMs: Long
+)
+
 interface BillingRepository {
     suspend fun getPlans(): List<Plan>
     suspend fun getSubscription(userId: String): Subscription?
@@ -112,4 +133,14 @@ interface BillingRepository {
     ): Result<Payment>
     suspend fun createEmiSchedule(schedule: EmiSchedule): Result<EmiSchedule>
     suspend fun grantFreeAccess(grant: FreeGrant): Result<FreeGrant>
+    suspend fun listPayments(): Result<List<Payment>>
+    suspend fun listSubscriptions(): Result<List<Subscription>>
+    suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit>
+    suspend fun refundPayment(paymentId: String): Result<Long>
+    suspend fun createCoupon(coupon: Coupon): Result<Unit>
+    suspend fun updateCoupon(coupon: Coupon): Result<Unit>
+    suspend fun deleteCoupon(code: String): Result<Unit>
+    suspend fun getPaymentReport(startEpochMs: Long, endEpochMs: Long): Result<Pair<Long, List<Payment>>>
+    suspend fun recordPayout(payout: PayoutRecord): Result<PayoutRecord>
+    suspend fun listPayouts(): Result<List<PayoutRecord>>
 }
