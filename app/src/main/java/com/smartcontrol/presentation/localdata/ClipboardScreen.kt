@@ -15,7 +15,7 @@ fun ClipboardScreen(onBack:()->Unit){
   Text("Clipboard",style=MaterialTheme.typography.headlineSmall)
   Text("Visible local clipboard viewer. It does not monitor the clipboard in the background or sync it remotely.")
   Button(onClick={val cm=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager;text=cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()},modifier=Modifier.fillMaxWidth()){Text("Read current clipboard")}
-  OutlinedTextField(text=text,onValueChange={text=it},modifier=Modifier.fillMaxWidth(),minLines=4)
+  OutlinedTextField(value=text,onValueChange={newText -> text=newText},modifier=Modifier.fillMaxWidth(),minLines=4)
   Button(onClick={val cm=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager;cm.setPrimaryClip(ClipData.newPlainText("Smart Control",text))},modifier=Modifier.fillMaxWidth()){Text("Copy text to clipboard")}
   OutlinedButton(onClick=onBack,modifier=Modifier.fillMaxWidth()){Text("Back")}
  }
