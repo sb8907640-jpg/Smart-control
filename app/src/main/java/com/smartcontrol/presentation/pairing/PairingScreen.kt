@@ -8,6 +8,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
@@ -26,6 +28,7 @@ fun PairingScreen(
     val pairing by viewModel.pairing.collectAsState()
     val state by viewModel.state.collectAsState()
     var token by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier.padding(20.dp),
@@ -49,6 +52,12 @@ fun PairingScreen(
             state.code?.let {
                 Text("Share this temporary token with the intended controller:")
                 Text(it.token)
+                Button(onClick = {
+                    context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "Smart Control pairing token: ${it.token}")
+                    }, "Share pairing token"))
+                }, modifier = Modifier.fillMaxWidth()) { Text("Share token") }
             }
 
             OutlinedTextField(
