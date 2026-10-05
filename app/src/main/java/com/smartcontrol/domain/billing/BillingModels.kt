@@ -26,7 +26,11 @@ data class Plan(
     val taxPercent: Double = 0.0,
     val originalPriceMinor: Long? = null,
     val offerPriceVisible: Boolean = true,
-    val displayOrder: Int = 0
+    val displayOrder: Int = 0,
+    val tierLevel: Int = 0,
+    val upgradePlanIds: Set<String> = emptySet(),
+    val downgradePlanIds: Set<String> = emptySet(),
+    val crossGradeEnabled: Boolean = true
 )
 
 data class Subscription(
