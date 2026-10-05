@@ -272,3 +272,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
 
   return { ok: true, granted, revoked, unresolved };
 });
+
+
+// Billing and payment lifecycle exports.
+Object.assign(exports, require("./billing"));
