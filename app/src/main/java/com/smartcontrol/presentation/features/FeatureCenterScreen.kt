@@ -42,7 +42,7 @@ private val features = listOf(
 )
 
 @Composable
-fun FeatureCenterScreen(onBack: () -> Unit, onContacts: () -> Unit, onSms: () -> Unit, onCallLogs: () -> Unit, onAppUsage: () -> Unit, onClipboard: () -> Unit, onAppInstall: () -> Unit) {
+fun FeatureCenterScreen(onBack: () -> Unit, onNotifications: () -> Unit, onContacts: () -> Unit, onSms: () -> Unit, onCallLogs: () -> Unit, onAppUsage: () -> Unit, onClipboard: () -> Unit, onAppInstall: () -> Unit) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -65,6 +65,7 @@ fun FeatureCenterScreen(onBack: () -> Unit, onContacts: () -> Unit, onSms: () ->
             onClick = { picker.launch(arrayOf("image/*", "video/*")) },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Open Gallery Picker") }
+        OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text("Notification Access") }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onContacts, modifier = Modifier.weight(1f)) { Text("Contacts") }
             OutlinedButton(onClick = onSms, modifier = Modifier.weight(1f)) { Text("SMS") }
