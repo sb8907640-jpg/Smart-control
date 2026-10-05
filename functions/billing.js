@@ -154,22 +154,23 @@ async function activateSubscriptionForPayment(paymentId, payment, verification =
     const couponRef = couponCode ? db.collection("coupons").doc(couponCode) : null;
     const couponSnap = couponRef ? await tx.get(couponRef) : null;
     const startsAt = existing?.expiresAtEpochMs > now ? existing.expiresAtEpochMs : now;
-    const expiresAt = startsAt + planDurationMs(plan);
+    const agreedDurationMs = Number(storedPayment.planDurationMs || planDurationMs(plan));
+    const expiresAt = startsAt + agreedDurationMs;
     const subscriptionRef = existing ? db.collection("subscriptions").doc(existing.id) : db.collection("subscriptions").doc();
     tx.set(subscriptionRef, {
       userId, planId: planRef.id, status: "ACTIVE",
       startedAtEpochMs: existing?.startedAtEpochMs || now,
-      expiresAtEpochMs: expiresAt, autoRenew: plan.autoRenew === true,
-      gracePeriodDays: Math.max(0, Number(plan.gracePeriodDays || 0)),
+      expiresAtEpochMs: expiresAt, autoRenew: storedPayment.planAutoRenew === true,
+      gracePeriodDays: Math.max(0, Number(storedPayment.planGracePeriodDays ?? plan.gracePeriodDays ?? 0)),
       // Snapshot the terms used for this paid period. Later plan edits
       // apply to future purchases and do not rewrite this subscription.
-      agreedPriceMinor: Number(plan.priceMinor || 0),
-      agreedAmountMinor: Number(storedPayment.amountMinor || payment.amountMinor || 0),
-      agreedCurrency: String(storedPayment.currency || payment.currency || plan.currency || "INR"),
-      agreedDiscountPercent: Number(plan.discountPercent || 0),
-      agreedDiscountMinor: Number(plan.discountMinor || 0),
-      agreedTaxPercent: Number(plan.taxPercent || 0),
-      planVersionEpochMs: Number(plan.updatedAtEpochMs || plan.createdAtEpochMs || 0),
+      agreedPriceMinor: Number(storedPayment.planPriceMinor ?? plan.priceMinor ?? 0),
+      agreedAmountMinor: Number(storedPayment.amountMinor ?? payment.amountMinor ?? 0),
+      agreedCurrency: String(storedPayment.currency ?? payment.currency ?? plan.currency ?? "INR"),
+      agreedDiscountPercent: Number(storedPayment.planDiscountPercent ?? plan.discountPercent ?? 0),
+      agreedDiscountMinor: Number(storedPayment.planDiscountMinor ?? plan.discountMinor ?? 0),
+      agreedTaxPercent: Number(storedPayment.planTaxPercent ?? plan.taxPercent ?? 0),
+      planVersionEpochMs: Number(storedPayment.planVersionEpochMs ?? plan.updatedAtEpochMs ?? plan.createdAtEpochMs ?? 0),
       pausedAtEpochMs: null, updatedAtEpochMs: now
     }, { merge: true });
     const updatedPayment = {
@@ -290,6 +291,9 @@ exports.createPayment = onCall(async (request) => {
     planDiscountPercent: Number(plan.discountPercent || 0),
     planDiscountMinor: Number(plan.discountMinor || 0),
     planTaxPercent: Number(plan.taxPercent || 0),
+    planDurationMs: planDurationMs(plan),
+    planAutoRenew: plan.autoRenew === true,
+    planGracePeriodDays: Math.max(0, Number(plan.gracePeriodDays || 0)),
     planVersionEpochMs: Number(plan.updatedAtEpochMs || plan.createdAtEpochMs || 0),
     status: amountMinor === 0 ? "SUCCESS" : "PENDING",
     createdAtEpochMs: Date.now(),
