@@ -33,7 +33,7 @@ class FirebaseBillingRepository @Inject constructor(
     override suspend fun createPayment(payment: Payment): Result<Payment> = runCatching {
         val result = functions.getHttpsCallable("createPayment").call(
             mapOf(
-                "planId" to payment.id.substringBefore(':').ifBlank { payment.subscriptionId ?: "" },
+                "planId" to payment.planId,
                 "gateway" to payment.gateway,
                 "paymentMethod" to payment.gateway
             )
@@ -104,7 +104,8 @@ class FirebaseBillingRepository @Inject constructor(
             gateway = data["gateway"]?.toString() ?: "TEST",
             gatewayReference = data["gatewayReference"]?.toString(),
             status = status,
-            createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L
+            createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
+            planId = data["planId"]?.toString() ?: ""
         )
     }
 }
