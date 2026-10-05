@@ -18,6 +18,8 @@ import com.smartcontrol.domain.billing.Plan
 import com.smartcontrol.domain.owner.OwnerSettings
 import com.smartcontrol.domain.owner.OwnerSettingsRepository
 import com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry
+import com.smartcontrol.domain.owner.OwnerManagedUser
+import com.smartcontrol.domain.owner.OwnerUserManagementRepository
 import com.smartcontrol.domain.spec.FeatureCatalog
 import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.domain.spec.MasterSpecification
@@ -29,7 +31,8 @@ import javax.inject.Inject
 @HiltViewModel
 class OwnerAdminViewModel @Inject constructor(
     private val repository: OwnerSettingsRepository,
-    private val billingRepository: OwnerBillingRepository
+    private val billingRepository: OwnerBillingRepository,
+    private val userManagementRepository: OwnerUserManagementRepository
 ) : ViewModel() {
     var admin by mutableStateOf<Boolean?>(null)
         private set
@@ -60,6 +63,8 @@ class OwnerAdminViewModel @Inject constructor(
         private set
     var history by mutableStateOf<List<OwnerSettingsHistoryEntry>>(emptyList())
         private set
+    var managedUsers by mutableStateOf<List<OwnerManagedUser>>(emptyList())
+        private set
 
     init {
         viewModelScope.launch {
@@ -69,6 +74,7 @@ class OwnerAdminViewModel @Inject constructor(
                 launch { billingRepository.observePlans().collect { plans = it } }
                 launch { billingRepository.observeFreeGrants().collect { freeGrants = it } }
                 launch { repository.observeHistory().collect { history = it } }
+                launch { managedUsers = userManagementRepository.listUsers().getOrDefault(emptyList()) }
                 repository.observe().collect { settings = it }
             }
         }
@@ -159,6 +165,34 @@ class OwnerAdminViewModel @Inject constructor(
         viewModelScope.launch {
             message = billingRepository.revokeFreeAccess(grant)
                 .fold({ "Free access revoked." }, { it.message ?: "Free access revoke failed." })
+        }
+    }
+
+    fun refreshUsers() {
+        viewModelScope.launch {
+            userManagementRepository.listUsers().fold(
+                onSuccess = { managedUsers = it; message = "User list refreshed." },
+                onFailure = { message = it.message ?: "User list refresh failed." }
+            )
+        }
+    }
+
+    fun setUserAccess(user: OwnerManagedUser, role: String, granted: Boolean, durationDays: Long) {
+        viewModelScope.launch {
+            val expires = if (granted && durationDays > 0) {
+                System.currentTimeMillis() + durationDays * 86_400_000L
+            } else null
+            message = userManagementRepository.setUserAccess(user.uid, role, granted, expires)
+                .fold({ "User access updated." }, { it.message ?: "User access update failed." })
+            if (message == "User access updated.") refreshUsers()
+        }
+    }
+
+    fun setUserBlocked(user: OwnerManagedUser, blocked: Boolean) {
+        viewModelScope.launch {
+            message = userManagementRepository.setUserBlocked(user.uid, blocked)
+                .fold({ if (blocked) "User blocked." else "User unblocked." }, { it.message ?: "User status update failed." })
+            if (message?.contains("User blocked") == true || message?.contains("User unblocked") == true) refreshUsers()
         }
     }
 
@@ -265,6 +299,15 @@ fun OwnerAdminScreen(
                     item {
                         Spacer(Modifier.height(8.dp))
                         Text("Complete Owner Settings — 15 sections", style = MaterialTheme.typography.titleLarge)
+                    }
+
+                    item {
+                        OwnerUserManagementPanel(
+                            users = viewModel.managedUsers,
+                            onRefresh = viewModel::refreshUsers,
+                            onAccessSave = viewModel::setUserAccess,
+                            onBlockToggle = viewModel::setUserBlocked
+                        )
                     }
 
                     ownerSections.forEach { (prefix, title) ->
@@ -560,6 +603,87 @@ private fun OwnerBillingPanel(
     }
 }
 
+
+
+@Composable
+private fun OwnerUserManagementPanel(
+    users: List<OwnerManagedUser>,
+    onRefresh: () -> Unit,
+    onAccessSave: (OwnerManagedUser, String, Boolean, Long) -> Unit,
+    onBlockToggle: (OwnerManagedUser, Boolean) -> Unit
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("User Management", style = MaterialTheme.typography.titleLarge)
+                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            }
+            Text("Owner-only controls for role, feature access window, and account blocking.")
+            if (users.isEmpty()) {
+                Text("No Firebase Auth users found.")
+            } else {
+                users.forEach { user ->
+                    var role by remember(user.uid, user.role) { mutableStateOf(user.role) }
+                    var days by remember(user.uid, user.accessExpiresAtEpochMs) {
+                        mutableStateOf("30")
+                    }
+                    var access by remember(user.uid, user.accessGranted) {
+                        mutableStateOf(user.accessGranted)
+                    }
+                    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Column(Modifier.padding(10.dp)) {
+                            Text(user.displayName.ifBlank { user.email.ifBlank { user.uid } })
+                            if (user.email.isNotBlank()) Text(user.email)
+                            if (user.phoneNumber.isNotBlank()) Text(user.phoneNumber)
+                            Text("UID: " + user.uid)
+                            OutlinedTextField(
+                                value = role,
+                                onValueChange = { role = it.uppercase() },
+                                label = { Text("Role") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Access granted")
+                                Switch(checked = access, onCheckedChange = { access = it })
+                            }
+                            OutlinedTextField(
+                                value = days,
+                                onValueChange = { days = it.filter(Char::isDigit) },
+                                label = { Text("Access duration (days)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    onAccessSave(
+                                        user,
+                                        role.trim().ifBlank { "USER" },
+                                        access,
+                                        days.toLongOrNull()?.coerceAtLeast(1L) ?: 30L
+                                    )
+                                }) { Text("Save User") }
+                                OutlinedButton(onClick = {
+                                    onBlockToggle(user, !user.disabled)
+                                }) {
+                                    Text(if (user.disabled) "Unblock" else "Block")
+                                }
+                            }
+                            Text("Status: " + if (user.disabled) "BLOCKED" else "ACTIVE")
+                            Text("Admin claim: " + if (user.admin) "YES" else "NO")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun OwnerHistoryPanel(
