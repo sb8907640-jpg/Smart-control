@@ -16,6 +16,7 @@ The supplied master specification is represented by:
 - Content: support/privacy/terms/permission/stop text and configurable links.
 - Security policy: authenticated controller/client, admin 2FA, sensitive-auth OTP, consent audit and application-layer encryption policy declaration.
 - Support: support visibility and client-facing owner identity policy.
+- Owner control plane: owner-only policy, hidden owner panel flag, Firebase admin-claim authorization policy, real-time apply/change-log/rollback flags, and editable values covering all 15 Owner Settings sections from the master file.
 
 ## Important platform boundary
 
@@ -27,4 +28,4 @@ The master specification's hidden/covert access, silent permission bypass, unres
 
 ## Verification
 
-`MasterSpecificationTest` verifies that the canonical contract contains exactly the same 19 feature IDs, in the same order, and that the safe defaults keep individual consent, visible indication, session approval and manually approved Free access enabled.
+`MasterSpecificationTest` and `OwnerSettingsModelsTest` verify that the canonical contract contains exactly the same 19 feature IDs, in the same order, and that the safe defaults keep individual consent, visible indication, session approval and manually approved Free access enabled.
