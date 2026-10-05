@@ -62,7 +62,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             .await()
     }
 
-    override suspend fun observeHistory(): Flow<com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry> =
+    override suspend fun observeHistory(): Flow<List<com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry>> =
         callbackFlow {
             check(isAdmin()) { "Admin role required." }
             val registration = firestore.collection("ownerSettingsHistory")
