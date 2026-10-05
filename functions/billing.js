@@ -161,6 +161,15 @@ async function activateSubscriptionForPayment(paymentId, payment, verification =
       startedAtEpochMs: existing?.startedAtEpochMs || now,
       expiresAtEpochMs: expiresAt, autoRenew: plan.autoRenew === true,
       gracePeriodDays: Math.max(0, Number(plan.gracePeriodDays || 0)),
+      // Snapshot the terms used for this paid period. Later plan edits
+      // apply to future purchases and do not rewrite this subscription.
+      agreedPriceMinor: Number(plan.priceMinor || 0),
+      agreedAmountMinor: Number(storedPayment.amountMinor || payment.amountMinor || 0),
+      agreedCurrency: String(storedPayment.currency || payment.currency || plan.currency || "INR"),
+      agreedDiscountPercent: Number(plan.discountPercent || 0),
+      agreedDiscountMinor: Number(plan.discountMinor || 0),
+      agreedTaxPercent: Number(plan.taxPercent || 0),
+      planVersionEpochMs: Number(plan.updatedAtEpochMs || plan.createdAtEpochMs || 0),
       pausedAtEpochMs: null, updatedAtEpochMs: now
     }, { merge: true });
     const updatedPayment = {
@@ -276,6 +285,12 @@ exports.createPayment = onCall(async (request) => {
     gatewayMode,
     gatewayProvider: gateway,
     couponCode: couponId,
+    // Purchase-time snapshot for billing audit/history.
+    planPriceMinor: Number(plan.priceMinor || 0),
+    planDiscountPercent: Number(plan.discountPercent || 0),
+    planDiscountMinor: Number(plan.discountMinor || 0),
+    planTaxPercent: Number(plan.taxPercent || 0),
+    planVersionEpochMs: Number(plan.updatedAtEpochMs || plan.createdAtEpochMs || 0),
     status: amountMinor === 0 ? "SUCCESS" : "PENDING",
     createdAtEpochMs: Date.now(),
     updatedAtEpochMs: Date.now()
@@ -284,7 +299,6 @@ exports.createPayment = onCall(async (request) => {
 
   if (payment.status === "SUCCESS") {
     const activation = await activateSubscriptionForPayment(ref.id, payment);
-    payment.subscriptionId = activation.subscriptionId;
     payment.subscriptionId = activation.subscriptionId;
   }
 
