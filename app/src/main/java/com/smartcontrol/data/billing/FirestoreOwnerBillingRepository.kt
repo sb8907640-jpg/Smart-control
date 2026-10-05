@@ -281,6 +281,7 @@ class FirestoreOwnerBillingRepository @Inject constructor(
             currency = data["currency"]?.toString() ?: "INR",
             gateway = data["gateway"]?.toString() ?: "",
             gatewayReference = data["gatewayReference"]?.toString(),
+            paymentMethod = data["paymentMethod"]?.toString() ?: data["gateway"]?.toString() ?: "UPI",
             status = status,
             createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
             planId = data["planId"]?.toString() ?: ""
