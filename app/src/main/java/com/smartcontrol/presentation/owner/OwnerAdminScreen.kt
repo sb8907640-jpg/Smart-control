@@ -639,9 +639,36 @@ private fun OwnerBillingPanel(
                                     selectedPlanId = plan.id
                                     planId = plan.id
                                     planName = plan.name
+                                    planDescription = plan.description
+                                    planTagline = plan.tagline
+                                    planIcon = plan.iconKey
+                                    planColor = plan.colorKey
+                                    planBadge = plan.badge
                                     planPrice = (plan.priceMinor / 100.0).toString()
-                                    planDuration = plan.durationDays.toString()
+                                    planCurrency = plan.currency
+                                    planDurationUnit = plan.durationUnit
+                                    planDuration = plan.durationValue.toString()
                                     planEnabled = plan.enabled
+                                    planAutoRenew = plan.autoRenew
+                                    planGraceDays = plan.gracePeriodDays.toString()
+                                    planReminderDays = plan.expiryReminderDays.toString()
+                                    planDiscountPercent = plan.discountPercent.toString()
+                                    planDiscountMinor = plan.discountMinor.toString()
+                                    planTaxPercent = plan.taxPercent.toString()
+                                    planOriginalPrice = plan.originalPriceMinor?.let { (it / 100.0).toString() } ?: ""
+                                    planOfferVisible = plan.offerPriceVisible
+                                    planDisplayOrder = plan.displayOrder.toString()
+                                    planTier = plan.tierLevel.toString()
+                                    planDeviceLimit = plan.deviceLimit.toString()
+                                    planUserLimit = plan.userLimit.toString()
+                                    planStorageLimit = plan.storageLimitBytes.toString()
+                                    planBandwidthLimit = plan.bandwidthLimitBytes.toString()
+                                    planUpgradeIds = plan.upgradePlanIds.joinToString(",")
+                                    planDowngradeIds = plan.downgradePlanIds.joinToString(",")
+                                    planCrossGrade = plan.crossGradeEnabled
+                                    planFeatureLimits = plan.featureLimits.entries.joinToString(",") { it.key + "=" + it.value }
+                                    planFeatureTimes = plan.featureTimeLimitsSeconds.entries.joinToString(",") { it.key + "=" + it.value }
+                                    planFeaturePriorities = plan.featurePriorities.entries.joinToString(",") { it.key + "=" + it.value }
                                     selectedFeatures = plan.featureIds
                                 }) { Text("Edit") }
                                 OutlinedButton(onClick = { onPlanDelete(plan.id) }) { Text("Delete") }
