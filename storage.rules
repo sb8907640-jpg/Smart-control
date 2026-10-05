@@ -4,21 +4,17 @@ service firebase.storage {
   match /b/{bucket}/o {
     match /fileTransfers/{senderUid}/{transferId}/{fileName} {
       function transferDoc() {
-        return firestore.get(
-          /databases/(default)/documents/fileTransfers/$(transferId)
-        );
+        return firestore.get(/databases/(default)/documents/fileTransfers/$(transferId));
       }
 
       allow write: if request.auth != null
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
-        && transferDoc().data.status in ['REQUESTED', 'APPROVED', 'UPLOADING'];
+        && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
 
       allow read: if request.auth != null
-        && (
-          request.auth.uid == senderUid
-          || transferDoc().data.receiverDeviceId == request.auth.uid
-        );
+        && (request.auth.uid == senderUid
+            || transferDoc().data.receiverDeviceId == request.auth.uid);
     }
   }
 }
