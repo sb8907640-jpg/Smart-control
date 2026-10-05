@@ -12,7 +12,6 @@ service cloud.firestore {
     }
 
     match /parentSecurity/{uid} {
-      // Parent PIN material is server-only; the callable functions are the only writers/readers.
       allow read, write: if false;
     }
 
@@ -30,38 +29,36 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid;
 
       allow read: if request.auth != null
-        && (resource.data.controllerUid == request.auth.uid
-            || resource.data.targetDeviceId == request.auth.uid);
+        && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
 
-      allow update: if request.auth != null
-        && (
-          (
-            resource.data.targetDeviceId == request.auth.uid
-            && resource.data.controllerUid == request.resource.data.controllerUid
-            && resource.data.targetDeviceId == request.resource.data.targetDeviceId
-            && resource.data.capabilities == request.resource.data.capabilities
-            && resource.data.createdAt == request.resource.data.createdAt
-            && resource.data.diff(request.resource.data).affectedKeys().hasOnly(['status'])
-            && (
-              (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
-              || (resource.data.status == 'APPROVED' && request.resource.data.status == 'ACTIVE')
-            )
+      allow update: if request.auth != null && (
+        (
+          resource.data.targetDeviceId == request.auth.uid
+          && resource.data.controllerUid == request.resource.data.controllerUid
+          && resource.data.targetDeviceId == request.resource.data.targetDeviceId
+          && resource.data.capabilities == request.resource.data.capabilities
+          && resource.data.createdAt == request.resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && (
+            (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
+            || (resource.data.status == 'APPROVED' && request.resource.data.status == 'ACTIVE')
           )
-          ||
-          (
-            resource.data.controllerUid == request.auth.uid
-            && resource.data.controllerUid == request.resource.data.controllerUid
-            && resource.data.targetDeviceId == request.resource.data.targetDeviceId
-            && resource.data.capabilities == request.resource.data.capabilities
-            && resource.data.createdAt == request.resource.data.createdAt
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'offerSdp', 'answerSdp'])
-            && (
-              (resource.data.status == 'APPROVED' && request.resource.data.status in ['APPROVED', 'ACTIVE', 'STOPPED'])
-              || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
-              || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
-            )
+        )
+        ||
+        (
+          resource.data.controllerUid == request.auth.uid
+          && resource.data.controllerUid == request.resource.data.controllerUid
+          && resource.data.targetDeviceId == request.resource.data.targetDeviceId
+          && resource.data.capabilities == request.resource.data.capabilities
+          && resource.data.createdAt == request.resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'offerSdp', 'answerSdp'])
+          && (
+            (resource.data.status == 'APPROVED' && request.resource.data.status in ['APPROVED', 'ACTIVE', 'STOPPED'])
+            || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
+            || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
           )
-        );
+        )
+      );
 
       allow delete: if request.auth != null && resource.data.controllerUid == request.auth.uid;
 
@@ -76,32 +73,41 @@ service cloud.firestore {
       }
     }
 
-
-
     match /fileTransfers/{transferId} {
       allow create: if request.auth != null
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
-        && request.resource.data.status == "REQUESTED";
+        && request.resource.data.status == 'REQUESTED';
 
       allow read: if request.auth != null
-        && (resource.data.senderDeviceId == request.auth.uid
-            || resource.data.receiverDeviceId == request.auth.uid);
+        && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
 
       allow update: if request.auth != null
-        && (resource.data.senderDeviceId == request.auth.uid
-            || resource.data.receiverDeviceId == request.auth.uid)
         && resource.data.senderDeviceId == request.resource.data.senderDeviceId
         && resource.data.receiverDeviceId == request.resource.data.receiverDeviceId
         && resource.data.fileName == request.resource.data.fileName
         && resource.data.sizeBytes == request.resource.data.sizeBytes
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "storagePath", "updatedAt"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'storagePath', 'updatedAt'])
+        && (
+          (
+            request.auth.uid == resource.data.receiverDeviceId
+            && resource.data.status == 'REQUESTED'
+            && request.resource.data.status in ['APPROVED', 'REJECTED']
+          )
+          ||
+          (
+            request.auth.uid == resource.data.senderDeviceId
+            && (
+              (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
+              || (resource.data.status == 'APPROVED' && request.resource.data.status == 'UPLOADING')
+              || (resource.data.status == 'UPLOADING' && request.resource.data.status in ['READY', 'CANCELLED'])
+            )
+          )
+        );
 
       allow delete: if request.auth != null
-        && (resource.data.senderDeviceId == request.auth.uid
-            || resource.data.receiverDeviceId == request.auth.uid);
+        && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
     }
-
 
     match /auditLogs/{eventId} {
       allow create: if request.auth != null
@@ -126,25 +132,25 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
 
-      allow read: if request.auth != null &&
-        (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
-      allow update: if request.auth != null &&
-        (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+      allow update: if request.auth != null
+        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
       match /sharedLocation/{locationId} {
         allow create, update: if request.auth != null && request.auth.uid == uid;
-        allow read: if request.auth != null &&
-          (request.auth.uid == uid ||
-           request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow read: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
 
       match /statusAlerts/{alertId} {
         allow create: if request.auth != null && request.auth.uid == uid;
-        allow read: if request.auth != null &&
-          (request.auth.uid == uid ||
-           request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow read: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
       }
     }
   }
