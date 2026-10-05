@@ -46,8 +46,59 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         check(isAdmin()) { "Admin role required." }
         // Merge prevents older/unknown ownerSettings fields from being deleted while
         // the master-spec fields are added or changed.
+        val encoded = encode(settings)
+        if (settings.masterConfig.ownerControl.changeLogEnabled) {
+            firestore.collection("ownerSettingsHistory").document().set(
+                mapOf(
+                    "changedBy" to auth.currentUser?.uid.orEmpty(),
+                    "changedAtEpochMs" to System.currentTimeMillis(),
+                    "summary" to "Owner settings update",
+                    "settings" to encoded
+                )
+            ).await()
+        }
         firestore.collection("ownerSettings").document("global")
-            .set(encode(settings), SetOptions.merge())
+            .set(encoded, SetOptions.merge())
+            .await()
+    }
+
+    override suspend fun observeHistory(): Flow<com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry> =
+        callbackFlow {
+            check(isAdmin()) { "Admin role required." }
+            val registration = firestore.collection("ownerSettingsHistory")
+                .orderBy("changedAtEpochMs", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    trySend(
+                        snapshot?.documents.orEmpty().mapNotNull { doc ->
+                            val data = doc.data.orEmpty()
+                            val raw = data["settings"] as? Map<*, *> ?: return@mapNotNull null
+                            val typed = raw.entries.associate { it.key.toString() to it.value }
+                            com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry(
+                                id = doc.id,
+                                changedBy = data["changedBy"]?.toString().orEmpty(),
+                                changedAtEpochMs = (data["changedAtEpochMs"] as? Number)?.toLong() ?: 0L,
+                                summary = data["summary"]?.toString().orEmpty(),
+                                settings = decode(typed)
+                            )
+                        }
+                    )
+                }
+            awaitClose { registration.remove() }
+        }
+
+    override suspend fun rollback(historyId: String): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val snapshot = firestore.collection("ownerSettingsHistory").document(historyId).get().await()
+        val raw = snapshot.data?.get("settings") as? Map<*, *>
+            ?: error("History snapshot not found.")
+        val typed = raw.entries.associate { it.key.toString() to it.value }
+        firestore.collection("ownerSettings").document("global")
+            .set(encode(decode(typed)), SetOptions.merge())
             .await()
     }
 
