@@ -156,6 +156,10 @@ exports.createPayment = onCall(async (request) => {
   const config = await readPaymentConfig();
   const gateway = String(request.data?.gateway || "TEST").trim();
   const method = String(request.data?.paymentMethod || "UPI").trim().toUpperCase();
+  const gatewayMode = String(config["payment.gatewayMode"] || "TEST").toUpperCase();
+  if (gatewayMode === "LIVE" && gateway === "TEST") {
+    throw new HttpsError("failed-precondition", "LIVE payment mode requires a configured gateway.");
+  }
 
   const methodMap = {
     UPI: "payment.upiEnabled",
@@ -581,4 +585,90 @@ exports.expireSubscriptions = onSchedule("every 1 hours", async () => {
     });
   });
   await batch.commit();
+});
+
+
+exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest(async (req, res) => {
+  try {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+    const config = await readPaymentConfig();
+    const secret = String(config["payment.encryptionKey"] || "");
+    const signature = String(req.get("x-smartcontrol-signature") || "");
+    if (!secret || !signature) {
+      res.status(401).send("Webhook authentication is not configured.");
+      return;
+    }
+    const rawBody = Buffer.isBuffer(req.rawBody)
+      ? req.rawBody
+      : Buffer.from(JSON.stringify(req.body || {}));
+    const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+    if (signature.length !== expected.length ||
+        !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      res.status(401).send("Invalid signature.");
+      return;
+    }
+
+    const body = req.body || {};
+    const paymentId = String(body.paymentId || body.payment_id || "").trim();
+    const reference = String(body.gatewayReference || body.reference || body.id || "").trim();
+    const status = String(body.status || "").toUpperCase();
+    if (!paymentId || !reference) {
+      res.status(400).send("Payment ID and reference are required.");
+      return;
+    }
+
+    const ref = db.collection("payments").doc(paymentId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).send("Payment not found.");
+      return;
+    }
+    const payment = snap.data() || {};
+    if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
+      const activation = await activateSubscriptionForPayment(paymentId, payment);
+      await ref.update({
+        status: "SUCCESS",
+        gatewayReference: reference,
+        subscriptionId: activation.subscriptionId,
+        verifiedAtEpochMs: Date.now(),
+        updatedAtEpochMs: Date.now()
+      });
+      await incrementCouponUsage(payment.couponCode);
+    } else if (status === "FAILED" || status === "CANCELLED") {
+      await ref.update({
+        status: status === "CANCELLED" ? "FAILED" : "FAILED",
+        gatewayReference: reference,
+        updatedAtEpochMs: Date.now()
+      });
+    } else if (status === "REFUNDED") {
+      await ref.update({
+        status: "REFUNDED",
+        gatewayReference: reference,
+        refundAmountMinor: Number(payment.amountMinor || 0),
+        refundedAtEpochMs: Date.now(),
+        updatedAtEpochMs: Date.now()
+      });
+      if (payment.subscriptionId) {
+        await db.collection("subscriptions").doc(payment.subscriptionId).set({
+          status: "CANCELLED",
+          cancelledAtEpochMs: Date.now(),
+          updatedAtEpochMs: Date.now()
+        }, { merge: true });
+      }
+    } else {
+      await ref.update({
+        status: "PENDING",
+        gatewayReference: reference,
+        updatedAtEpochMs: Date.now()
+      });
+    }
+
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error("paymentGatewayWebhook", error);
+    res.status(500).send("Webhook processing failed.");
+  }
 });
