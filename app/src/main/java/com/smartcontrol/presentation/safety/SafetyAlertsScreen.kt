@@ -19,7 +19,8 @@ fun SafetyAlertsScreen(
     ) {
         Text("Safety Alerts", style = MaterialTheme.typography.headlineSmall)
         Text("Alerts are visible to the signed-in device user. No hidden monitoring is used.")
-        Button(onClick = viewModel::createTestAlert) { Text("Create test alert") }
+        Button(onClick = viewModel::triggerSos, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Trigger SOS") }
+        OutlinedButton(onClick = viewModel::createTestAlert) { Text("Create test alert") }
         if (alerts.isEmpty()) Text("No safety alerts.")
         alerts.forEach { alert ->
             Card(Modifier.fillMaxWidth()) {
