@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 
@@ -73,6 +74,74 @@ async function getSubscriptionForUser(userId) {
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
+function planDurationMs(plan) {
+  const value = Math.max(1, Number(plan.durationValue || plan.durationDays || 30));
+  const unit = String(plan.durationUnit || "DAY").toUpperCase();
+  const factors = {
+    HOUR: 3600000,
+    DAY: 86400000,
+    WEEK: 7 * 86400000,
+    MONTH: 30 * 86400000,
+    YEAR: 365 * 86400000
+  };
+  return Math.round(value * (factors[unit] || factors.DAY));
+}
+
+async function activateSubscriptionForPayment(paymentId, payment) {
+  const now = Date.now();
+  const planSnap = await db.collection("plans").doc(payment.planId).get();
+  if (!planSnap.exists) throw new HttpsError("not-found", "Payment plan not found.");
+  const plan = planSnap.data() || {};
+  const existing = await getSubscriptionForUser(payment.userId);
+  const startsAt = existing?.expiresAtEpochMs > now ? existing.expiresAtEpochMs : now;
+  const expiresAt = startsAt + planDurationMs(plan);
+  const subscriptionRef = existing
+    ? db.collection("subscriptions").doc(existing.id)
+    : db.collection("subscriptions").doc();
+
+  await subscriptionRef.set({
+    userId: payment.userId,
+    planId: payment.planId,
+    status: "ACTIVE",
+    startedAtEpochMs: existing?.startedAtEpochMs || now,
+    expiresAtEpochMs: expiresAt,
+    autoRenew: plan.autoRenew === true,
+    gracePeriodDays: Math.max(0, Number(plan.gracePeriodDays || 0)),
+    pausedAtEpochMs: null,
+    updatedAtEpochMs: now
+  }, { merge: true });
+
+  const config = await readPaymentConfig();
+  if (config["payment.autoInvoice"] !== "false") {
+    const invoiceRef = db.collection("invoices").doc(paymentId);
+    await invoiceRef.set({
+      paymentId,
+      subscriptionId: subscriptionRef.id,
+      userId: payment.userId,
+      planId: payment.planId,
+      invoiceNumber: "INV-" + paymentId.slice(0, 12).toUpperCase(),
+      amountMinor: payment.amountMinor,
+      currency: payment.currency,
+      template: String(config["payment.invoiceTemplate"] || "default"),
+      footer: String(config["payment.invoiceFooter"] || ""),
+      gstNumber: String(config["payment.gstNumber"] || ""),
+      companyDetails: String(config["payment.companyDetails"] || ""),
+      status: "ISSUED",
+      issuedAtEpochMs: now,
+      updatedAtEpochMs: now
+    }, { merge: true });
+  }
+  return { subscriptionId: subscriptionRef.id, expiresAtEpochMs: expiresAt };
+}
+
+async function incrementCouponUsage(code) {
+  if (!code) return;
+  await db.collection("coupons").doc(code).update({
+    usageCount: FieldValue.increment(1),
+    updatedAtEpochMs: Date.now()
+  }).catch(() => {});
+}
+
 exports.getPaymentConfig = onCall(async (request) => {
   requireAdmin(request);
   return { config: await readPaymentConfig() };
@@ -142,11 +211,11 @@ exports.createPayment = onCall(async (request) => {
   };
   await ref.set(payment);
 
-  if (couponId && payment.status === "SUCCESS") {
-    await db.collection("coupons").doc(couponId).update({
-      usageCount: FieldValue.increment(1),
-      updatedAtEpochMs: Date.now()
-    });
+  if (payment.status === "SUCCESS") {
+    const activation = await activateSubscriptionForPayment(ref.id, payment);
+    payment.subscriptionId = activation.subscriptionId;
+    await ref.update({ subscriptionId: activation.subscriptionId });
+    await incrementCouponUsage(couponId);
   }
 
   return { payment: { id: ref.id, ...payment } };
@@ -176,35 +245,10 @@ exports.verifyPayment = onCall(async (request) => {
   };
   await ref.update(update);
 
-  const existing = await getSubscriptionForUser(payment.userId);
-  const planSnap = await db.collection("plans").doc(payment.planId).get();
-  const plan = planSnap.exists ? planSnap.data() : {};
-  const durationDays = Math.max(1, Number(plan.durationDays || 30));
-  const startsAt = existing?.expiresAtEpochMs > now ? existing.expiresAtEpochMs : now;
-  const expiresAt = startsAt + durationDays * 86400000;
-  const subscriptionRef = existing
-    ? db.collection("subscriptions").doc(existing.id)
-    : db.collection("subscriptions").doc();
-
-  await subscriptionRef.set({
-    userId: payment.userId,
-    planId: payment.planId,
-    status: "ACTIVE",
-    startedAtEpochMs: existing?.startedAtEpochMs || now,
-    expiresAtEpochMs: expiresAt,
-    autoRenew: plan.autoRenew === true,
-    pausedAtEpochMs: null,
-    updatedAtEpochMs: now
-  }, { merge: true });
-
-  await ref.update({ subscriptionId: subscriptionRef.id });
-  if (payment.couponCode) {
-    await db.collection("coupons").doc(payment.couponCode).update({
-      usageCount: FieldValue.increment(1),
-      updatedAtEpochMs: now
-    }).catch(() => {});
-  }
-  return { ok: true, paymentId, subscriptionId: subscriptionRef.id, expiresAtEpochMs: expiresAt };
+  const activation = await activateSubscriptionForPayment(paymentId, payment);
+  await ref.update({ subscriptionId: activation.subscriptionId });
+  await incrementCouponUsage(payment.couponCode);
+  return { ok: true, paymentId, subscriptionId: activation.subscriptionId, expiresAtEpochMs: activation.expiresAtEpochMs };
 });
 
 exports.applyEmi = onCall(async (request) => {
@@ -230,6 +274,13 @@ exports.applyEmi = onCall(async (request) => {
     throw new HttpsError("not-found", "Payment not found.");
   }
   const payment = paymentSnap.data();
+  if (String(payment.paymentMethod || "").toUpperCase() !== "EMI") {
+    throw new HttpsError("failed-precondition", "EMI can only be applied to an EMI payment.");
+  }
+  const existingEmi = await db.collection("emiSchedule").where("paymentId", "==", paymentId).limit(1).get();
+  if (!existingEmi.empty) {
+    return { id: existingEmi.docs[0].id };
+  }
   const processingFeeMinor = money(config["payment.emiProcessingFeeMinor"] || 0);
   const downPercent = percent(config["payment.emiDownPaymentPercent"] || 0, "EMI down payment");
   const downPaymentMinor = Math.round(payment.amountMinor * downPercent / 100);
@@ -270,7 +321,7 @@ exports.refundPayment = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Refund window has expired.");
   }
 
-  const refundPercent = percent(config["payment.refundPercent"] || 100, "Refund percent");
+  const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
   const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
   await ref.update({
     status: "REFUNDED",
@@ -474,4 +525,60 @@ exports.duplicatePlan = onCall(async (request) => {
   const data = { ...source.data(), name: String(request.data?.newName || source.data()?.name || newId), createdAtEpochMs: Date.now(), updatedAtEpochMs: Date.now() };
   await target.set(data);
   return { ok: true, plan: { id: newId, ...data } };
+});
+
+
+exports.getPaymentInvoice = onCall(async (request) => {
+  requireAuth(request);
+  const paymentId = String(request.data?.paymentId || "").trim();
+  if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
+  const snap = await db.collection("invoices").doc(paymentId).get();
+  if (!snap.exists) throw new HttpsError("not-found", "Invoice not found.");
+  const invoice = snap.data() || {};
+  if (request.auth.token?.admin !== true && invoice.userId !== request.auth.uid) {
+    throw new HttpsError("permission-denied", "Invoice access denied.");
+  }
+  return { invoice: { id: snap.id, ...invoice } };
+});
+
+exports.getPaymentReportExport = onCall(async (request) => {
+  requireAdmin(request);
+  const start = Number(request.data?.startEpochMs || 0);
+  const end = Number(request.data?.endEpochMs || Date.now());
+  if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
+  const snap = await db.collection("payments")
+    .where("createdAtEpochMs", ">=", start)
+    .where("createdAtEpochMs", "<=", end)
+    .orderBy("createdAtEpochMs", "desc")
+    .limit(5000).get();
+  const esc = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const header = ["id","userId","planId","amountMinor","currency","gateway","paymentMethod","status","createdAtEpochMs"];
+  const csv = [
+    header.join(","),
+    ...snap.docs.map(d => {
+      const p = d.data() || {};
+      return header.map(k => esc(p[k])).join(",");
+    })
+  ].join("\n");
+  return { fileName: "payments-" + start + "-" + end + ".csv", mimeType: "text/csv", csv };
+});
+
+exports.expireSubscriptions = onSchedule("every 1 hours", async () => {
+  const now = Date.now();
+  const snap = await db.collection("subscriptions")
+    .where("status", "in", ["TRIAL", "ACTIVE", "PAST_DUE"])
+    .where("expiresAtEpochMs", "<=", now)
+    .limit(500).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  snap.docs.forEach(doc => {
+    const sub = doc.data() || {};
+    const graceDays = Math.max(0, Number(sub.gracePeriodDays || 0));
+    const graceUntil = Number(sub.expiresAtEpochMs || 0) + graceDays * 86400000;
+    batch.update(doc.ref, {
+      status: graceDays > 0 && now < graceUntil ? "PAST_DUE" : "EXPIRED",
+      updatedAtEpochMs: now
+    });
+  });
+  await batch.commit();
 });
