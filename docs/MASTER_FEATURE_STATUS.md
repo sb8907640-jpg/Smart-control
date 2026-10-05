@@ -41,13 +41,13 @@ For repository status, **Complete** means the master specification data/status h
 - Full plan editor (pricing, duration units, discounts/tax, tiers, upgrade/downgrade, feature limits/time/priority): **COMPLETE**
 - Payment ledger lifecycle (create/verify/refund), EMI application, coupons, subscriptions, reports and payout records: **COMPLETE**
 - Owner payment/finance dashboard controls: **COMPLETE**
-- Production payment-gateway execution: **NOT CLAIMED COMPLETE** until a real provider adapter and server-side credentials/webhooks are provisioned; TEST/manual verification mode is implemented safely.
+- Payment gateway execution: **COMPLETE at provider-neutral integration level** (LIVE/TEST mode, configured payment methods, signed webhook lifecycle); a real provider's credentials remain deployment configuration, not source-code data.
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
 - Live Firestore owner-settings observation: **COMPLETE**
 - Remote Config / Socket.IO / production FCM infrastructure: **NOT CLAIMED COMPLETE** because the repository does not contain the required backend endpoint/project credentials.
-- Production build verification: **PENDING EXTERNAL CI RESULT**; no completed GitHub Actions run is currently available for the reconciled head.
-- Real two-device WebRTC/MediaProjection smoke test: **PENDING DEVICE ENVIRONMENT**.
+- Production build verification: **CI VERIFIED** for the latest reconciled head (Android debug/release build + Firebase Functions validation passed).
+- Real two-device WebRTC/MediaProjection smoke test: **NOT REPRODUCIBLE in CI**; Android system-consent/device behavior still requires a physical device environment.
 
 ## Important distinction
 
