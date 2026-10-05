@@ -839,4 +839,25 @@ private fun OwnerHistoryPanel(
             }
         }
     }
+
+private fun csvSet(value: String): Set<String> =
+    value.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+
+private fun parseLongMap(value: String): Map<String, Long> =
+    value.split(",").mapNotNull { item ->
+        val parts = item.split("=", limit = 2)
+        if (parts.size != 2) null else parts[0].trim().takeIf { it.isNotBlank() }?.let { key ->
+            key to (parts[1].trim().toLongOrNull() ?: return@mapNotNull null)
+        }
+    }.toMap()
+
+private fun parseIntMap(value: String): Map<String, Int> =
+    value.split(",").mapNotNull { item ->
+        val parts = item.split("=", limit = 2)
+        if (parts.size != 2) null else parts[0].trim().takeIf { it.isNotBlank() }?.let { key ->
+            key to (parts[1].trim().toIntOrNull() ?: return@mapNotNull null)
+        }
+    }.toMap()
+
+
 }
