@@ -22,6 +22,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.features.FeatureCenterScreen
+import com.smartcontrol.presentation.consent.ConsentScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
@@ -33,12 +34,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var signedIn by remember { mutableStateOf(false) }
+            var consented by remember { mutableStateOf(getSharedPreferences("legal_consent", MODE_PRIVATE).getBoolean("accepted", false)) }
             var settings by remember { mutableStateOf(false) }; var pairing by remember { mutableStateOf(false) }; var permissions by remember { mutableStateOf(false) }
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
             var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
-            if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
+            if (!consented) ConsentScreen(this@MainActivity) { consented = true }
+            else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
                 LaunchedEffect(Unit) {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
                 }
