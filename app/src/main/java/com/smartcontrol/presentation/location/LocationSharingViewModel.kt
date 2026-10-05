@@ -1,4 +1,5 @@
 package com.smartcontrol.presentation.location
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -24,6 +25,7 @@ class LocationSharingViewModel @Inject constructor(
     private val repository: FirestoreLocationSharingRepository,
     private val auth: FirebaseAuth
 ) : ViewModel() {
+    private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
     private val _sharing = MutableStateFlow(false)
     val sharing: StateFlow<Boolean> = _sharing
     private val _lastLocation = MutableStateFlow<SharedLocation?>(null)
@@ -35,6 +37,7 @@ class LocationSharingViewModel @Inject constructor(
     @SuppressLint("MissingPermission")
     fun publishCurrentLocation() = viewModelScope.launch {
         val uid = auth.currentUser?.uid ?: return@launch
+        if (!privacyPrefs.getBoolean("allow_location_sharing", true)) return@launch
         if (!hasPermission) return@launch
         val location = LocationServices.getFusedLocationProviderClient(context).lastLocation.await() ?: return@launch
         val shared = SharedLocation(uid, location.latitude, location.longitude, location.accuracy, System.currentTimeMillis())
