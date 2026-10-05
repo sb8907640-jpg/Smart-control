@@ -35,7 +35,7 @@ class FirebaseBillingRepository @Inject constructor(
             mapOf(
                 "planId" to payment.planId,
                 "gateway" to payment.gateway,
-                "paymentMethod" to payment.gateway
+                "paymentMethod" to payment.paymentMethod
             )
         ).await()
         val data = result.getData() as? Map<*, *> ?: error("Invalid payment response")
@@ -143,6 +143,7 @@ class FirebaseBillingRepository @Inject constructor(
             currency = data["currency"]?.toString() ?: "INR",
             gateway = data["gateway"]?.toString() ?: "TEST",
             gatewayReference = data["gatewayReference"]?.toString(),
+            paymentMethod = data["paymentMethod"]?.toString() ?: data["gateway"]?.toString() ?: "UPI",
             status = status,
             createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
             planId = data["planId"]?.toString() ?: ""
