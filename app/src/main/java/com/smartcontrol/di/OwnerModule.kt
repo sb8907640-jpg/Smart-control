@@ -1,5 +1,7 @@
 package com.smartcontrol.di
 
+import com.smartcontrol.data.billing.FirestoreOwnerBillingRepository
+import com.smartcontrol.data.billing.OwnerBillingRepository
 import com.smartcontrol.data.owner.FirestoreOwnerSettingsRepository
 import com.smartcontrol.domain.owner.OwnerSettingsRepository
 import dagger.Binds
@@ -14,4 +16,8 @@ abstract class OwnerModule {
     @Binds
     @Singleton
     abstract fun bindOwnerSettingsRepository(impl: FirestoreOwnerSettingsRepository): OwnerSettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindOwnerBillingRepository(impl: FirestoreOwnerBillingRepository): OwnerBillingRepository
 }
