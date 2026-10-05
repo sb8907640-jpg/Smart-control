@@ -30,7 +30,7 @@ class SafetyAlertsViewModel @Inject constructor(
         }
     }
 
-    fun createTestAlert() {
+    fun triggerSos() {
         val id = deviceId
         if (id.isBlank()) return
         viewModelScope.launch {
@@ -38,8 +38,8 @@ class SafetyAlertsViewModel @Inject constructor(
                 SafetyAlert(
                     UUID.randomUUID().toString(),
                     id,
-                    "TEST",
-                    "Safety alert created by the signed-in device user.",
+                    "SOS",
+                    "SOS alert triggered by the signed-in device user.",
                     System.currentTimeMillis()
                 )
             )
