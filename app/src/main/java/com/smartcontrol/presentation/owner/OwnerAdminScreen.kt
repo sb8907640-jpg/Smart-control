@@ -194,7 +194,8 @@ private val ownerSections = listOf(
     "security" to "12. Security Settings",
     "data" to "13. Data Settings",
     "sos" to "14. SOS Settings",
-    "language" to "15. Language Settings"
+    "language" to "15. Language Settings",
+    "payment" to "16-20. Plan / Payment / EMI / Invoice / Refund Settings"
 )
 
 @Composable
