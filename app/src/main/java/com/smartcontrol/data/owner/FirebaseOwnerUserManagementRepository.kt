@@ -21,7 +21,7 @@ class FirebaseOwnerUserManagementRepository @Inject constructor(
     override suspend fun listUsers(): Result<List<OwnerManagedUser>> = runCatching {
         requireAdmin()
         val result = functions.getHttpsCallable("listOwnerUsers").call().await()
-        val data = result.data as? Map<*, *> ?: emptyMap<Any, Any>()
+        val data = result.getData() as? Map<*, *> ?: emptyMap<Any, Any>()
         val users = data["users"] as? List<*> ?: emptyList<Any>()
         users.mapNotNull { raw ->
             val item = raw as? Map<*, *> ?: return@mapNotNull null
