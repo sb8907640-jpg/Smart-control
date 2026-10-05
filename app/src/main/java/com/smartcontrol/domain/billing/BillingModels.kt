@@ -46,7 +46,7 @@ data class Subscription(
     val expiresAtEpochMs: Long,
     val autoRenew: Boolean
 ) {
-    enum class Status { TRIAL, ACTIVE, PAST_DUE, CANCELLED, EXPIRED }
+    enum class Status { TRIAL, ACTIVE, PAST_DUE, PAUSED, CANCELLED, EXPIRED }
 }
 
 data class Payment(
@@ -57,6 +57,7 @@ data class Payment(
     val currency: String,
     val gateway: String,
     val gatewayReference: String?,
+    val paymentMethod: String = "UPI",
     val status: Status,
     val createdAtEpochMs: Long,
     val planId: String = ""
