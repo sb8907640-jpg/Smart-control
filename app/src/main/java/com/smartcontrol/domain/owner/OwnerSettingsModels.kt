@@ -1,6 +1,7 @@
 package com.smartcontrol.domain.owner
 
 import com.smartcontrol.domain.spec.FeatureId
+import com.smartcontrol.domain.spec.MasterControlConfig
 
 data class FeatureOverride(
     val featureId: FeatureId,
@@ -26,7 +27,12 @@ data class OwnerSettings(
     val sosEnabled: Boolean,
     val dataDownloadEnabled: Boolean,
     val dataShareEnabled: Boolean,
-    val dataDeleteEnabled: Boolean
+    val dataDeleteEnabled: Boolean,
+    /**
+     * Canonical master-spec configuration. Kept last with a default so existing
+     * callers remain source-compatible while the complete configuration is persisted.
+     */
+    val masterConfig: MasterControlConfig = MasterControlConfig()
 )
 
 interface OwnerSettingsRepository {
