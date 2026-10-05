@@ -17,6 +17,14 @@ data class PermissionCopy(
     val displayOrder: Int
 )
 
+data class OwnerSettingsHistoryEntry(
+    val id: String,
+    val changedBy: String,
+    val changedAtEpochMs: Long,
+    val summary: String,
+    val settings: OwnerSettings
+)
+
 data class OwnerSettings(
     val globalFeaturesEnabled: Boolean,
     val featureOverrides: Map<FeatureId, FeatureOverride>,
@@ -39,4 +47,6 @@ interface OwnerSettingsRepository {
     suspend fun isAdmin(): Boolean
     suspend fun observe(): kotlinx.coroutines.flow.Flow<OwnerSettings>
     suspend fun save(settings: OwnerSettings): Result<Unit>
+    suspend fun observeHistory(): kotlinx.coroutines.flow.Flow<List<OwnerSettingsHistoryEntry>>
+    suspend fun rollback(historyId: String): Result<Unit>
 }
