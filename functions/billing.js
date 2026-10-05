@@ -52,10 +52,11 @@ function effectivePlanPrice(plan) {
   return Math.max(0, afterPercent - discountMinor);
 }
 
-function applyTax(amountMinor, config) {
+function applyTax(amountMinor, config, planTaxPercent = 0) {
   const tax = Number(config["payment.gstPercent"] || 0)
     + Number(config["payment.vatPercent"] || 0)
-    + Number(config["payment.serviceTaxPercent"] || 0);
+    + Number(config["payment.serviceTaxPercent"] || 0)
+    + Number(planTaxPercent || 0);
   percent(tax, "Combined tax");
   if (config["payment.taxInclusive"] === "true") return amountMinor;
   return Math.round(amountMinor + amountMinor * tax / 100);
@@ -220,7 +221,7 @@ exports.createPayment = onCall(async (request) => {
     couponId = couponCode;
   }
 
-  amountMinor = applyTax(amountMinor, config);
+  amountMinor = applyTax(amountMinor, config, plan.taxPercent);
   const ref = db.collection("payments").doc();
   const payment = {
     userId: request.auth.uid,
@@ -231,6 +232,7 @@ exports.createPayment = onCall(async (request) => {
     gateway,
     paymentMethod: method,
     gatewayReference: null,
+    paymentMethod: method,
     couponCode: couponId,
     status: amountMinor === 0 ? "SUCCESS" : "PENDING",
     createdAtEpochMs: Date.now(),
