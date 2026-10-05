@@ -23,6 +23,7 @@ The repository now has a dedicated status record in `docs/MASTER_FEATURE_STATUS.
 9. Wired Notification Access into the Feature Center and main navigation.
 10. Scanned repository basenames: no accidental duplicate Feature Center implementation was found. Root/app Gradle files and root/config README files are intentionally different scopes.
 11. Reconciled the full master configuration data into the owner settings model, persistence, admin UI, and tests without dropping existing settings fields.
+12. Added the Owner Control Plane with the master file's 15 editable Settings sections, owner-panel visibility/admin-claim policy, real-time/change-log/rollback flags, and Firestore merge persistence.
 
 ## Intentionally not implemented
 The original master text contains requirements for hidden owner access, covert capture, silent permission bypass, unrestricted background control, persistence through factory reset, and unrestricted arbitrary remote touch/keyboard injection. These are not implemented. The safe-aligned design uses authenticated admin access, visible sessions, system permissions/consent, visible Stop/Disconnect controls, and Android OS boundaries.
@@ -30,4 +31,4 @@ The original master text contains requirements for hidden owner access, covert c
 ## Verification boundary
 A completed GitHub Actions run is required before calling the current head build-verified. Firebase production deployment, TURN production credentials, release signing, and a real two-device WebRTC/MediaProjection smoke test also require environment/device verification outside source review.
 
-**Current status:** Master data/status reconciliation is **COMPLETE**. Build/device/backend verification is **PENDING EXTERNAL ENVIRONMENT**, not falsely marked complete.
+**Current status:** Master data + Owner Settings reconciliation is **COMPLETE** at source/config/UI level. Build/device/backend verification is **PENDING EXTERNAL ENVIRONMENT**, not falsely marked complete.
