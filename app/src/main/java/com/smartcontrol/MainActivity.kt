@@ -18,6 +18,7 @@ import com.smartcontrol.presentation.owner.OwnerAdminScreen
 import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
 import com.smartcontrol.presentation.audit.AuditLogScreen
 import com.smartcontrol.presentation.privacy.PrivacyControlsScreen
+import com.smartcontrol.presentation.feature.FeatureCenterScreen
 import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.safety.SafetyAlertsScreen
@@ -45,7 +46,7 @@ class MainActivity : ComponentActivity() {
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
-            var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
+            var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
             var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }; var appInstall by remember { mutableStateOf(false) }
             if (!consented) ConsentScreen(this@MainActivity) { consented = true }
             else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     emergencyContacts -> EmergencyContactsScreen(ownerUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(), onBack = { emergencyContacts = false })
                     auditLog -> AuditLogScreen(deviceId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(), onBack = { auditLog = false })
                     privacyControls -> PrivacyControlsScreen(onBack = { privacyControls = false }, context = this@MainActivity)
+                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false })
                     profile -> ProfileScreen(onBack = { profile = false }, onOwnerAdmin = { ownerAdmin = true }, onEmergencyContacts = { emergencyContacts = true }, onAuditLog = { auditLog = true }, onPrivacyControls = { privacyControls = true })
                     settings -> SettingsScreen(onBack = { settings = false }, onEndSession = { settings = false }, onPairing = { pairing = true }, onPermissions = { permissions = true })
                     else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true }, onFeatureCenter = { featureCenter = true })
