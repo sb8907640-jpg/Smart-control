@@ -42,6 +42,11 @@ class MediaSessionViewModel @Inject constructor(
     val lastError = MutableStateFlow<String?>(null)
 
     fun request(capabilities: Set<MediaCapability>) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_session_requests", true) ||
+            !privacyPrefs.getBoolean("allow_media_sharing", true)) {
+            lastError.value = "Privacy Controls are blocking remote media/session requests."
+            return@launch
+        }
         val device = controlledDevice.value ?: run {
             lastError.value = "Pair a client device first."
             return@launch
@@ -71,6 +76,7 @@ class MediaSessionViewModel @Inject constructor(
     fun startPublishing(session: MediaSession, projectionIntent: Intent?) = viewModelScope.launch {
         if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
             lastError.value = "Media sharing is disabled in Privacy Controls."
+            signaling.stopSession(session.sessionId)
             return@launch
         }
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
@@ -79,6 +85,7 @@ class MediaSessionViewModel @Inject constructor(
         engine.publish(session.sessionId, session.capabilities, projectionIntent)
             .onSuccess { FamilySafetyService.setSyncing(context) }
             .onFailure {
+                signaling.stopSession(session.sessionId)
                 MediaProjectionForegroundService.stop(context)
                 FamilySafetyService.setIdle(context)
                 lastError.value = it.message
@@ -88,13 +95,19 @@ class MediaSessionViewModel @Inject constructor(
     fun eglBase() = engine.eglBase()
 
     fun connectViewer(session: MediaSession, sink: VideoSink?) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
+            lastError.value = "Media sharing is disabled in Privacy Controls."
+            return@launch
+        }
         engine.view(session.sessionId, sink).onFailure { lastError.value = it.message }
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
         engine.stop(sessionId)
+        signaling.stopSession(sessionId).onFailure { lastError.value = it.message }
         MediaProjectionForegroundService.stop(context)
         FamilySafetyService.setIdle(context)
+        selectedId.value = null
     }
 
     override fun onCleared() {
