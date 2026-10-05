@@ -79,7 +79,7 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         val syncResult = functions.getHttpsCallable("syncOwnerAccounts")
             .call(mapOf("emails" to normalizedEmails, "mobiles" to normalizedMobiles))
             .await()
-        val syncData = syncResult.data as? Map<*, *> ?: emptyMap<Any, Any>()
+        val syncData = syncResult.getData() as? Map<*, *> ?: emptyMap<Any, Any>()
         val unresolved = (syncData["unresolved"] as? List<*>)?.map { it.toString() }.orEmpty()
         check(unresolved.isEmpty()) {
             "These owner accounts are not registered in Firebase Auth: " + unresolved.joinToString(", ")
