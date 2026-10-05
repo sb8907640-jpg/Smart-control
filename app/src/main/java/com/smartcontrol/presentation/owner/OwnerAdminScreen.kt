@@ -422,6 +422,21 @@ fun OwnerAdminScreen(
                     }
 
                     item {
+                        OwnerPaymentPanel(
+                            payments = viewModel.payments,
+                            subscriptions = viewModel.subscriptions,
+                            payouts = viewModel.payouts,
+                            reportTotalMinor = viewModel.reportTotalMinor,
+                            onRefresh = viewModel::refreshPaymentData,
+                            onVerify = viewModel::verifyPayment,
+                            onRefund = viewModel::refundPayment,
+                            onSaveCoupon = viewModel::saveCoupon,
+                            onRecordPayout = viewModel::recordPayout,
+                            onLoadReport = viewModel::loadPaymentReport
+                        )
+                    }
+
+                    item {
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp)) {
                                 Text("Save / persistence", style = MaterialTheme.typography.titleMedium)
@@ -937,6 +952,92 @@ private fun OwnerHistoryPanel(
             }
         }
     }
+
+@Composable
+private fun OwnerPaymentPanel(
+    payments: List<Payment>,
+    subscriptions: List<Subscription>,
+    payouts: List<PayoutRecord>,
+    reportTotalMinor: Long,
+    onRefresh: () -> Unit,
+    onVerify: (String, String) -> Unit,
+    onRefund: (String) -> Unit,
+    onSaveCoupon: (String, String, String, String) -> Unit,
+    onRecordPayout: (String, String, String) -> Unit,
+    onLoadReport: (Long, Long) -> Unit
+) {
+    var reference by remember { mutableStateOf("") }
+    var couponCode by remember { mutableStateOf("") }
+    var couponPercent by remember { mutableStateOf("0") }
+    var couponMinor by remember { mutableStateOf("0") }
+    var couponLimit by remember { mutableStateOf("0") }
+    var payoutAmount by remember { mutableStateOf("0") }
+    var payoutMethod by remember { mutableStateOf("BANK_TRANSFER") }
+    var payoutAccount by remember { mutableStateOf("") }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Payment & Finance Management", style = MaterialTheme.typography.titleLarge)
+                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            }
+            Text("Secure backend ledger: payment verification, refunds, subscriptions, coupons, reports and payout records.")
+
+            OutlinedTextField(reference, { reference = it }, label = { Text("Gateway reference for selected payment") }, modifier = Modifier.fillMaxWidth())
+            payments.take(50).forEach { payment ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(8.dp)) {
+                        Text("Payment " + payment.id)
+                        Text("User: " + payment.userId + " • Plan: " + payment.planId)
+                        Text(payment.currency + " " + (payment.amountMinor / 100.0) + " • " + payment.status)
+                        Text("Gateway: " + payment.gateway)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (payment.status == Payment.Status.PENDING || payment.status == Payment.Status.CREATED) {
+                                OutlinedButton(onClick = { onVerify(payment.id, reference) }, enabled = reference.isNotBlank()) {
+                                    Text("Verify")
+                                }
+                            }
+                            if (payment.status == Payment.Status.SUCCESS) {
+                                OutlinedButton(onClick = { onRefund(payment.id) }) { Text("Refund") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text("Subscriptions", style = MaterialTheme.typography.titleMedium)
+            subscriptions.take(50).forEach {
+                Text(it.userId + " • " + it.planId + " • " + it.status + " • expires " + it.expiresAtEpochMs)
+            }
+
+            Text("Coupon / Discount", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(couponCode, { couponCode = it.uppercase() }, label = { Text("Coupon code") }, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(couponPercent, { couponPercent = it }, label = { Text("Discount %") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(couponMinor, { couponMinor = it.filter(Char::isDigit) }, label = { Text("Discount minor") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(couponLimit, { couponLimit = it.filter(Char::isDigit) }, label = { Text("Usage limit") }, modifier = Modifier.weight(1f))
+            }
+            Button(onClick = { onSaveCoupon(couponCode, couponPercent, couponMinor, couponLimit) }) { Text("Create / Save Coupon") }
+
+            Text("Payment Report", style = MaterialTheme.typography.titleMedium)
+            Button(onClick = {
+                val end = System.currentTimeMillis()
+                onLoadReport(end - 30L * 86_400_000L, end)
+            }) { Text("Load last 30 days") }
+            Text("Report total: ₹" + (reportTotalMinor / 100.0))
+
+            Text("Payout", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(payoutAmount, { payoutAmount = it }, label = { Text("Amount ₹") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(payoutMethod, { payoutMethod = it.uppercase() }, label = { Text("Method") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(payoutAccount, { payoutAccount = it }, label = { Text("Account label") }, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { onRecordPayout(payoutAmount, payoutMethod, payoutAccount) }) { Text("Record Payout") }
+            payouts.take(20).forEach {
+                Text("Payout " + it.id + " • ₹" + (it.amountMinor / 100.0) + " • " + it.method + " • " + it.status)
+            }
+        }
+    }
+}
+
 
 private fun csvSet(value: String): Set<String> =
     value.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
