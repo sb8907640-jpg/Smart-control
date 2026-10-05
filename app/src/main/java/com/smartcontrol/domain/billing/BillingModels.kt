@@ -133,14 +133,14 @@ interface BillingRepository {
     ): Result<Payment>
     suspend fun createEmiSchedule(schedule: EmiSchedule): Result<EmiSchedule>
     suspend fun grantFreeAccess(grant: FreeGrant): Result<FreeGrant>
-    suspend fun listPayments(): Result<List<Payment>>
-    suspend fun listSubscriptions(): Result<List<Subscription>>
-    suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit>
-    suspend fun refundPayment(paymentId: String): Result<Long>
-    suspend fun createCoupon(coupon: Coupon): Result<Unit>
-    suspend fun updateCoupon(coupon: Coupon): Result<Unit>
-    suspend fun deleteCoupon(code: String): Result<Unit>
-    suspend fun getPaymentReport(startEpochMs: Long, endEpochMs: Long): Result<Pair<Long, List<Payment>>>
-    suspend fun recordPayout(payout: PayoutRecord): Result<PayoutRecord>
-    suspend fun listPayouts(): Result<List<PayoutRecord>>
+    suspend fun listPayments(): Result<List<Payment>> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun listSubscriptions(): Result<List<Subscription>> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun refundPayment(paymentId: String): Result<Long> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun createCoupon(coupon: Coupon): Result<Unit> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun updateCoupon(coupon: Coupon): Result<Unit> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun deleteCoupon(code: String): Result<Unit> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun getPaymentReport(startEpochMs: Long, endEpochMs: Long): Result<Pair<Long, List<Payment>>> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun recordPayout(payout: PayoutRecord): Result<PayoutRecord> = Result.failure(UnsupportedOperationException("Owner-only operation"))
+    suspend fun listPayouts(): Result<List<PayoutRecord>> = Result.failure(UnsupportedOperationException("Owner-only operation"))
 }
