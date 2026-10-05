@@ -18,7 +18,7 @@ service cloud.firestore {
     match /pairingCodes/{token} {
       allow create: if request.auth != null && request.resource.data.deviceUid == request.auth.uid;
       allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
-      allow delete: if request.auth != null;
+      allow delete: if request.auth != null && resource.data.deviceUid == request.auth.uid;
       allow update: if false;
     }
 
@@ -151,6 +151,11 @@ service cloud.firestore {
         allow read: if request.auth != null
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow update: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedBy'])
+          && request.resource.data.acknowledged == true;
       }
     }
   }
