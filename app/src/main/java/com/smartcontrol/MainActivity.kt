@@ -29,6 +29,7 @@ import com.smartcontrol.presentation.localdata.SmsScreen
 import com.smartcontrol.presentation.localdata.CallLogsScreen
 import com.smartcontrol.presentation.localdata.AppUsageScreen
 import com.smartcontrol.presentation.localdata.ClipboardScreen
+import com.smartcontrol.presentation.localdata.AppInstallScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -45,19 +46,20 @@ class MainActivity : ComponentActivity() {
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
             var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
-            var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }
+            var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }; var appInstall by remember { mutableStateOf(false) }
             if (!consented) ConsentScreen(this@MainActivity) { consented = true }
             else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
                 LaunchedEffect(Unit) {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
                 }
                 when {
+                    appInstall -> AppInstallScreen(onBack = { appInstall = false })
                     contacts -> ContactsScreen(onBack = { contacts = false })
                     sms -> SmsScreen(onBack = { sms = false })
                     callLogs -> CallLogsScreen(onBack = { callLogs = false })
                     appUsage -> AppUsageScreen(onBack = { appUsage = false })
                     clipboard -> ClipboardScreen(onBack = { clipboard = false })
-                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false }, onContacts = { contacts = true }, onSms = { sms = true }, onCallLogs = { callLogs = true }, onAppUsage = { appUsage = true }, onClipboard = { clipboard = true })
+                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false }, onContacts = { contacts = true }, onSms = { sms = true }, onCallLogs = { callLogs = true }, onAppUsage = { appUsage = true }, onClipboard = { clipboard = true }, onAppInstall = { appInstall = true })
                     safetyAlerts -> SafetyAlertsScreen(onBack = { safetyAlerts = false })
                     deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
                     location -> LocationSharingScreen(onBack = { location = false })
