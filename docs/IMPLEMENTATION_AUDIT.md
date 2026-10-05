@@ -27,11 +27,10 @@ Updated against the current repository after specification reconciliation.
 - GitHub Actions Android build and Firebase Functions syntax validation
 
 ## Reconciliation fixes made in this pass
-1. Added a visible 19 Feature Center screen.
-2. Wired Feature Center into MainActivity navigation.
-3. Normalized lifecycle ViewModel scope usage in Emergency Contacts and Owner/Admin screens.
-4. Added unit coverage for the 19-feature catalog and remote-command safety gate.
-5. Corrected Feature Center online/offline label rendering.
+1. Reconciled MainActivity with the repository's existing canonical 19 Feature Center instead of maintaining a duplicate screen.
+2. Normalized lifecycle ViewModel scope usage in Emergency Contacts and Owner/Admin screens.
+3. Added unit coverage for the 19-feature catalog and remote-command safety gate.
+4. Removed the duplicate Feature Center implementation introduced during reconciliation.
 
 ## Remaining verification boundaries
 The repository must not be described as production-complete until a completed GitHub Actions run is observed for the current head and, separately, Firebase backend deployment/configuration is verified.
