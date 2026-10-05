@@ -10,6 +10,7 @@ import com.smartcontrol.domain.owner.PermissionCopy
 import com.smartcontrol.domain.spec.FeatureAccess
 import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.domain.spec.MasterControlConfig
+import com.smartcontrol.domain.spec.OwnerControlConfig
 import com.smartcontrol.domain.spec.PermissionMode
 import com.smartcontrol.domain.spec.PermissionText
 import com.smartcontrol.domain.spec.PlanDefinition
@@ -160,6 +161,16 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             "enabled" to config.support.enabled,
             "publicNumber" to config.support.publicNumber,
             "showOwnerIdentityToClient" to config.support.showOwnerIdentityToClient
+        ),
+        "ownerControl" to mapOf(
+            "ownerRole" to config.ownerControl.ownerRole,
+            "ownerPanelHiddenFromNormalUsers" to config.ownerControl.ownerPanelHiddenFromNormalUsers,
+            "requireFirebaseAdminClaim" to config.ownerControl.requireFirebaseAdminClaim,
+            "separateOwnerRoute" to config.ownerControl.separateOwnerRoute,
+            "realtimeApply" to config.ownerControl.realtimeApply,
+            "changeLogEnabled" to config.ownerControl.changeLogEnabled,
+            "rollbackEnabled" to config.ownerControl.rollbackEnabled,
+            "editableValues" to config.ownerControl.editableValues
         )
     )
 
@@ -226,6 +237,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         val content = map(root["content"])
         val security = map(root["security"])
         val support = map(root["support"])
+        val ownerControl = map(root["ownerControl"])
 
         return MasterControlConfig(
             app = MasterControlConfig().app.copy(
@@ -294,6 +306,16 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
                 enabled = support["enabled"] as? Boolean ?: true,
                 publicNumber = support["publicNumber"]?.toString(),
                 showOwnerIdentityToClient = support["showOwnerIdentityToClient"] as? Boolean ?: false
+            ),
+            ownerControl = OwnerControlConfig(
+                ownerRole = ownerControl["ownerRole"]?.toString() ?: "OWNER",
+                ownerPanelHiddenFromNormalUsers = ownerControl["ownerPanelHiddenFromNormalUsers"] as? Boolean ?: true,
+                requireFirebaseAdminClaim = ownerControl["requireFirebaseAdminClaim"] as? Boolean ?: true,
+                separateOwnerRoute = ownerControl["separateOwnerRoute"] as? Boolean ?: true,
+                realtimeApply = ownerControl["realtimeApply"] as? Boolean ?: true,
+                changeLogEnabled = ownerControl["changeLogEnabled"] as? Boolean ?: true,
+                rollbackEnabled = ownerControl["rollbackEnabled"] as? Boolean ?: true,
+                editableValues = stringMap(ownerControl["editableValues"]).ifEmpty { OwnerControlConfig.defaultEditableValues() }
             )
         )
     }
