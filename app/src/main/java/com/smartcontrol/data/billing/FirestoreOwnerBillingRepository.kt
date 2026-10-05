@@ -191,7 +191,11 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         "tierLevel" to plan.tierLevel,
         "upgradePlanIds" to plan.upgradePlanIds.toList(),
         "downgradePlanIds" to plan.downgradePlanIds.toList(),
-        "crossGradeEnabled" to plan.crossGradeEnabled
+        "crossGradeEnabled" to plan.crossGradeEnabled,
+        "colorKey" to plan.colorKey,
+        "featureLimits" to plan.featureLimits,
+        "featureTimeLimitsSeconds" to plan.featureTimeLimitsSeconds,
+        "featurePriorities" to plan.featurePriorities
     )
 
     private fun decodePlan(id: String, data: Map<String, Any?>?): Plan? {
@@ -228,7 +232,11 @@ class FirestoreOwnerBillingRepository @Inject constructor(
             tierLevel = (data["tierLevel"] as? Number)?.toInt() ?: 0,
             upgradePlanIds = (data["upgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
             downgradePlanIds = (data["downgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
-            crossGradeEnabled = data["crossGradeEnabled"] as? Boolean ?: true
+            crossGradeEnabled = data["crossGradeEnabled"] as? Boolean ?: true,
+            colorKey = data["colorKey"]?.toString() ?: "",
+            featureLimits = decodeLongMap(data["featureLimits"]),
+            featureTimeLimitsSeconds = decodeLongMap(data["featureTimeLimitsSeconds"]),
+            featurePriorities = decodeIntMap(data["featurePriorities"])
         )
     }
 
@@ -279,4 +287,19 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         hiddenLoginPath = data["hiddenLoginPath"]?.toString() ?: "",
         updatedAtEpochMs = (data["updatedAtEpochMs"] as? Number)?.toLong() ?: 0L
     )
+
+    private fun decodeLongMap(value: Any?): Map<String, Long> =
+        (value as? Map<*, *>)?.mapNotNull { (key, item) ->
+            val k = key?.toString() ?: return@mapNotNull null
+            val v = (item as? Number)?.toLong() ?: return@mapNotNull null
+            k to v
+        }?.toMap().orEmpty()
+
+    private fun decodeIntMap(value: Any?): Map<String, Int> =
+        (value as? Map<*, *>)?.mapNotNull { (key, item) ->
+            val k = key?.toString() ?: return@mapNotNull null
+            val v = (item as? Number)?.toInt() ?: return@mapNotNull null
+            k to v
+        }?.toMap().orEmpty()
+
 }
