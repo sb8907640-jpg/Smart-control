@@ -3,9 +3,8 @@ package com.smartcontrol.domain.spec
 /**
  * Canonical data contract for the supplied Smart Control master specification.
  *
- * This file is intentionally a data contract only. Android OS permissions,
- * MediaProjection, Accessibility, notification access, and user approval
- * remain mandatory at the feature/session layer.
+ * Android OS permissions, MediaProjection, Accessibility, notification access,
+ * and user approval remain mandatory at the feature/session layer.
  */
 data class MasterControlConfig(
     val app: AppBrandingConfig = AppBrandingConfig(),
@@ -16,7 +15,8 @@ data class MasterControlConfig(
     val notifications: NotificationConfig = NotificationConfig(),
     val content: ContentConfig = ContentConfig(),
     val security: SecurityConfig = SecurityConfig(),
-    val support: SupportConfig = SupportConfig()
+    val support: SupportConfig = SupportConfig(),
+    val ownerControl: OwnerControlConfig = OwnerControlConfig()
 )
 
 data class AppBrandingConfig(
