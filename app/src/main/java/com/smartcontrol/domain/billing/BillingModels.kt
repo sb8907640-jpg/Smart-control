@@ -12,7 +12,21 @@ data class Plan(
     val deviceLimit: Int,
     val userLimit: Int,
     val storageLimitBytes: Long,
-    val bandwidthLimitBytes: Long
+    val bandwidthLimitBytes: Long,
+    val tagline: String = "",
+    val iconKey: String = "",
+    val badge: String = "",
+    val durationUnit: String = "DAY",
+    val durationValue: Long = durationDays.toLong(),
+    val autoRenew: Boolean = false,
+    val gracePeriodDays: Int = 0,
+    val expiryReminderDays: Int = 3,
+    val discountPercent: Double = 0.0,
+    val discountMinor: Long = 0L,
+    val taxPercent: Double = 0.0,
+    val originalPriceMinor: Long? = null,
+    val offerPriceVisible: Boolean = true,
+    val displayOrder: Int = 0
 )
 
 data class Subscription(
@@ -61,8 +75,21 @@ data class FreeGrant(
     val planId: String,
     val startsAtEpochMs: Long,
     val expiresAtEpochMs: Long,
-    val revokedAtEpochMs: Long?
-)
+    val revokedAtEpochMs: Long?,
+    val userName: String = "",
+    val email: String = "",
+    val mobile: String = "",
+    val featureIds: Set<String> = emptySet(),
+    val deviceLimit: Int = 1,
+    val autoExpire: Boolean = true,
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
+    val updatedAtEpochMs: Long = System.currentTimeMillis()
+) {
+    fun isActive(nowEpochMs: Long = System.currentTimeMillis()): Boolean =
+        revokedAtEpochMs == null &&
+            (!autoExpire || expiresAtEpochMs > nowEpochMs) &&
+            startsAtEpochMs <= nowEpochMs
+}
 
 interface BillingRepository {
     suspend fun getPlans(): List<Plan>
