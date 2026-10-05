@@ -426,11 +426,39 @@ private fun OwnerBillingPanel(
 
     var planId by remember { mutableStateOf("") }
     var planName by remember { mutableStateOf("") }
+    var planDescription by remember { mutableStateOf("") }
+    var planTagline by remember { mutableStateOf("") }
+    var planIcon by remember { mutableStateOf("") }
+    var planColor by remember { mutableStateOf("") }
+    var planBadge by remember { mutableStateOf("") }
     var planPrice by remember { mutableStateOf("0") }
+    var planCurrency by remember { mutableStateOf("INR") }
     var planDuration by remember { mutableStateOf("30") }
+    var planDurationUnit by remember { mutableStateOf("DAY") }
     var planEnabled by remember { mutableStateOf(true) }
+    var planAutoRenew by remember { mutableStateOf(false) }
+    var planGraceDays by remember { mutableStateOf("0") }
+    var planReminderDays by remember { mutableStateOf("3") }
+    var planDiscountPercent by remember { mutableStateOf("0") }
+    var planDiscountMinor by remember { mutableStateOf("0") }
+    var planTaxPercent by remember { mutableStateOf("0") }
+    var planOriginalPrice by remember { mutableStateOf("") }
+    var planOfferVisible by remember { mutableStateOf(true) }
+    var planDisplayOrder by remember { mutableStateOf("0") }
+    var planTier by remember { mutableStateOf("0") }
+    var planDeviceLimit by remember { mutableStateOf("1") }
+    var planUserLimit by remember { mutableStateOf("1") }
+    var planStorageLimit by remember { mutableStateOf("0") }
+    var planBandwidthLimit by remember { mutableStateOf("0") }
+    var planUpgradeIds by remember { mutableStateOf("") }
+    var planDowngradeIds by remember { mutableStateOf("") }
+    var planCrossGrade by remember { mutableStateOf(true) }
+    var planFeatureLimits by remember { mutableStateOf("") }
+    var planFeatureTimes by remember { mutableStateOf("") }
+    var planFeaturePriorities by remember { mutableStateOf("") }
     var selectedFeatures by remember { mutableStateOf(emptySet<String>()) }
-    var selectedPlanId by remember { mutableStateOf<String?>(null) }
+    var duplicateId by remember { mutableStateOf("") }
+    var duplicateName by remember { mutableStateOf("") }
 
     var grantUserId by remember { mutableStateOf("") }
     var grantName by remember { mutableStateOf("") }
@@ -467,20 +495,66 @@ private fun OwnerBillingPanel(
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Plans & Permission System", style = MaterialTheme.typography.titleLarge)
-                Text("Owner can create, edit, enable/disable and delete plans. Feature switches below control which of the 19 master features the plan permits.")
+                Text("All master plan fields are editable. Payment configuration remains in the Owner Settings payment section below.")
                 OutlinedTextField(planId, { planId = it }, label = { Text("Plan ID") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(planName, { planName = it }, label = { Text("Plan name") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(planPrice, { planPrice = it }, label = { Text("Price ₹") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(planDuration, { planDuration = it }, label = { Text("Duration days") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planDescription, { planDescription = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planTagline, { planTagline = it }, label = { Text("Tagline") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planIcon, { planIcon = it }, label = { Text("Icon key") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planColor, { planColor = it }, label = { Text("Color key") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planBadge, { planBadge = it }, label = { Text("Badge") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planPrice, { planPrice = it }, label = { Text("Price") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planCurrency, { planCurrency = it.uppercase() }, label = { Text("Currency") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { planDuration = "30" }) { Text("30 days") }
-                    Button(onClick = { planDuration = "90" }) { Text("90 days") }
-                    Button(onClick = { planDuration = "365" }) { Text("365 days") }
+                    OutlinedTextField(planDurationUnit, { planDurationUnit = it.uppercase() }, label = { Text("Unit HOUR/DAY/WEEK/MONTH/YEAR") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planDuration, { planDuration = it.filter(Char::isDigit) }, label = { Text("Duration") }, modifier = Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { planDurationUnit = "DAY"; planDuration = "30" }) { Text("30 days") }
+                    Button(onClick = { planDurationUnit = "DAY"; planDuration = "90" }) { Text("90 days") }
+                    Button(onClick = { planDurationUnit = "DAY"; planDuration = "365" }) { Text("365 days") }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Plan enabled")
                     Switch(planEnabled, { planEnabled = it })
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Auto renew")
+                    Switch(planAutoRenew, { planAutoRenew = it })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(planGraceDays, { planGraceDays = it.filter(Char::isDigit) }, label = { Text("Grace days") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planReminderDays, { planReminderDays = it.filter(Char::isDigit) }, label = { Text("Expiry reminder days") }, modifier = Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(planDiscountPercent, { planDiscountPercent = it }, label = { Text("Discount %") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planDiscountMinor, { planDiscountMinor = it.filter(Char::isDigit) }, label = { Text("Discount minor") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planTaxPercent, { planTaxPercent = it }, label = { Text("Tax %") }, modifier = Modifier.weight(1f))
+                }
+                OutlinedTextField(planOriginalPrice, { planOriginalPrice = it }, label = { Text("Original price (optional)") }, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Show offer price")
+                    Switch(planOfferVisible, { planOfferVisible = it })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(planDisplayOrder, { planDisplayOrder = it.filter(Char::isDigit) }, label = { Text("Display order") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planTier, { planTier = it.filter(Char::isDigit) }, label = { Text("Tier level") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planDeviceLimit, { planDeviceLimit = it.filter(Char::isDigit) }, label = { Text("Device limit") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planUserLimit, { planUserLimit = it.filter(Char::isDigit) }, label = { Text("User limit") }, modifier = Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(planStorageLimit, { planStorageLimit = it.filter(Char::isDigit) }, label = { Text("Storage bytes") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(planBandwidthLimit, { planBandwidthLimit = it.filter(Char::isDigit) }, label = { Text("Bandwidth bytes") }, modifier = Modifier.weight(1f))
+                }
+                OutlinedTextField(planUpgradeIds, { planUpgradeIds = it }, label = { Text("Upgrade plan IDs, comma separated") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planDowngradeIds, { planDowngradeIds = it }, label = { Text("Downgrade plan IDs, comma separated") }, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Tier cross-grade enabled")
+                    Switch(planCrossGrade, { planCrossGrade = it })
+                }
+                OutlinedTextField(planFeatureLimits, { planFeatureLimits = it }, label = { Text("Feature limits: FEATURE=number, ...") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planFeatureTimes, { planFeatureTimes = it }, label = { Text("Feature time limits seconds: FEATURE=seconds, ...") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(planFeaturePriorities, { planFeaturePriorities = it }, label = { Text("Feature priorities: FEATURE=number, ...") }, modifier = Modifier.fillMaxWidth())
                 Text("Allowed features", style = MaterialTheme.typography.titleMedium)
                 FeatureCatalog.all.forEach { feature ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -495,23 +569,65 @@ private fun OwnerBillingPanel(
                     }
                 }
                 Button(onClick = {
-                    val id = planId.trim().ifBlank { "plan-${System.currentTimeMillis()}" }
+                    val id = planId.trim().ifBlank { "plan-" + System.currentTimeMillis() }
+                    val unit = planDurationUnit.trim().uppercase().ifBlank { "DAY" }
+                    val value = planDuration.toLongOrNull()?.coerceAtLeast(1L) ?: 30L
+                    val durationDays = when (unit) {
+                        "HOUR" -> ((value + 23L) / 24L).toInt()
+                        "WEEK" -> (value * 7L).toInt()
+                        "MONTH" -> (value * 30L).toInt()
+                        "YEAR" -> (value * 365L).toInt()
+                        else -> value.toInt()
+                    }
                     onPlanSave(
                         Plan(
                             id = id,
                             name = planName.ifBlank { id },
-                            description = "",
+                            description = planDescription,
                             priceMinor = ((planPrice.toDoubleOrNull() ?: 0.0) * 100).toLong(),
-                            durationDays = planDuration.toIntOrNull() ?: 30,
+                            currency = planCurrency.ifBlank { "INR" },
+                            durationDays = durationDays,
                             enabled = planEnabled,
                             featureIds = selectedFeatures,
-                            deviceLimit = 1,
-                            userLimit = 1,
-                            storageLimitBytes = 0L,
-                            bandwidthLimitBytes = 0L
+                            deviceLimit = planDeviceLimit.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                            userLimit = planUserLimit.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                            storageLimitBytes = planStorageLimit.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                            bandwidthLimitBytes = planBandwidthLimit.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                            tagline = planTagline,
+                            iconKey = planIcon,
+                            badge = planBadge,
+                            durationUnit = unit,
+                            durationValue = value,
+                            autoRenew = planAutoRenew,
+                            gracePeriodDays = planGraceDays.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                            expiryReminderDays = planReminderDays.toIntOrNull()?.coerceAtLeast(0) ?: 3,
+                            discountPercent = planDiscountPercent.toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0,
+                            discountMinor = planDiscountMinor.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                            taxPercent = planTaxPercent.toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0,
+                            originalPriceMinor = planOriginalPrice.toDoubleOrNull()?.let { (it * 100).toLong() },
+                            offerPriceVisible = planOfferVisible,
+                            displayOrder = planDisplayOrder.toIntOrNull() ?: 0,
+                            tierLevel = planTier.toIntOrNull() ?: 0,
+                            upgradePlanIds = csvSet(planUpgradeIds),
+                            downgradePlanIds = csvSet(planDowngradeIds),
+                            crossGradeEnabled = planCrossGrade,
+                            colorKey = planColor,
+                            featureLimits = parseLongMap(planFeatureLimits),
+                            featureTimeLimitsSeconds = parseLongMap(planFeatureTimes),
+                            featurePriorities = parseIntMap(planFeaturePriorities)
                         )
                     )
                 }) { Text("Create / Save Plan") }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(duplicateId, { duplicateId = it }, label = { Text("Duplicate as plan ID") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(duplicateName, { duplicateName = it }, label = { Text("Duplicate name") }, modifier = Modifier.weight(1f))
+                    Button(onClick = {
+                        if (selectedPlanId != null && duplicateId.isNotBlank()) {
+                            onPlanDuplicate(selectedPlanId!!, duplicateId.trim(), duplicateName.trim())
+                        }
+                    }) { Text("Duplicate") }
+                }
 
                 plans.forEach { plan ->
                     Card(Modifier.fillMaxWidth()) {
