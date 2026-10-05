@@ -49,7 +49,7 @@ class OwnerAdminViewModel @Inject constructor(
     }
 
     fun save() {
-        androidx.lifecycle.viewModelScope.launch {
+        viewModelScope.launch {
             saving = true
             message = repository.save(settings).fold({ "Settings saved." }, { it.message ?: "Save failed." })
             saving = false
