@@ -58,7 +58,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             ).await()
         }
         firestore.collection("ownerSettings").document("global")
-            .set(encoded, SetOptions.merge())
+            .set(stripNulls(encoded), SetOptions.merge())
             .await()
     }
 
