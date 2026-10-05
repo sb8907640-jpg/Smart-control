@@ -29,6 +29,7 @@ interface OwnerBillingRepository {
     fun observePlans(): Flow<List<Plan>>
     suspend fun savePlan(plan: Plan): Result<Unit>
     suspend fun deletePlan(planId: String): Result<Unit>
+    suspend fun duplicatePlan(sourcePlanId: String, newPlanId: String, newName: String): Result<Unit>
     fun observeFreeGrants(): Flow<List<FreeGrant>>
     suspend fun grantFreeAccess(grant: FreeGrant): Result<Unit>
     suspend fun updateFreeAccess(grant: FreeGrant): Result<Unit>
@@ -104,6 +105,14 @@ class FirestoreOwnerBillingRepository @Inject constructor(
             "publicVisible" to plan.enabled,
             "updatedAtEpochMs" to System.currentTimeMillis()
         ), SetOptions.merge()).await()
+    }
+
+    override suspend fun duplicatePlan(sourcePlanId: String, newPlanId: String, newName: String): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        require(sourcePlanId.isNotBlank() && newPlanId.isNotBlank()) { "Plan IDs are required." }
+        functions.getHttpsCallable("duplicatePlan").call(
+            mapOf("sourcePlanId" to sourcePlanId, "newPlanId" to newPlanId, "newName" to newName)
+        ).await()
     }
 
     override suspend fun deletePlan(planId: String): Result<Unit> = runCatching {
