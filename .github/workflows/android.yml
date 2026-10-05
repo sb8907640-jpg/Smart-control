@@ -42,7 +42,6 @@ jobs:
 
       - name: Validate Firebase Functions
         run: |
-          npm --prefix functions install --no-audit --no-fund
           node --check functions/index.js
           node --check functions/billing.js
 
