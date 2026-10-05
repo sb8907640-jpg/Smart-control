@@ -67,13 +67,12 @@ class FirestoreOwnerBillingRepository @Inject constructor(
 
     override fun observePlans(): Flow<List<Plan>> = callbackFlow {
         val registration = firestore.collection("plans")
-            .whereEqualTo("publicVisible", true)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.documents.orEmpty().mapNotNull { decodePlan(it.data) }
+                trySend(snapshot?.documents.orEmpty().mapNotNull { doc -> decodePlan(doc.id, doc.data) }
                     .sortedBy { it.displayOrder })
             }
         awaitClose { registration.remove() }
@@ -172,12 +171,12 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         "displayOrder" to plan.displayOrder
     )
 
-    private fun decodePlan(data: Map<String, Any?>?): Plan? {
+    private fun decodePlan(id: String, data: Map<String, Any?>?): Plan? {
         data ?: return null
         val name = data["name"]?.toString() ?: return null
         val durationDays = (data["durationDays"] as? Number)?.toInt() ?: 30
         return Plan(
-            id = data["id"]?.toString() ?: "",
+            id = id,
             name = name,
             description = data["description"]?.toString() ?: "",
             priceMinor = (data["priceMinor"] as? Number)?.toLong() ?: 0L,
