@@ -33,7 +33,9 @@ class FirebaseOwnerUserManagementRepository @Inject constructor(
                 phoneNumber = item["phoneNumber"]?.toString() ?: "",
                 disabled = item["disabled"] as? Boolean ?: false,
                 role = item["role"]?.toString() ?: "USER",
-                admin = item["admin"] as? Boolean ?: false
+                admin = item["admin"] as? Boolean ?: false,
+                accessGranted = item["accessGranted"] as? Boolean ?: false,
+                accessExpiresAtEpochMs = (item["accessExpiresAtEpochMs"] as? Number)?.toLong()
             )
         }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayName.ifBlank { it.email.ifBlank { it.uid } } })
     }
