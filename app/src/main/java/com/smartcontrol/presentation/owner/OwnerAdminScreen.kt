@@ -15,6 +15,10 @@ import com.smartcontrol.data.billing.OwnerBillingRepository
 import com.smartcontrol.data.billing.OwnerProfile
 import com.smartcontrol.domain.billing.FreeGrant
 import com.smartcontrol.domain.billing.Plan
+import com.smartcontrol.domain.billing.Payment
+import com.smartcontrol.domain.billing.Subscription
+import com.smartcontrol.domain.billing.Coupon
+import com.smartcontrol.domain.billing.PayoutRecord
 import com.smartcontrol.domain.owner.OwnerSettings
 import com.smartcontrol.domain.owner.OwnerSettingsRepository
 import com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry
@@ -64,6 +68,10 @@ class OwnerAdminViewModel @Inject constructor(
     var history by mutableStateOf<List<OwnerSettingsHistoryEntry>>(emptyList())
         private set
     var managedUsers by mutableStateOf<List<OwnerManagedUser>>(emptyList())
+    var payments by mutableStateOf<List<Payment>>(emptyList())
+    var subscriptions by mutableStateOf<List<Subscription>>(emptyList())
+    var reportTotalMinor by mutableStateOf(0L)
+    var payouts by mutableStateOf<List<PayoutRecord>>(emptyList())
         private set
 
     init {
@@ -75,6 +83,7 @@ class OwnerAdminViewModel @Inject constructor(
                 launch { billingRepository.observeFreeGrants().collect { freeGrants = it } }
                 launch { repository.observeHistory().collect { history = it } }
                 launch { managedUsers = userManagementRepository.listUsers().getOrDefault(emptyList()) }
+                launch { refreshPaymentData() }
                 repository.observe().collect { settings = it }
             }
         }
@@ -151,6 +160,68 @@ class OwnerAdminViewModel @Inject constructor(
         viewModelScope.launch {
             message = billingRepository.duplicatePlan(sourcePlanId, newPlanId, newName)
                 .fold({ "Plan duplicated." }, { it.message ?: "Plan duplicate failed." })
+        }
+    }
+
+    fun refreshPaymentData() {
+        viewModelScope.launch {
+            payments = billingRepository.listPayments().getOrDefault(emptyList())
+            subscriptions = billingRepository.listSubscriptions().getOrDefault(emptyList())
+            payouts = billingRepository.listPayouts().getOrDefault(emptyList())
+        }
+    }
+
+    fun verifyPayment(paymentId: String, reference: String) {
+        viewModelScope.launch {
+            message = billingRepository.verifyPayment(paymentId, reference)
+                .fold({ "Payment verified and subscription activated." }, { it.message ?: "Payment verification failed." })
+            refreshPaymentData()
+        }
+    }
+
+    fun refundPayment(paymentId: String) {
+        viewModelScope.launch {
+            message = billingRepository.refundPayment(paymentId)
+                .fold({ "Payment refunded: ₹" + (it / 100.0) }, { it.message ?: "Refund failed." })
+            refreshPaymentData()
+        }
+    }
+
+    fun saveCoupon(code: String, discountPercent: String, discountMinor: String, usageLimit: String) {
+        viewModelScope.launch {
+            val coupon = Coupon(
+                code = code.trim().uppercase(),
+                discountPercent = discountPercent.toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0,
+                discountMinor = discountMinor.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                usageLimit = usageLimit.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            )
+            message = billingRepository.createCoupon(coupon)
+                .fold({ "Coupon saved." }, { it.message ?: "Coupon save failed." })
+        }
+    }
+
+    fun recordPayout(amount: String, method: String, account: String) {
+        viewModelScope.launch {
+            val payout = PayoutRecord(
+                id = "",
+                amountMinor = ((amount.toDoubleOrNull() ?: 0.0) * 100).toLong(),
+                currency = "INR",
+                method = method,
+                accountLabel = account,
+                status = "RECORDED",
+                createdAtEpochMs = System.currentTimeMillis()
+            )
+            message = billingRepository.recordPayout(payout)
+                .fold({ "Payout recorded." }, { "Payout recorded: ₹" + (it.amountMinor / 100.0) })
+            refreshPaymentData()
+        }
+    }
+
+    fun loadPaymentReport(startEpochMs: Long, endEpochMs: Long) {
+        viewModelScope.launch {
+            reportTotalMinor = billingRepository.getPaymentReport(startEpochMs, endEpochMs)
+                .getOrElse { 0L to emptyList() }.first
+            message = "Payment report loaded: ₹" + (reportTotalMinor / 100.0)
         }
     }
 
