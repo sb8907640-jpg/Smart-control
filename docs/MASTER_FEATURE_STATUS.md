@@ -46,6 +46,9 @@ For repository status, **Complete** means the master specification data/status h
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
 - Live Firestore owner-settings observation: **COMPLETE**
+- Permission Center coverage: **COMPLETE** — runtime permissions plus Android special-access entry points are exposed in one visible user-controlled screen.
+- Local data deletion control: **COMPLETE** — the user can clear Smart Control local preferences/legal-consent state and stop the visible service; server-side billing/audit records are intentionally retained.
+- Master catalog CI verification: **COMPLETE** — CI now validates the catalog remains at least 42 tables / 60 API contracts.
 - Remote Config / Socket.IO / production FCM infrastructure: **NOT CLAIMED COMPLETE** because the repository does not contain the required backend endpoint/project credentials.
 - Production build verification: **CI VERIFIED** for the previously reconciled head; the current gateway/CI changes are committed and the workflow now validates both functions/index.js and functions/billing.js syntax on every main push.
 - Real two-device WebRTC/MediaProjection smoke test: **NOT REPRODUCIBLE in CI**; Android system-consent/device behavior still requires a physical device environment.
