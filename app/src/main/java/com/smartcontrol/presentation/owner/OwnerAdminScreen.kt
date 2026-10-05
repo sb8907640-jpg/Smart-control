@@ -212,7 +212,10 @@ class OwnerAdminViewModel @Inject constructor(
                 createdAtEpochMs = System.currentTimeMillis()
             )
             message = billingRepository.recordPayout(payout)
-                .fold({ "Payout recorded." }, { "Payout recorded: ₹" + (it.amountMinor / 100.0) })
+                .fold(
+                    { saved -> "Payout recorded: ₹" + (saved.amountMinor / 100.0) },
+                    { error -> error.message ?: "Payout failed." }
+                )
             refreshPaymentData()
         }
     }
@@ -543,6 +546,7 @@ private fun OwnerBillingPanel(
     var planFeatureTimes by remember { mutableStateOf("") }
     var planFeaturePriorities by remember { mutableStateOf("") }
     var selectedFeatures by remember { mutableStateOf(emptySet<String>()) }
+    var selectedPlanId by remember { mutableStateOf<String?>(null) }
     var duplicateId by remember { mutableStateOf("") }
     var duplicateName by remember { mutableStateOf("") }
 
@@ -952,6 +956,8 @@ private fun OwnerHistoryPanel(
             }
         }
     }
+
+}
 
 @Composable
 private fun OwnerPaymentPanel(
