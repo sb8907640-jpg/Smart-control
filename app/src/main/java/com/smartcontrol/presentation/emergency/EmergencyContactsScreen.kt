@@ -32,7 +32,7 @@ class EmergencyContactsViewModel @Inject constructor(
     }
 
     fun add(uid: String) {
-        androidx.lifecycle.viewModelScope.launch {
+        viewModelScope.launch {
             message = repository.save(
                 EmergencyContact(UUID.randomUUID().toString(), uid, name.trim(), phone.trim())
             ).fold(
