@@ -31,6 +31,7 @@ import com.smartcontrol.presentation.localdata.AppUsageScreen
 import com.smartcontrol.presentation.localdata.ClipboardScreen
 import com.smartcontrol.presentation.localdata.AppInstallScreen
 import com.smartcontrol.presentation.localdata.NotificationCenterScreen
+import com.smartcontrol.presentation.billing.BillingScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
             var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
-            var notifications by remember { mutableStateOf(false) }
+            var notifications by remember { mutableStateOf(false) }; var billing by remember { mutableStateOf(false) }
             var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }; var appInstall by remember { mutableStateOf(false) }
             if (!consented) ConsentScreen(this@MainActivity) { consented = true }
             else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
                 }
                 when {
+                    billing -> BillingScreen(onBack = { billing = false })
                     notifications -> NotificationCenterScreen(onBack = { notifications = false })
                     appInstall -> AppInstallScreen(onBack = { appInstall = false })
                     contacts -> ContactsScreen(onBack = { contacts = false })
@@ -75,7 +77,7 @@ class MainActivity : ComponentActivity() {
                     privacyControls -> PrivacyControlsScreen(onBack = { privacyControls = false }, context = this@MainActivity)
                     profile -> ProfileScreen(onBack = { profile = false }, onOwnerAdmin = { ownerAdmin = true }, onEmergencyContacts = { emergencyContacts = true }, onAuditLog = { auditLog = true }, onPrivacyControls = { privacyControls = true })
                     settings -> SettingsScreen(onBack = { settings = false }, onEndSession = { settings = false }, onPairing = { pairing = true }, onPermissions = { permissions = true })
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true }, onFeatureCenter = { featureCenter = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true }, onFeatureCenter = { featureCenter = true }, onBilling = { billing = true })
                 }
             }
         }
