@@ -196,7 +196,14 @@ data class OwnerControlConfig(
             "payment.renewalReminderNotification" to "true",
             "payment.expiryReminderNotification" to "true",
             "payment.refundNotification" to "true",
-            "payment.notificationChannel" to "PUSH"
+            "payment.notificationChannel" to "PUSH",
+            "payment.reportAutoEmail" to "false",
+            "payment.payoutAccountLabel" to "",
+            "payment.payoutAccountReference" to "",
+            "payment.payoutSchedule" to "MONTHLY",
+            "payment.payoutThresholdMinor" to "0",
+            "payment.payoutMethod" to "BANK_TRANSFER",
+            "payment.payoutEnabled" to "false"
         )
     }
 }
