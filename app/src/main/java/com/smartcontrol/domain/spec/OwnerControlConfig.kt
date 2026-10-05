@@ -140,7 +140,7 @@ data class OwnerControlConfig(
             "language.default" to "en",
             "language.switchButton" to "true",
             "language.autoTranslate" to "false",
-            "language.regionalSupport" to "en-IN"
+            "language.regionalSupport" to "en-IN",
 
             // 16-20. Advanced plan/payment controls from the master specification
             "payment.gatewayList" to "",
