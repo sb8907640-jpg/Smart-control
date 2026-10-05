@@ -39,6 +39,7 @@ For repository status, **Complete** means the master specification data/status h
 - Owner user management (list users, role/access control, block/unblock): **COMPLETE**
 - Plan/free-plan data model: **COMPLETE**
 - Full plan editor (pricing, duration units, discounts/tax, tiers, upgrade/downgrade, feature limits/time/priority): **COMPLETE**
+- Dynamic pricing safety: **COMPLETE** — Owner can change future plan prices, discounts, tax, duration and limits; each activated subscription snapshots its purchase-time price, final amount, currency, plan discounts/tax and plan version so later plan edits do not rewrite the existing subscription terms.
 - Payment ledger lifecycle (create/verify/refund), EMI application, coupons, subscriptions, reports and payout records: **COMPLETE**
 - Owner payment/finance dashboard controls: **COMPLETE**
 - Payment gateway execution: **COMPLETE at provider-neutral integration level** (Owner-selectable gateway provider, LIVE/TEST mode, configured payment methods, per-provider webhook secret support, signed webhook lifecycle, gateway snapshot retained on each payment); real provider credentials/SDK configuration remain deployment configuration.
