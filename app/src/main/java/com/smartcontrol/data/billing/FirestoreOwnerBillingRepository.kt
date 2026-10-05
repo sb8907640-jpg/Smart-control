@@ -38,6 +38,16 @@ interface OwnerBillingRepository {
     suspend fun grantFreeAccess(grant: FreeGrant): Result<Unit>
     suspend fun updateFreeAccess(grant: FreeGrant): Result<Unit>
     suspend fun revokeFreeAccess(grant: FreeGrant): Result<Unit>
+    suspend fun listPayments(): Result<List<Payment>>
+    suspend fun listSubscriptions(): Result<List<Subscription>>
+    suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit>
+    suspend fun refundPayment(paymentId: String): Result<Long>
+    suspend fun createCoupon(coupon: Coupon): Result<Unit>
+    suspend fun updateCoupon(coupon: Coupon): Result<Unit>
+    suspend fun deleteCoupon(code: String): Result<Unit>
+    suspend fun getPaymentReport(startEpochMs: Long, endEpochMs: Long): Result<Pair<Long, List<Payment>>>
+    suspend fun recordPayout(payout: PayoutRecord): Result<PayoutRecord>
+    suspend fun listPayouts(): Result<List<PayoutRecord>>
 }
 
 @Singleton
