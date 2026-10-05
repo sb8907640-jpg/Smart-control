@@ -3,6 +3,7 @@ package com.smartcontrol.data.billing
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.domain.billing.FreeGrant
 import com.smartcontrol.domain.billing.Plan
 import kotlinx.coroutines.channels.awaitClose
@@ -37,7 +38,8 @@ interface OwnerBillingRepository {
 @Singleton
 class FirestoreOwnerBillingRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val functions: FirebaseFunctions
 ) : OwnerBillingRepository {
 
     override suspend fun isAdmin(): Boolean =
@@ -51,18 +53,30 @@ class FirestoreOwnerBillingRepository @Inject constructor(
 
     override suspend fun saveOwnerProfile(profile: OwnerProfile): Result<Unit> = runCatching {
         check(isAdmin()) { "Admin role required." }
+        require(profile.emails.isNotEmpty() || profile.mobiles.isNotEmpty()) {
+            "At least one owner email or mobile is required."
+        }
+        val normalizedEmails = profile.emails.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+        val normalizedMobiles = profile.mobiles.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        require(normalizedEmails.all { it.contains("@") }) { "Owner email format is invalid." }
+        require(normalizedMobiles.all { it.startsWith("+") }) { "Owner mobile must use international format." }
+
         firestore.collection("ownerAccounts").document("config")
             .set(
                 mapOf(
                     "displayName" to profile.displayName,
-                    "emails" to profile.emails,
-                    "mobiles" to profile.mobiles,
+                    "emails" to normalizedEmails,
+                    "mobiles" to normalizedMobiles,
                     "supportWhatsApp" to profile.supportWhatsApp,
                     "hiddenLoginPath" to profile.hiddenLoginPath,
                     "updatedAtEpochMs" to System.currentTimeMillis()
                 ),
                 SetOptions.merge()
             ).await()
+
+        functions.getHttpsCallable("syncOwnerAccounts")
+            .call(mapOf("emails" to normalizedEmails, "mobiles" to normalizedMobiles))
+            .await()
     }
 
     override fun observePlans(): Flow<List<Plan>> = callbackFlow {
