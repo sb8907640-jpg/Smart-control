@@ -98,7 +98,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             ?: error("History snapshot not found.")
         val typed = raw.entries.associate { it.key.toString() to it.value }
         firestore.collection("ownerSettings").document("global")
-            .set(encode(decode(typed)), SetOptions.merge())
+            .set(encode(decode(typed)).filterValues { it != null }.mapValues { it.value!! }, SetOptions.merge())
             .await()
     }
 
