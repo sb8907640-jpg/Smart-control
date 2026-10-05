@@ -46,6 +46,8 @@ class SafetyAlertsViewModel @Inject constructor(
         }
     }
 
+    fun createTestAlert() = triggerSos()
+
     fun acknowledge(alertId: String) {
         viewModelScope.launch { repository.acknowledge(alertId) }
     }
