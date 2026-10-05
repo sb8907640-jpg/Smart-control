@@ -129,6 +129,7 @@ class FirebaseBillingRepository @Inject constructor(
             expiresAtEpochMs = (data["expiresAtEpochMs"] as? Number)?.toLong() ?: 0L,
             autoRenew = data["autoRenew"] as? Boolean ?: false,
             agreedPriceMinor = (data["agreedPriceMinor"] as? Number)?.toLong() ?: 0L,
+            agreedAmountMinor = (data["agreedAmountMinor"] as? Number)?.toLong() ?: 0L,
             agreedCurrency = data["agreedCurrency"]?.toString() ?: "INR",
             agreedDiscountPercent = (data["agreedDiscountPercent"] as? Number)?.toDouble() ?: 0.0,
             agreedDiscountMinor = (data["agreedDiscountMinor"] as? Number)?.toLong() ?: 0L,
