@@ -58,7 +58,8 @@ data class Payment(
     val gateway: String,
     val gatewayReference: String?,
     val status: Status,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val planId: String = ""
 ) {
     enum class Status { CREATED, PENDING, SUCCESS, FAILED, REFUNDED }
 }
