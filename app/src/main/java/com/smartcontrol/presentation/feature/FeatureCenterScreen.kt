@@ -26,7 +26,7 @@ fun FeatureCenterScreen(onBack: () -> Unit) {
                     Column(Modifier.padding(14.dp)) {
                         Text(spec.displayName, style = MaterialTheme.typography.titleMedium)
                         Text("Consent: " + spec.consent.joinToString())
-                        Text("Online: " + if (spec.online) "Yes" else "No" + " • Offline: " + if (spec.offline) "Yes" else "No")
+                        Text("Online: " + (if (spec.online) "Yes" else "No") + " • Offline: " + (if (spec.offline) "Yes" else "No"))
                         if (spec.visibleWhileActive) Text("Visible while active: Yes")
                     }
                 }
