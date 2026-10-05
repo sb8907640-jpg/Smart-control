@@ -42,6 +42,24 @@ class FirebaseBillingRepository @Inject constructor(
         decodePayment(data["payment"] as? Map<*, *> ?: error("Missing payment"))
     }
 
+    override suspend fun createPlanPayment(
+        planId: String,
+        gateway: String,
+        paymentMethod: String,
+        couponCode: String
+    ): Result<Payment> = runCatching {
+        val result = functions.getHttpsCallable("createPayment").call(
+            mapOf(
+                "planId" to planId,
+                "gateway" to gateway,
+                "paymentMethod" to paymentMethod,
+                "couponCode" to couponCode
+            )
+        ).await()
+        val data = result.data as? Map<*, *> ?: error("Invalid payment response")
+        decodePayment(data["payment"] as? Map<*, *> ?: error("Missing payment"))
+    }
+
     override suspend fun createEmiSchedule(schedule: EmiSchedule): Result<EmiSchedule> = runCatching {
         val result = functions.getHttpsCallable("applyEmi").call(
             mapOf(
