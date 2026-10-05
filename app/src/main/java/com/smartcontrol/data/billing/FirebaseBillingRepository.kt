@@ -18,7 +18,7 @@ class FirebaseBillingRepository @Inject constructor(
 
     override suspend fun getPlans(): List<Plan> {
         val result = functions.getHttpsCallable("getPublicPlans").call().await()
-        val data = result.data as? Map<*, *> ?: return emptyList()
+        val data = result.getData() as? Map<*, *> ?: return emptyList()
         val rows = data["plans"] as? List<*> ?: return emptyList()
         return rows.mapNotNull { decodePlan(it as? Map<*, *> ?: return@mapNotNull null) }
     }
@@ -26,7 +26,7 @@ class FirebaseBillingRepository @Inject constructor(
     override suspend fun getSubscription(userId: String): Subscription? {
         val result = functions.getHttpsCallable("getMySubscription")
             .call(mapOf("userId" to userId)).await()
-        val data = result.data as? Map<*, *> ?: return null
+        val data = result.getData() as? Map<*, *> ?: return null
         return decodeSubscription(data["subscription"] as? Map<*, *> ?: return null)
     }
 
@@ -38,7 +38,7 @@ class FirebaseBillingRepository @Inject constructor(
                 "paymentMethod" to payment.gateway
             )
         ).await()
-        val data = result.data as? Map<*, *> ?: error("Invalid payment response")
+        val data = result.getData() as? Map<*, *> ?: error("Invalid payment response")
         decodePayment(data["payment"] as? Map<*, *> ?: error("Missing payment"))
     }
 
@@ -56,7 +56,7 @@ class FirebaseBillingRepository @Inject constructor(
                 "couponCode" to couponCode
             )
         ).await()
-        val data = result.data as? Map<*, *> ?: error("Invalid payment response")
+        val data = result.getData() as? Map<*, *> ?: error("Invalid payment response")
         decodePayment(data["payment"] as? Map<*, *> ?: error("Missing payment"))
     }
 
@@ -68,7 +68,7 @@ class FirebaseBillingRepository @Inject constructor(
                 "autoDebit" to schedule.autoDebitRequested
             )
         ).await()
-        val data = result.data as? Map<*, *> ?: error("Invalid EMI response")
+        val data = result.getData() as? Map<*, *> ?: error("Invalid EMI response")
         schedule.copy(id = data["id"]?.toString() ?: schedule.id)
     }
 
