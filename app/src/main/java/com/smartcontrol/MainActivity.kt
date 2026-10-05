@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                     callLogs -> CallLogsScreen(onBack = { callLogs = false })
                     appUsage -> AppUsageScreen(onBack = { appUsage = false })
                     clipboard -> ClipboardScreen(onBack = { clipboard = false })
-                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false })
+                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false }, onContacts = { contacts = true }, onSms = { sms = true }, onCallLogs = { callLogs = true }, onAppUsage = { appUsage = true }, onClipboard = { clipboard = true })
                     safetyAlerts -> SafetyAlertsScreen(onBack = { safetyAlerts = false })
                     deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
                     location -> LocationSharingScreen(onBack = { location = false })
