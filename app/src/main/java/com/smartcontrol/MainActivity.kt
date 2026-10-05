@@ -21,6 +21,7 @@ import com.smartcontrol.presentation.privacy.PrivacyControlsScreen
 import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.safety.SafetyAlertsScreen
+import com.smartcontrol.presentation.features.FeatureCenterScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
@@ -36,12 +37,13 @@ class MainActivity : ComponentActivity() {
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
             var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
-            var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }
+            var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
             if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
                 LaunchedEffect(Unit) {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
                 }
                 when {
+                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false })
                     safetyAlerts -> SafetyAlertsScreen(onBack = { safetyAlerts = false })
                     deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
                     location -> LocationSharingScreen(onBack = { location = false })
@@ -54,7 +56,7 @@ class MainActivity : ComponentActivity() {
                     privacyControls -> PrivacyControlsScreen(onBack = { privacyControls = false }, context = this@MainActivity)
                     profile -> ProfileScreen(onBack = { profile = false }, onOwnerAdmin = { ownerAdmin = true }, onEmergencyContacts = { emergencyContacts = true }, onAuditLog = { auditLog = true }, onPrivacyControls = { privacyControls = true })
                     settings -> SettingsScreen(onBack = { settings = false }, onEndSession = { settings = false }, onPairing = { pairing = true }, onPermissions = { permissions = true })
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true })
+                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true }, onFeatureCenter = { featureCenter = true })
                 }
             }
         }
