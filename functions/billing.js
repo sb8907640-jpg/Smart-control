@@ -11,6 +11,44 @@ const db = getFirestore(app);
 
 const PAYMENT_CONFIG_DOC = "ownerSettings/global";
 
+const SUPPORTED_PAYMENT_GATEWAYS = new Set([
+  "TEST",
+  "RAZORPAY",
+  "STRIPE",
+  "PAYPAL",
+  "CASHFREE",
+  "PHONEPE",
+  "PAYU",
+  "CUSTOM"
+]);
+
+function normalizeGateway(value) {
+  return String(value || "TEST").trim().toUpperCase();
+}
+
+function activeGateway(config) {
+  const provider = normalizeGateway(config["payment.gatewayProvider"] || config["payment.gateway"]);
+  if (!SUPPORTED_PAYMENT_GATEWAYS.has(provider)) {
+    throw new HttpsError("failed-precondition", "Configured payment gateway is not supported.");
+  }
+  return provider;
+}
+
+function gatewaySecret(config, provider) {
+  const mapRaw = String(config["payment.gatewayWebhookSecrets"] || "").trim();
+  if (mapRaw) {
+    try {
+      const map = JSON.parse(mapRaw);
+      if (map && typeof map === "object" && typeof map[provider] === "string" && map[provider]) {
+        return map[provider];
+      }
+    } catch (_) {
+      // Fall back to the single configured secret for backwards compatibility.
+    }
+  }
+  return String(config["payment.webhookSecret"] || config["payment.encryptionKey"] || "");
+}
+
 function requireAuth(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
 }
@@ -178,11 +216,14 @@ exports.createPayment = onCall(async (request) => {
 
   const plan = await getPlan(planId);
   const config = await readPaymentConfig();
-  const gateway = String(request.data?.gateway || "TEST").trim();
+  const gateway = activeGateway(config);
   const method = String(request.data?.paymentMethod || "UPI").trim().toUpperCase();
   const gatewayMode = String(config["payment.gatewayMode"] || "TEST").toUpperCase();
+  if (!["TEST", "LIVE"].includes(gatewayMode)) {
+    throw new HttpsError("failed-precondition", "Payment gateway mode must be TEST or LIVE.");
+  }
   if (gatewayMode === "LIVE" && gateway === "TEST") {
-    throw new HttpsError("failed-precondition", "LIVE payment mode requires a configured gateway.");
+    throw new HttpsError("failed-precondition", "LIVE payment mode requires a non-test gateway.");
   }
 
   const methodMap = {
@@ -232,7 +273,8 @@ exports.createPayment = onCall(async (request) => {
     gateway,
     paymentMethod: method,
     gatewayReference: null,
-    paymentMethod: method,
+    gatewayMode,
+    gatewayProvider: gateway,
     couponCode: couponId,
     status: amountMinor === 0 ? "SUCCESS" : "PENDING",
     createdAtEpochMs: Date.now(),
@@ -275,7 +317,6 @@ exports.verifyPayment = onCall(async (request) => {
 
   const activation = await activateSubscriptionForPayment(paymentId, payment);
   await ref.update({ subscriptionId: activation.subscriptionId });
-  await incrementCouponUsage(payment.couponCode);
   return { ok: true, paymentId, subscriptionId: activation.subscriptionId, expiresAtEpochMs: activation.expiresAtEpochMs };
 });
 
@@ -619,7 +660,14 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       return;
     }
     const config = await readPaymentConfig();
-    const secret = String(config["payment.encryptionKey"] || "");
+    const paymentId = String((req.body || {}).paymentId || (req.body || {}).payment_id || "").trim();
+    let paymentForSecret = null;
+    if (paymentId) {
+      const paymentSnap = await db.collection("payments").doc(paymentId).get();
+      paymentForSecret = paymentSnap.exists ? paymentSnap.data() : null;
+    }
+    const provider = normalizeGateway(paymentForSecret?.gatewayProvider || paymentForSecret?.gateway || config["payment.gatewayProvider"] || config["payment.gateway"]);
+    const secret = gatewaySecret(config, provider);
     const signature = String(req.get("x-smartcontrol-signature") || "");
     if (!secret || !signature) {
       res.status(401).send("Webhook authentication is not configured.");
@@ -636,14 +684,15 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
     }
 
     const body = req.body || {};
-    const paymentId = String(body.paymentId || body.payment_id || "").trim();
+    const webhookPaymentId = String(body.paymentId || body.payment_id || "").trim();
     const reference = String(body.gatewayReference || body.reference || body.id || "").trim();
     const status = String(body.status || "").toUpperCase();
-    if (!paymentId || !reference) {
+    if (!webhookPaymentId || !reference) {
       res.status(400).send("Payment ID and reference are required.");
       return;
     }
 
+    const paymentId = webhookPaymentId;
     const ref = db.collection("payments").doc(paymentId);
     const snap = await ref.get();
     if (!snap.exists) {
@@ -660,7 +709,6 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
         verifiedAtEpochMs: Date.now(),
         updatedAtEpochMs: Date.now()
       });
-      await incrementCouponUsage(payment.couponCode);
     } else if (status === "FAILED" || status === "CANCELLED") {
       await ref.update({
         status: status === "CANCELLED" ? "FAILED" : "FAILED",
