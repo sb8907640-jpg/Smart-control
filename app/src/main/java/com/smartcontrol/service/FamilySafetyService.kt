@@ -174,6 +174,10 @@ class FamilySafetyService : Service() {
                 Intent(context, FamilySafetyService::class.java).setAction(ACTION_IDLE)
             )
         }
+
+        fun stop(context: android.content.Context) {
+            context.stopService(Intent(context, FamilySafetyService::class.java))
+        }
     }
 
     private fun createChannel() {
