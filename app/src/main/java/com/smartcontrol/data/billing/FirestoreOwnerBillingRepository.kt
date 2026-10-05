@@ -62,7 +62,7 @@ class FirestoreOwnerBillingRepository @Inject constructor(
 
     override suspend fun getOwnerProfile(): OwnerProfile {
         check(isAdmin()) { "Admin role required." }
-        val data = firestore.collection("ownerAccounts").document("config").get().await().data.orEmpty()
+        val data = firestore.collection("ownerAccounts").document("config").get().await().getData().orEmpty()
         return decodeOwnerProfile(data)
     }
 
@@ -180,14 +180,14 @@ class FirestoreOwnerBillingRepository @Inject constructor(
 
     override suspend fun listPayments(): Result<List<Payment>> = runCatching {
         check(isAdmin()) { "Admin role required." }
-        val data = functions.getHttpsCallable("listPaymentLedger").call().await().data as? Map<*, *>
+        val data = functions.getHttpsCallable("listPaymentLedger").call().await().getData() as? Map<*, *>
             ?: error("Invalid payment response")
         (data["payments"] as? List<*>)?.mapNotNull { decodePayment(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
     }
 
     override suspend fun listSubscriptions(): Result<List<Subscription>> = runCatching {
         check(isAdmin()) { "Admin role required." }
-        val data = functions.getHttpsCallable("listSubscriptions").call().await().data as? Map<*, *>
+        val data = functions.getHttpsCallable("listSubscriptions").call().await().getData() as? Map<*, *>
             ?: error("Invalid subscription response")
         (data["subscriptions"] as? List<*>)?.mapNotNull { decodeSubscription(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
     }
@@ -201,7 +201,7 @@ class FirestoreOwnerBillingRepository @Inject constructor(
 
     override suspend fun refundPayment(paymentId: String): Result<Long> = runCatching {
         check(isAdmin()) { "Admin role required." }
-        val data = functions.getHttpsCallable("refundPayment").call(mapOf("paymentId" to paymentId)).await().data as? Map<*, *>
+        val data = functions.getHttpsCallable("refundPayment").call(mapOf("paymentId" to paymentId)).await().getData() as? Map<*, *>
             ?: error("Invalid refund response")
         (data["refundAmountMinor"] as? Number)?.toLong() ?: 0L
     }
@@ -243,7 +243,7 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         check(isAdmin()) { "Admin role required." }
         val data = functions.getHttpsCallable("getPaymentReport").call(
             mapOf("startEpochMs" to startEpochMs, "endEpochMs" to endEpochMs)
-        ).await().data as? Map<*, *> ?: error("Invalid report response")
+        ).await().getData() as? Map<*, *> ?: error("Invalid report response")
         val summary = data["summary"] as? Map<*, *>
         val total = (summary?.get("totalMinor") as? Number)?.toLong() ?: 0L
         val rows = (data["rows"] as? List<*>)?.mapNotNull { decodePayment(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
@@ -259,13 +259,13 @@ class FirestoreOwnerBillingRepository @Inject constructor(
                 "method" to payout.method,
                 "accountLabel" to payout.accountLabel
             )
-        ).await().data as? Map<*, *> ?: error("Invalid payout response")
+        ).await().getData() as? Map<*, *> ?: error("Invalid payout response")
         decodePayout(data["payout"] as? Map<*, *> ?: error("Missing payout"))
     }
 
     override suspend fun listPayouts(): Result<List<PayoutRecord>> = runCatching {
         check(isAdmin()) { "Admin role required." }
-        val data = functions.getHttpsCallable("listPayouts").call().await().data as? Map<*, *>
+        val data = functions.getHttpsCallable("listPayouts").call().await().getData() as? Map<*, *>
             ?: error("Invalid payout response")
         (data["payouts"] as? List<*>)?.mapNotNull { decodePayout(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
     }
