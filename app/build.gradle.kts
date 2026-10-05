@@ -52,5 +52,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.google.firebase:firebase-storage")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
+    testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
 }
