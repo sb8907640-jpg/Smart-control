@@ -147,6 +147,13 @@ class OwnerAdminViewModel @Inject constructor(
         }
     }
 
+    fun duplicatePlan(sourcePlanId: String, newPlanId: String, newName: String) {
+        viewModelScope.launch {
+            message = billingRepository.duplicatePlan(sourcePlanId, newPlanId, newName)
+                .fold({ "Plan duplicated." }, { it.message ?: "Plan duplicate failed." })
+        }
+    }
+
     fun grantFreeAccess(grant: FreeGrant) {
         viewModelScope.launch {
             message = billingRepository.grantFreeAccess(grant)
@@ -336,6 +343,7 @@ fun OwnerAdminScreen(
                             onProfileSave = viewModel::saveOwnerProfile,
                             onPlanSave = viewModel::savePlan,
                             onPlanDelete = viewModel::deletePlan,
+                            onPlanDuplicate = viewModel::duplicatePlan,
                             onGrant = viewModel::grantFreeAccess,
                             onGrantUpdate = viewModel::updateFreeAccess,
                             onGrantRevoke = viewModel::revokeFreeAccess
@@ -405,6 +413,7 @@ private fun OwnerBillingPanel(
     onProfileSave: (OwnerProfile) -> Unit,
     onPlanSave: (Plan) -> Unit,
     onPlanDelete: (String) -> Unit,
+    onPlanDuplicate: (String, String, String) -> Unit,
     onGrant: (FreeGrant) -> Unit,
     onGrantUpdate: (FreeGrant) -> Unit,
     onGrantRevoke: (FreeGrant) -> Unit
