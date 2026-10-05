@@ -25,6 +25,12 @@ service cloud.firestore {
       allow create, update, delete: if request.auth != null && request.auth.token.admin == true;
     }
 
+    match /userAccess/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.token.admin == true || request.auth.uid == uid);
+      allow create, update, delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
     match /freeAccessGrants/{grantId} {
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
