@@ -34,5 +34,9 @@ class OwnerSettingsModelsTest {
         assertTrue(!settings.masterConfig.plans.freePlanVisibleInPublicMenu)
         assertEquals("AES-256-GCM", settings.masterConfig.security.encryptionAlgorithm)
         assertEquals(FeatureId.SOS_ALERTS, MasterSpecification.featureIds.last())
+        assertTrue(settings.masterConfig.ownerControl.ownerPanelHiddenFromNormalUsers)
+        assertTrue(settings.masterConfig.ownerControl.requireFirebaseAdminClaim)
+        assertTrue(settings.masterConfig.ownerControl.realtimeApply)
+        assertEquals(15, settings.masterConfig.ownerControl.editableValues.keys.map { it.substringBefore(".") }.distinct().size)
     }
 }
