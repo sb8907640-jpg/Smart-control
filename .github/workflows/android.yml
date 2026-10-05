@@ -45,11 +45,32 @@ jobs:
         run: gradle test assembleDebug assembleRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"
 
       - name: Validate Firebase Functions
+        shell: bash
         run: |
-          node --check functions/index.js
-          node --check functions/billing.js
+          set +e
+          {
+            echo "Node:"
+            node --version
+            echo "index.js:"
+            node --check functions/index.js
+            index_status=$?
+            echo "index_status=$index_status"
+            echo "billing.js:"
+            node --check functions/billing.js
+            billing_status=$?
+            echo "billing_status=$billing_status"
+            echo "validation_status=$(( index_status || billing_status ))"
+          } 2>&1 | tee functions-validation.log
+          exit "$(grep '^validation_status=' functions-validation.log | cut -d= -f2)"
 
       - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smart-control-ci-diagnostics
+          path: functions-validation.log
+
+      - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: smart-control-apks
           path: |
