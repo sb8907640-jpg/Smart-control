@@ -37,6 +37,7 @@ class OwnerSettingsModelsTest {
         assertTrue(settings.masterConfig.ownerControl.ownerPanelHiddenFromNormalUsers)
         assertTrue(settings.masterConfig.ownerControl.requireFirebaseAdminClaim)
         assertTrue(settings.masterConfig.ownerControl.realtimeApply)
-        assertEquals(15, settings.masterConfig.ownerControl.editableValues.keys.map { it.substringBefore(".") }.distinct().size)
+        assertTrue(settings.masterConfig.ownerControl.editableValues.keys.any { it.startsWith("payment.") })
+        assertEquals(16, settings.masterConfig.ownerControl.editableValues.keys.map { it.substringBefore(".") }.distinct().size)
     }
 }
