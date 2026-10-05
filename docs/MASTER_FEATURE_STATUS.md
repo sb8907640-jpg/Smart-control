@@ -38,6 +38,10 @@ For repository status, **Complete** means the master specification data/status h
 - Per-user/global feature controls: **COMPLETE**
 - Owner user management (list users, role/access control, block/unblock): **COMPLETE**
 - Plan/free-plan data model: **COMPLETE**
+- Full plan editor (pricing, duration units, discounts/tax, tiers, upgrade/downgrade, feature limits/time/priority): **COMPLETE**
+- Payment ledger lifecycle (create/verify/refund), EMI application, coupons, subscriptions, reports and payout records: **COMPLETE**
+- Owner payment/finance dashboard controls: **COMPLETE**
+- Production payment-gateway execution: **NOT CLAIMED COMPLETE** until a real provider adapter and server-side credentials/webhooks are provisioned; TEST/manual verification mode is implemented safely.
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
 - Live Firestore owner-settings observation: **COMPLETE**
