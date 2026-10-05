@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.smartcontrol.domain.emergency.EmergencyContact
 import com.smartcontrol.domain.emergency.EmergencyContactRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,7 +48,7 @@ class EmergencyContactsViewModel @Inject constructor(
 fun EmergencyContactsScreen(
     ownerUid: String,
     onBack: () -> Unit,
-    viewModel: EmergencyContactsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    viewModel: EmergencyContactsViewModel = hiltViewModel()
 ) {
     LaunchedEffect(ownerUid) { viewModel.load(ownerUid) }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
