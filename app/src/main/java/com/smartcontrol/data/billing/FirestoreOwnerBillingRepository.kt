@@ -298,7 +298,13 @@ class FirestoreOwnerBillingRepository @Inject constructor(
             status = status,
             startedAtEpochMs = (data["startedAtEpochMs"] as? Number)?.toLong() ?: 0L,
             expiresAtEpochMs = (data["expiresAtEpochMs"] as? Number)?.toLong() ?: 0L,
-            autoRenew = data["autoRenew"] as? Boolean ?: false
+            autoRenew = data["autoRenew"] as? Boolean ?: false,
+            agreedPriceMinor = (data["agreedPriceMinor"] as? Number)?.toLong() ?: 0L,
+            agreedCurrency = data["agreedCurrency"]?.toString() ?: "INR",
+            agreedDiscountPercent = (data["agreedDiscountPercent"] as? Number)?.toDouble() ?: 0.0,
+            agreedDiscountMinor = (data["agreedDiscountMinor"] as? Number)?.toLong() ?: 0L,
+            agreedTaxPercent = (data["agreedTaxPercent"] as? Number)?.toDouble() ?: 0.0,
+            planVersionEpochMs = (data["planVersionEpochMs"] as? Number)?.toLong() ?: 0L
         )
     }
 
