@@ -437,3 +437,26 @@ exports.listPayouts = onCall(async (request) => {
   const snap = await db.collection("payouts").orderBy("createdAtEpochMs", "desc").limit(500).get();
   return { payouts: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
+
+
+exports.getPublicPlans = onCall(async (request) => {
+  requireAuth(request);
+  const snap = await db.collection("plans")
+    .where("enabled", "==", true)
+    .orderBy("displayOrder", "asc")
+    .limit(100).get();
+  return {
+    plans: snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  };
+});
+
+exports.getMySubscription = onCall(async (request) => {
+  requireAuth(request);
+  const snap = await db.collection("subscriptions")
+    .where("userId", "==", request.auth.uid)
+    .orderBy("updatedAtEpochMs", "desc")
+    .limit(1).get();
+  return {
+    subscription: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }
+  };
+});
