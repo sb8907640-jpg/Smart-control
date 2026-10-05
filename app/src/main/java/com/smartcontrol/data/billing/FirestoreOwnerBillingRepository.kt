@@ -6,6 +6,10 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.domain.billing.FreeGrant
 import com.smartcontrol.domain.billing.Plan
+import com.smartcontrol.domain.billing.Payment
+import com.smartcontrol.domain.billing.Subscription
+import com.smartcontrol.domain.billing.Coupon
+import com.smartcontrol.domain.billing.PayoutRecord
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -163,6 +167,141 @@ class FirestoreOwnerBillingRepository @Inject constructor(
                     SetOptions.merge()
                 ).await()
         }
+
+    override suspend fun listPayments(): Result<List<Payment>> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("listPaymentLedger").call().await().data as? Map<*, *>
+            ?: error("Invalid payment response")
+        (data["payments"] as? List<*>)?.mapNotNull { decodePayment(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
+    }
+
+    override suspend fun listSubscriptions(): Result<List<Subscription>> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("listSubscriptions").call().await().data as? Map<*, *>
+            ?: error("Invalid subscription response")
+        (data["subscriptions"] as? List<*>)?.mapNotNull { decodeSubscription(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
+    }
+
+    override suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        functions.getHttpsCallable("verifyPayment").call(
+            mapOf("paymentId" to paymentId, "gatewayReference" to gatewayReference)
+        ).await()
+    }
+
+    override suspend fun refundPayment(paymentId: String): Result<Long> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("refundPayment").call(mapOf("paymentId" to paymentId)).await().data as? Map<*, *>
+            ?: error("Invalid refund response")
+        (data["refundAmountMinor"] as? Number)?.toLong() ?: 0L
+    }
+
+    override suspend fun createCoupon(coupon: Coupon): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        functions.getHttpsCallable("createCoupon").call(
+            mapOf(
+                "code" to coupon.code,
+                "discountPercent" to coupon.discountPercent,
+                "discountMinor" to coupon.discountMinor,
+                "usageLimit" to coupon.usageLimit,
+                "enabled" to coupon.enabled,
+                "validityDays" to 0
+            )
+        ).await()
+    }
+
+    override suspend fun updateCoupon(coupon: Coupon): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        functions.getHttpsCallable("updateCoupon").call(
+            mapOf(
+                "code" to coupon.code,
+                "discountPercent" to coupon.discountPercent,
+                "discountMinor" to coupon.discountMinor,
+                "usageLimit" to coupon.usageLimit,
+                "enabled" to coupon.enabled,
+                "expiresAtEpochMs" to coupon.expiresAtEpochMs
+            )
+        ).await()
+    }
+
+    override suspend fun deleteCoupon(code: String): Result<Unit> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        functions.getHttpsCallable("deleteCoupon").call(mapOf("code" to code)).await()
+    }
+
+    override suspend fun getPaymentReport(startEpochMs: Long, endEpochMs: Long): Result<Pair<Long, List<Payment>>> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("getPaymentReport").call(
+            mapOf("startEpochMs" to startEpochMs, "endEpochMs" to endEpochMs)
+        ).await().data as? Map<*, *> ?: error("Invalid report response")
+        val summary = data["summary"] as? Map<*, *>
+        val total = (summary?.get("totalMinor") as? Number)?.toLong() ?: 0L
+        val rows = (data["rows"] as? List<*>)?.mapNotNull { decodePayment(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
+        total to rows
+    }
+
+    override suspend fun recordPayout(payout: PayoutRecord): Result<PayoutRecord> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("recordPayout").call(
+            mapOf(
+                "amountMinor" to payout.amountMinor,
+                "currency" to payout.currency,
+                "method" to payout.method,
+                "accountLabel" to payout.accountLabel
+            )
+        ).await().data as? Map<*, *> ?: error("Invalid payout response")
+        decodePayout(data["payout"] as? Map<*, *> ?: error("Missing payout"))
+    }
+
+    override suspend fun listPayouts(): Result<List<PayoutRecord>> = runCatching {
+        check(isAdmin()) { "Admin role required." }
+        val data = functions.getHttpsCallable("listPayouts").call().await().data as? Map<*, *>
+            ?: error("Invalid payout response")
+        (data["payouts"] as? List<*>)?.mapNotNull { decodePayout(it as? Map<*, *> ?: return@mapNotNull null) }.orEmpty()
+    }
+
+    private fun decodePayment(data: Map<*, *>): Payment {
+        val status = runCatching { Payment.Status.valueOf(data["status"]?.toString() ?: "PENDING") }
+            .getOrDefault(Payment.Status.PENDING)
+        return Payment(
+            id = data["id"]?.toString() ?: "",
+            userId = data["userId"]?.toString() ?: "",
+            subscriptionId = data["subscriptionId"]?.toString(),
+            amountMinor = (data["amountMinor"] as? Number)?.toLong() ?: 0L,
+            currency = data["currency"]?.toString() ?: "INR",
+            gateway = data["gateway"]?.toString() ?: "",
+            gatewayReference = data["gatewayReference"]?.toString(),
+            status = status,
+            createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
+            planId = data["planId"]?.toString() ?: ""
+        )
+    }
+
+    private fun decodeSubscription(data: Map<*, *>): Subscription {
+        val status = runCatching { Subscription.Status.valueOf(data["status"]?.toString() ?: "EXPIRED") }
+            .getOrDefault(Subscription.Status.EXPIRED)
+        return Subscription(
+            id = data["id"]?.toString() ?: "",
+            userId = data["userId"]?.toString() ?: "",
+            planId = data["planId"]?.toString() ?: "",
+            status = status,
+            startedAtEpochMs = (data["startedAtEpochMs"] as? Number)?.toLong() ?: 0L,
+            expiresAtEpochMs = (data["expiresAtEpochMs"] as? Number)?.toLong() ?: 0L,
+            autoRenew = data["autoRenew"] as? Boolean ?: false
+        )
+    }
+
+    private fun decodePayout(data: Map<*, *>): PayoutRecord =
+        PayoutRecord(
+            id = data["id"]?.toString() ?: "",
+            amountMinor = (data["amountMinor"] as? Number)?.toLong() ?: 0L,
+            currency = data["currency"]?.toString() ?: "INR",
+            method = data["method"]?.toString() ?: "",
+            accountLabel = data["accountLabel"]?.toString() ?: "",
+            status = data["status"]?.toString() ?: "",
+            createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L
+        )
+
 
     private fun validateGrant(grant: FreeGrant) {
         require(grant.id.isNotBlank()) { "Grant ID is required." }
