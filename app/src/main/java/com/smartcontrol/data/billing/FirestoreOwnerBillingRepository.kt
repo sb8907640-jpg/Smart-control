@@ -168,7 +168,11 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         "taxPercent" to plan.taxPercent,
         "originalPriceMinor" to plan.originalPriceMinor,
         "offerPriceVisible" to plan.offerPriceVisible,
-        "displayOrder" to plan.displayOrder
+        "displayOrder" to plan.displayOrder,
+        "tierLevel" to plan.tierLevel,
+        "upgradePlanIds" to plan.upgradePlanIds.toList(),
+        "downgradePlanIds" to plan.downgradePlanIds.toList(),
+        "crossGradeEnabled" to plan.crossGradeEnabled
     )
 
     private fun decodePlan(id: String, data: Map<String, Any?>?): Plan? {
@@ -201,7 +205,11 @@ class FirestoreOwnerBillingRepository @Inject constructor(
             taxPercent = (data["taxPercent"] as? Number)?.toDouble() ?: 0.0,
             originalPriceMinor = (data["originalPriceMinor"] as? Number)?.toLong(),
             offerPriceVisible = data["offerPriceVisible"] as? Boolean ?: true,
-            displayOrder = (data["displayOrder"] as? Number)?.toInt() ?: 0
+            displayOrder = (data["displayOrder"] as? Number)?.toInt() ?: 0,
+            tierLevel = (data["tierLevel"] as? Number)?.toInt() ?: 0,
+            upgradePlanIds = (data["upgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
+            downgradePlanIds = (data["downgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
+            crossGradeEnabled = data["crossGradeEnabled"] as? Boolean ?: true
         )
     }
 
