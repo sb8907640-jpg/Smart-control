@@ -27,6 +27,8 @@ class FileTransferViewModel @Inject constructor(
     private val repository: FirestoreFileTransferRepository,
     private val uploader: FirebaseFileUploader
 ) : ViewModel() {
+    private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
+
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -39,6 +41,10 @@ class FileTransferViewModel @Inject constructor(
     private var pendingUri: Uri? = null
 
     fun uploadSelectedFile(uri: Uri) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
+            _status.value = "File transfers are disabled in Privacy Controls."
+            return@launch
+        }
         val sender = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
         val receiver = controlledDevice.value?.deviceUid ?: run { _status.value = "Pair a client device first."; return@launch }
         val resolver = context.contentResolver
@@ -56,6 +62,11 @@ class FileTransferViewModel @Inject constructor(
     }
 
     fun approve(transferId: String) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
+            _status.value = "File transfers are disabled in Privacy Controls."
+            repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED)
+            return@launch
+        }
         repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED)
         _status.value = "Transfer approved."
     }
@@ -63,6 +74,10 @@ class FileTransferViewModel @Inject constructor(
     fun uploadApproved() = viewModelScope.launch {
         val id = pendingTransferId ?: run { _status.value = "No pending transfer."; return@launch }
         val uri = pendingUri ?: run { _status.value = "Select the file again."; return@launch }
+        if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
+            _status.value = "File transfers are disabled in Privacy Controls."
+            return@launch
+        }
         val request = repository.get(id) ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.status != FileTransferRequest.Status.APPROVED) {
             _status.value = "Receiver approval is required first."
