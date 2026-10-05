@@ -30,14 +30,14 @@ private val features = listOf(
     FeatureRow(8, "Screen Recording", "CONSENT-GATED", "Screen capture transport uses MediaProjection; hidden/background recording is not used."),
     FeatureRow(9, "Touch Control", "SAFETY-GATED", "Session command validation exists; arbitrary remote touch injection is not enabled."),
     FeatureRow(10, "Keyboard Input", "SAFETY-GATED", "Session command validation exists; arbitrary remote keyboard injection is not enabled."),
-    FeatureRow(11, "App Install / Uninstall", "OS-GATED", "Android system confirmation is required; silent install/uninstall is not used."),
+    FeatureRow(11, "App Install / Uninstall", "SYSTEM-CONFIRMED", "APK selection opens the Android installer; uninstall opens the Android system confirmation."),
     FeatureRow(12, "File Transfer", "READY", "User-selected files require receiver approval before upload."),
-    FeatureRow(13, "Clipboard Sync", "NOT IMPLEMENTED", "No hidden clipboard collection or remote clipboard monitoring."),
+    FeatureRow(13, "Clipboard Sync", "LOCAL-ONLY", "Visible clipboard read/copy tools; no background monitoring or remote clipboard collection."),
     FeatureRow(14, "Files Access", "USER-SELECTED", "Android Storage Access Framework is used instead of directory scanning."),
-    FeatureRow(15, "Contacts", "NOT IMPLEMENTED", "No remote contacts collection is enabled."),
-    FeatureRow(16, "SMS", "NOT IMPLEMENTED", "No remote SMS collection is enabled."),
-    FeatureRow(17, "Call Logs", "NOT IMPLEMENTED", "No remote call-log collection is enabled."),
-    FeatureRow(18, "App Usage", "NOT IMPLEMENTED", "No hidden app-usage monitoring is enabled."),
+    FeatureRow(15, "Contacts", "LOCAL-ONLY", "Explicit READ_CONTACTS permission and visible local viewer; no remote collection."),
+    FeatureRow(16, "SMS", "LOCAL-ONLY", "Explicit READ_SMS permission and visible read-only local viewer; no remote collection."),
+    FeatureRow(17, "Call Logs", "LOCAL-ONLY", "Explicit READ_CALL_LOG permission and visible read-only local viewer; no remote collection."),
+    FeatureRow(18, "App Usage", "LOCAL-ONLY", "Explicit Android Usage Access special permission and visible local statistics; no hidden monitoring."),
     FeatureRow(19, "SOS Alerts", "READY", "Visible SOS alert creation and acknowledgement are supported.")
 )
 
