@@ -42,7 +42,7 @@ private val features = listOf(
 )
 
 @Composable
-fun FeatureCenterScreen(onBack: () -> Unit, onContacts: () -> Unit, onSms: () -> Unit, onCallLogs: () -> Unit, onAppUsage: () -> Unit, onClipboard: () -> Unit) {
+fun FeatureCenterScreen(onBack: () -> Unit, onContacts: () -> Unit, onSms: () -> Unit, onCallLogs: () -> Unit, onAppUsage: () -> Unit, onClipboard: () -> Unit, onAppInstall: () -> Unit) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -74,6 +74,7 @@ fun FeatureCenterScreen(onBack: () -> Unit, onContacts: () -> Unit, onSms: () ->
             OutlinedButton(onClick = onAppUsage, modifier = Modifier.weight(1f)) { Text("App Usage") }
         }
         OutlinedButton(onClick = onClipboard, modifier = Modifier.fillMaxWidth()) { Text("Clipboard (local)") }
+        OutlinedButton(onClick = onAppInstall, modifier = Modifier.fillMaxWidth()) { Text("App Install / Uninstall") }
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
