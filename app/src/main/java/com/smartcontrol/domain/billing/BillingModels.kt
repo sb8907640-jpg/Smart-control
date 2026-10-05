@@ -47,6 +47,7 @@ data class Subscription(
     val autoRenew: Boolean,
     // Immutable-at-purchase pricing terms for the current subscription period.
     val agreedPriceMinor: Long = 0L,
+    val agreedAmountMinor: Long = 0L,
     val agreedCurrency: String = "INR",
     val agreedDiscountPercent: Double = 0.0,
     val agreedDiscountMinor: Long = 0L,
