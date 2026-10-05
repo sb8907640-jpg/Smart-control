@@ -30,7 +30,11 @@ data class Plan(
     val tierLevel: Int = 0,
     val upgradePlanIds: Set<String> = emptySet(),
     val downgradePlanIds: Set<String> = emptySet(),
-    val crossGradeEnabled: Boolean = true
+    val crossGradeEnabled: Boolean = true,
+    val colorKey: String = "",
+    val featureLimits: Map<String, Long> = emptyMap(),
+    val featureTimeLimitsSeconds: Map<String, Long> = emptyMap(),
+    val featurePriorities: Map<String, Int> = emptyMap()
 )
 
 data class Subscription(
