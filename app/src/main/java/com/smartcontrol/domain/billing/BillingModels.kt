@@ -104,6 +104,12 @@ interface BillingRepository {
     suspend fun getPlans(): List<Plan>
     suspend fun getSubscription(userId: String): Subscription?
     suspend fun createPayment(payment: Payment): Result<Payment>
+    suspend fun createPlanPayment(
+        planId: String,
+        gateway: String,
+        paymentMethod: String,
+        couponCode: String = ""
+    ): Result<Payment>
     suspend fun createEmiSchedule(schedule: EmiSchedule): Result<EmiSchedule>
     suspend fun grantFreeAccess(grant: FreeGrant): Result<FreeGrant>
 }
