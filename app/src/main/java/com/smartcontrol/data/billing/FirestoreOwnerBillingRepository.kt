@@ -61,6 +61,15 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         require(normalizedEmails.all { it.contains("@") }) { "Owner email format is invalid." }
         require(normalizedMobiles.all { it.startsWith("+") }) { "Owner mobile must use international format." }
 
+        val syncResult = functions.getHttpsCallable("syncOwnerAccounts")
+            .call(mapOf("emails" to normalizedEmails, "mobiles" to normalizedMobiles))
+            .await()
+        val syncData = syncResult.data as? Map<*, *> ?: emptyMap<Any, Any>()
+        val unresolved = (syncData["unresolved"] as? List<*>)?.map { it.toString() }.orEmpty()
+        check(unresolved.isEmpty()) {
+            "These owner accounts are not registered in Firebase Auth: " + unresolved.joinToString(", ")
+        }
+
         firestore.collection("ownerAccounts").document("config")
             .set(
                 mapOf(
@@ -73,15 +82,6 @@ class FirestoreOwnerBillingRepository @Inject constructor(
                 ),
                 SetOptions.merge()
             ).await()
-
-        val syncResult = functions.getHttpsCallable("syncOwnerAccounts")
-            .call(mapOf("emails" to normalizedEmails, "mobiles" to normalizedMobiles))
-            .await()
-        val syncData = syncResult.data as? Map<*, *> ?: emptyMap<Any, Any>()
-        val unresolved = (syncData["unresolved"] as? List<*>)?.map { it.toString() }.orEmpty()
-        check(unresolved.isEmpty()) {
-            "These owner accounts are not registered in Firebase Auth: " + unresolved.joinToString(", ")
-        }
     }
 
     override fun observePlans(): Flow<List<Plan>> = callbackFlow {
