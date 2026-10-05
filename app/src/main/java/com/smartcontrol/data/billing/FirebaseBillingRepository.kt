@@ -89,7 +89,29 @@ class FirebaseBillingRepository @Inject constructor(
             deviceLimit = (data["deviceLimit"] as? Number)?.toInt() ?: 1,
             userLimit = (data["userLimit"] as? Number)?.toInt() ?: 1,
             storageLimitBytes = (data["storageLimitBytes"] as? Number)?.toLong() ?: 0L,
-            bandwidthLimitBytes = (data["bandwidthLimitBytes"] as? Number)?.toLong() ?: 0L
+            bandwidthLimitBytes = (data["bandwidthLimitBytes"] as? Number)?.toLong() ?: 0L,
+            tagline = data["tagline"]?.toString() ?: "",
+            iconKey = data["iconKey"]?.toString() ?: "",
+            badge = data["badge"]?.toString() ?: "",
+            durationUnit = data["durationUnit"]?.toString() ?: "DAY",
+            durationValue = (data["durationValue"] as? Number)?.toLong() ?: (data["durationDays"] as? Number)?.toLong() ?: 30L,
+            autoRenew = data["autoRenew"] as? Boolean ?: false,
+            gracePeriodDays = (data["gracePeriodDays"] as? Number)?.toInt() ?: 0,
+            expiryReminderDays = (data["expiryReminderDays"] as? Number)?.toInt() ?: 3,
+            discountPercent = (data["discountPercent"] as? Number)?.toDouble() ?: 0.0,
+            discountMinor = (data["discountMinor"] as? Number)?.toLong() ?: 0L,
+            taxPercent = (data["taxPercent"] as? Number)?.toDouble() ?: 0.0,
+            originalPriceMinor = (data["originalPriceMinor"] as? Number)?.toLong(),
+            offerPriceVisible = data["offerPriceVisible"] as? Boolean ?: true,
+            displayOrder = (data["displayOrder"] as? Number)?.toInt() ?: 0,
+            tierLevel = (data["tierLevel"] as? Number)?.toInt() ?: 0,
+            upgradePlanIds = (data["upgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
+            downgradePlanIds = (data["downgradePlanIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty(),
+            crossGradeEnabled = data["crossGradeEnabled"] as? Boolean ?: true,
+            colorKey = data["colorKey"]?.toString() ?: "",
+            featureLimits = decodeLongMap(data["featureLimits"]),
+            featureTimeLimitsSeconds = decodeLongMap(data["featureTimeLimitsSeconds"]),
+            featurePriorities = decodeIntMap(data["featurePriorities"])
         )
     }
 
@@ -127,3 +149,17 @@ class FirebaseBillingRepository @Inject constructor(
         )
     }
 }
+
+private fun decodeLongMap(value: Any?): Map<String, Long> =
+    (value as? Map<*, *>)?.mapNotNull { (key, item) ->
+        val k = key?.toString() ?: return@mapNotNull null
+        val v = (item as? Number)?.toLong() ?: return@mapNotNull null
+        k to v
+    }?.toMap().orEmpty()
+
+private fun decodeIntMap(value: Any?): Map<String, Int> =
+    (value as? Map<*, *>)?.mapNotNull { (key, item) ->
+        val k = key?.toString() ?: return@mapNotNull null
+        val v = (item as? Number)?.toInt() ?: return@mapNotNull null
+        k to v
+    }?.toMap().orEmpty()
