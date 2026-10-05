@@ -26,6 +26,8 @@ class MediaSessionViewModel @Inject constructor(
     private val engine: WebRtcMediaEngine,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+    private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
+
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -49,11 +51,15 @@ class MediaSessionViewModel @Inject constructor(
             .onFailure { lastError.value = it.message }
     }
 
-    fun select(id: String) {
-        selectedId.value = id
-    }
+    fun select(id: String) { selectedId.value = id }
 
     fun approve(id: String) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_session_requests", true) ||
+            !privacyPrefs.getBoolean("allow_media_sharing", true)) {
+            lastError.value = "Privacy Controls are blocking remote media/session requests."
+            signaling.denySession(id)
+            return@launch
+        }
         signaling.approveSession(id).onFailure { lastError.value = it.message }
         selectedId.value = id
     }
@@ -63,14 +69,15 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     fun startPublishing(session: MediaSession, projectionIntent: Intent?) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
+            lastError.value = "Media sharing is disabled in Privacy Controls."
+            return@launch
+        }
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
-
         engine.publish(session.sessionId, session.capabilities, projectionIntent)
-            .onSuccess {
-                FamilySafetyService.setSyncing(context)
-            }
+            .onSuccess { FamilySafetyService.setSyncing(context) }
             .onFailure {
                 MediaProjectionForegroundService.stop(context)
                 FamilySafetyService.setIdle(context)
