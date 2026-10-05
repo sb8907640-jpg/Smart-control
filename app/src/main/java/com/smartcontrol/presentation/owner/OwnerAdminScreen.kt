@@ -163,6 +163,22 @@ class OwnerAdminViewModel @Inject constructor(
         }
     }
 
+    fun savePaymentGatewaySettings(provider: String, mode: String, webhookSecret: String, providerConfig: String) {
+        val normalizedProvider = provider.trim().uppercase().ifBlank { "TEST" }
+        val normalizedMode = mode.trim().uppercase().ifBlank { "TEST" }
+        val values = settings.masterConfig.ownerControl.editableValues.toMutableMap()
+        values["payment.gatewayProvider"] = normalizedProvider
+        values["payment.gatewayMode"] = normalizedMode
+        values["payment.webhookSecret"] = webhookSecret
+        values["payment.gatewayProviderConfig"] = providerConfig
+        settings = settings.copy(
+            masterConfig = settings.masterConfig.copy(
+                ownerControl = settings.masterConfig.ownerControl.copy(editableValues = values)
+            )
+        )
+        save()
+    }
+
     fun refreshPaymentData() {
         viewModelScope.launch {
             payments = billingRepository.listPayments().getOrDefault(emptyList())
@@ -435,7 +451,12 @@ fun OwnerAdminScreen(
                             onRefund = viewModel::refundPayment,
                             onSaveCoupon = viewModel::saveCoupon,
                             onRecordPayout = viewModel::recordPayout,
-                            onLoadReport = viewModel::loadPaymentReport
+                            onLoadReport = viewModel::loadPaymentReport,
+                            gatewayProvider = viewModel.settings.masterConfig.ownerControl.editableValues["payment.gatewayProvider"] ?: "TEST",
+                            gatewayMode = viewModel.settings.masterConfig.ownerControl.editableValues["payment.gatewayMode"] ?: "TEST",
+                            gatewayWebhookSecret = viewModel.settings.masterConfig.ownerControl.editableValues["payment.webhookSecret"] ?: "",
+                            gatewayProviderConfig = viewModel.settings.masterConfig.ownerControl.editableValues["payment.gatewayProviderConfig"] ?: "",
+                            onSaveGatewaySettings = viewModel::savePaymentGatewaySettings
                         )
                     }
 
@@ -970,7 +991,12 @@ private fun OwnerPaymentPanel(
     onRefund: (String) -> Unit,
     onSaveCoupon: (String, String, String, String) -> Unit,
     onRecordPayout: (String, String, String) -> Unit,
-    onLoadReport: (Long, Long) -> Unit
+    onLoadReport: (Long, Long) -> Unit,
+    gatewayProvider: String,
+    gatewayMode: String,
+    gatewayWebhookSecret: String,
+    gatewayProviderConfig: String,
+    onSaveGatewaySettings: (String, String, String, String) -> Unit
 ) {
     var reference by remember { mutableStateOf("") }
     var couponCode by remember { mutableStateOf("") }
@@ -980,6 +1006,51 @@ private fun OwnerPaymentPanel(
     var payoutAmount by remember { mutableStateOf("0") }
     var payoutMethod by remember { mutableStateOf("BANK_TRANSFER") }
     var payoutAccount by remember { mutableStateOf("") }
+    var selectedGateway by remember(gatewayProvider) { mutableStateOf(gatewayProvider) }
+    var selectedMode by remember(gatewayMode) { mutableStateOf(gatewayMode) }
+    var webhookSecret by remember(gatewayWebhookSecret) { mutableStateOf(gatewayWebhookSecret) }
+    var providerConfig by remember(gatewayProviderConfig) { mutableStateOf(gatewayProviderConfig) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Payment Gateway Settings", style = MaterialTheme.typography.titleMedium)
+            Text("Owner can change the active gateway and TEST/LIVE mode without changing application code. Existing payment records retain their gateway.")
+            OutlinedTextField(
+                selectedGateway,
+                { selectedGateway = it.uppercase() },
+                label = { Text("Gateway provider") },
+                supportingText = { Text("TEST, RAZORPAY, STRIPE, PAYPAL, CASHFREE, PHONEPE, PAYU or CUSTOM") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { selectedMode = "TEST" }) { Text("TEST") }
+                OutlinedButton(onClick = { selectedMode = "LIVE" }) { Text("LIVE") }
+            }
+            OutlinedTextField(
+                webhookSecret,
+                { webhookSecret = it },
+                label = { Text("Webhook secret") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                providerConfig,
+                { providerConfig = it },
+                label = { Text("Gateway provider config (JSON)") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(onClick = {
+                onSaveGatewaySettings(
+                    selectedGateway.trim().uppercase(),
+                    selectedMode.trim().uppercase(),
+                    webhookSecret,
+                    providerConfig
+                )
+            }) { Text("Save Gateway Settings") }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
