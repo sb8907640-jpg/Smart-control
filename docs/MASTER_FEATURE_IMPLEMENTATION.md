@@ -17,13 +17,13 @@ This document maps the supplied master specification to the current Android impl
 ## Safety/platform gated
 9. Touch control — session/expiry/accessibility validation exists, but arbitrary remote input injection is intentionally not enabled.
 10. Keyboard input — session/expiry/accessibility validation exists, but arbitrary remote input injection is intentionally not enabled.
-11. App install/uninstall — Android system confirmation is required; no silent install/uninstall.
-13. Clipboard sync — not enabled.
+11. App install/uninstall — APK selection and uninstall request are handed to the Android system confirmation UI.
+13. Clipboard sync — visible local clipboard read/copy tools are enabled; background monitoring and remote collection remain disabled.
 14. Files access — SAF only; no background directory scanning.
-15. Contacts — no remote collection.
-16. SMS — no remote collection.
-17. Call logs — no remote collection.
-18. App usage — no hidden monitoring.
+15. Contacts — explicit local READ_CONTACTS permission and local viewer; no remote collection.
+16. SMS — explicit local READ_SMS permission and read-only local viewer; no remote collection.
+17. Call logs — explicit local READ_CALL_LOG permission and read-only local viewer; no remote collection.
+18. App usage — explicit Android Usage Access and visible local statistics; no hidden monitoring.
 
 ## Core workflow
 - Visible legal consent gate before sign-in.
