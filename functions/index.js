@@ -167,6 +167,14 @@ exports.listOwnerUsers = onCall(async (request) => {
     });
     pageToken = page.pageToken;
   } while (pageToken);
+  const accessSnapshots = await Promise.all(
+    result.map((user) => db.collection("userAccess").doc(user.uid).get())
+  );
+  result.forEach((user, index) => {
+    const accessData = accessSnapshots[index].exists ? accessSnapshots[index].data() : {};
+    user.accessGranted = accessData.accessGranted === true;
+    user.accessExpiresAtEpochMs = Number(accessData.accessExpiresAtEpochMs || 0) || null;
+  });
   return { users: result };
 });
 
@@ -187,8 +195,11 @@ exports.updateOwnerUser = onCall(async (request) => {
     const access = request.data?.access === true;
     const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
     const claims = { ...(target.customClaims || {}), role, access };
-    if (role === "SUPER_ADMIN") claims.admin = true;
-    if (role !== "SUPER_ADMIN" && target.uid !== request.auth.uid && claims.admin !== true) delete claims.admin;
+    if (role === "SUPER_ADMIN") {
+      claims.admin = true;
+    } else if (target.uid !== request.auth.uid) {
+      delete claims.admin;
+    }
     await getAuth().setCustomUserClaims(uid, claims);
     await db.collection("userAccess").doc(uid).set({
       uid,
