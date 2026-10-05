@@ -59,7 +59,11 @@ jobs:
             node --check functions/billing.js
             billing_status=$?
             echo "billing_status=$billing_status"
-            echo "validation_status=$(( index_status || billing_status ))"
+            echo "masterCatalog.js:"
+            node -e "const c=require('./functions/spec/masterCatalog'); if(c.TABLES.length < 42 || c.API.length < 60) process.exit(1); console.log('tables='+c.TABLES.length+' api='+c.API.length)"
+            catalog_status=$?
+            echo "catalog_status=$catalog_status"
+            echo "validation_status=$(( index_status || billing_status || catalog_status ))"
           } 2>&1 | tee functions-validation.log
           exit "$(grep '^validation_status=' functions-validation.log | cut -d= -f2)"
 
