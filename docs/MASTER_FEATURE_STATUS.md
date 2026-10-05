@@ -36,6 +36,7 @@ For repository status, **Complete** means the master specification data/status h
 - Existing owner settings preserved with Firestore merge writes: **COMPLETE**
 - Permission policy data: **COMPLETE**
 - Per-user/global feature controls: **COMPLETE**
+- Owner user management (list users, role/access control, block/unblock): **COMPLETE**
 - Plan/free-plan data model: **COMPLETE**
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
