@@ -27,7 +27,13 @@ fun ProfileScreen(
     viewModel: MediaSessionViewModel = hiltViewModel()
 ) {
     val session by viewModel.selectedSession.collectAsState()
-    var isAdmin by remember { mutableStateOf(false) }\n    LaunchedEffect(Unit) {\n        isAdmin = runCatching {\n            FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.claims?.get("admin") == true\n        }.getOrDefault(false)\n    }\n    Column(
+    var isAdmin by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isAdmin = runCatching {
+            FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.claims?.get("admin") == true
+        }.getOrDefault(false)
+    }
+    Column(
         Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -52,7 +58,9 @@ fun ProfileScreen(
         } else {
             Text("No active remote support session.")
         }
-        if (isAdmin) {\n            OutlinedButton(onClick = onOwnerAdmin, modifier = Modifier.fillMaxWidth()) { Text("Owner / Admin Settings") }\n        }
+        if (isAdmin) {
+            OutlinedButton(onClick = onOwnerAdmin, modifier = Modifier.fillMaxWidth()) { Text("Owner / Admin Settings") }
+        }
         OutlinedButton(onClick = onEmergencyContacts, modifier = Modifier.fillMaxWidth()) { Text("Emergency Contacts") }
         OutlinedButton(onClick = onAuditLog, modifier = Modifier.fillMaxWidth()) { Text("Consent Audit Log") }
         OutlinedButton(onClick = onPrivacyControls, modifier = Modifier.fillMaxWidth()) { Text("Privacy Controls") }
