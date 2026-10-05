@@ -32,3 +32,9 @@ The original master text contains requirements for hidden owner access, covert c
 A completed GitHub Actions run is required before calling the current head build-verified. Firebase production deployment, TURN production credentials, release signing, and a real two-device WebRTC/MediaProjection smoke test also require environment/device verification outside source review.
 
 **Current status:** Master data + Owner Settings reconciliation is **COMPLETE** at source/config/UI level. Build/device/backend verification is **PENDING EXTERNAL ENVIRONMENT**, not falsely marked complete.
+
+## Owner plan/access control stage
+
+Owner profile editing, plan CRUD/permission configuration, and timed free-access grant/edit/extend/reduce/revoke flows are now represented in source/UI/Firestore rules. Free grants use explicit start/expiry timestamps and revoke state. Plan/free-grant entitlement is covered by PlanPermissionGate tests.
+
+The latest GitHub Actions build is the verification authority for compilation; Firebase production data, custom admin claims, payment gateway credentials, and real device smoke tests still require the corresponding deployment/environment.
