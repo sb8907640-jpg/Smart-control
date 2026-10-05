@@ -41,14 +41,22 @@ For repository status, **Complete** means the master specification data/status h
 - Full plan editor (pricing, duration units, discounts/tax, tiers, upgrade/downgrade, feature limits/time/priority): **COMPLETE**
 - Payment ledger lifecycle (create/verify/refund), EMI application, coupons, subscriptions, reports and payout records: **COMPLETE**
 - Owner payment/finance dashboard controls: **COMPLETE**
-- Payment gateway execution: **COMPLETE at provider-neutral integration level** (LIVE/TEST mode, configured payment methods, signed webhook lifecycle); a real provider's credentials remain deployment configuration, not source-code data.
+- Payment gateway execution: **COMPLETE at provider-neutral integration level** (Owner-selectable gateway provider, LIVE/TEST mode, configured payment methods, per-provider webhook secret support, signed webhook lifecycle, gateway snapshot retained on each payment); real provider credentials/SDK configuration remain deployment configuration.
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
 - Live Firestore owner-settings observation: **COMPLETE**
 - Remote Config / Socket.IO / production FCM infrastructure: **NOT CLAIMED COMPLETE** because the repository does not contain the required backend endpoint/project credentials.
-- Production build verification: **CI VERIFIED** for the latest reconciled head (Android debug/release build + Firebase Functions validation passed).
+- Production build verification: **CI VERIFIED** for the previously reconciled head; the current gateway/CI changes are committed and the workflow now validates both functions/index.js and functions/billing.js syntax on every main push.
 - Real two-device WebRTC/MediaProjection smoke test: **NOT REPRODUCIBLE in CI**; Android system-consent/device behavior still requires a physical device environment.
 
 ## Important distinction
 
 The ZIP's **19/19 Online Support** line is retained as master-specification data. It must not be interpreted as a claim that Android can silently grant permissions, bypass system confirmation, survive factory reset, or provide covert/unrestricted remote control. Those behaviours remain intentionally outside the implementation.
+
+
+## Latest reconciliation
+
+- Owner Payment Gateway Settings: **COMPLETE** — gateway provider, TEST/LIVE mode, webhook secret, and provider-specific JSON configuration can be changed from Owner Settings and persisted without changing application code.
+- Existing payments keep their original gateway/provider metadata after a future gateway switch.
+- Payment coupon activation is idempotent: subscription activation owns coupon usage counting, preventing duplicate increments from verification/webhook paths.
+- CI payment validation: **COMPLETE** — syntax validation now covers both Functions entrypoint and billing implementation.
