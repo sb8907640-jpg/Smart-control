@@ -2,6 +2,7 @@ package com.smartcontrol.data.offline
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
@@ -27,7 +28,7 @@ data class BluetoothOfflineConnection(
 
 class BluetoothOfflineTransport(
     private val context: Context,
-    private val adapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
+    private val adapter: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java)?.adapter
 ) : Closeable {
     companion object {
         val SERVICE_UUID: UUID = UUID.fromString("b9e2b6c2-7f5b-4f1a-9f10-5e9a7c1d7d41")
