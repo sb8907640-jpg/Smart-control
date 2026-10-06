@@ -1,15 +1,20 @@
 const { Pool } = require("pg");
 
-function createPool() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is required.");
+function createPool(options = {}) {
+  const connectionString = options.connectionString || process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required for PostgreSQL.");
   return new Pool({
     connectionString,
     max: Number(process.env.PG_POOL_MAX || 20),
     idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
-    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 10000),
-    ssl: process.env.PGSSL === "disable" ? false : { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" }
+    connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 5000),
+    ssl: process.env.PGSSL === "disable" ? false : (process.env.NODE_ENV === "production" ? { rejectUnauthorized: true } : undefined)
   });
 }
-async function pingDatabase(pool) { await pool.query("SELECT 1"); return true; }
-module.exports={createPool,pingDatabase};
+
+async function checkDatabase(pool) {
+  const result = await pool.query("SELECT 1 AS ok");
+  return result.rows[0]?.ok === 1;
+}
+
+module.exports = { createPool, checkDatabase };
