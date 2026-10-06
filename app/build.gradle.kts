@@ -15,6 +15,12 @@ val apiBaseUrl = providers.gradleProperty("SMARTCONTROL_API_BASE_URL").orElse(""
 android {
     namespace="com.smartcontrol"
     compileSdk=36
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("owner") { dimension = "distribution"; applicationIdSuffix = ".owner"; versionNameSuffix = "-owner"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"OWNER\"") }
+        create("lite") { dimension = "distribution"; applicationIdSuffix = ".lite"; versionNameSuffix = "-lite"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"LITE\"") }
+        create("full") { dimension = "distribution"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"FULL\"") }
+    }
     defaultConfig {
         applicationId="com.smartcontrol"
         minSdk=26
