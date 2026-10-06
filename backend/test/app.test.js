@@ -20,8 +20,10 @@ test("health and readiness endpoints are public", async () => {
     assert.equal(health.status, 200);
     assert.equal((await health.json()).ok, true);
     const ready = await fetch(base + "/readyz");
-    assert.equal(ready.status, 200);
-    assert.equal((await ready.json()).ok, true);
+    assert.equal(ready.status, 503);
+    const readyBody = await ready.json();
+    assert.equal(readyBody.ok, false);
+    assert.equal(readyBody.checks.firebase, false);
   });
 });
 
