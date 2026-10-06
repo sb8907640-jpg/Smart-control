@@ -129,7 +129,19 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1" }
-      - run: gradle test assembleDebug
+      - name: Materialize Firebase config
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
+        run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
+      - name: Build and test Android
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
+          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
+          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+        run: gradle test assembleDebug -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
 
   cross-platform-integration:
     runs-on: ubuntu-latest
