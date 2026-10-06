@@ -369,7 +369,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
                 realtimeApply = ownerControl["realtimeApply"] as? Boolean ?: true,
                 changeLogEnabled = ownerControl["changeLogEnabled"] as? Boolean ?: true,
                 rollbackEnabled = ownerControl["rollbackEnabled"] as? Boolean ?: true,
-                editableValues = stringMap(ownerControl["editableValues"]).ifEmpty { OwnerControlConfig.defaultEditableValues() }
+                editableValues = OwnerControlConfig.defaultEditableValues() + stringMap(ownerControl["editableValues"])
             )
         )
     }
