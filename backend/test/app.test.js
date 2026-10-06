@@ -60,3 +60,24 @@ test("plan route fails closed when Firestore is unavailable", async () => {
     assert.equal(response.status, 503);
   });
 });
+
+
+test("health endpoint fails closed for production without residency configuration", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousRegion = process.env.SMARTCONTROL_DATA_REGION;
+  try {
+    process.env.NODE_ENV = "production";
+    delete process.env.SMARTCONTROL_DATA_REGION;
+    const app = createApp();
+    await withServer(app, async base => {
+      const response = await fetch(base + "/healthz");
+      assert.equal(response.status, 503);
+      const body = await response.json();
+      assert.equal(body.ok, false);
+      assert.equal(body.residency, null);
+    });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousNodeEnv;
+    if (previousRegion === undefined) delete process.env.SMARTCONTROL_DATA_REGION; else process.env.SMARTCONTROL_DATA_REGION = previousRegion;
+  }
+});
