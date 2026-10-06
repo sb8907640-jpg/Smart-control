@@ -156,7 +156,7 @@ struct ResidencyPolicy: Decodable {
 }
 
 struct RemoteConfig: Decodable {
-    let values: [String: String]
+    let values: [String: String?]
     let etag: String?
     let fetchedAt: String
 }
