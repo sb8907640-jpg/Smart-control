@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -56,7 +56,7 @@ async function apiGet<T>(path: string, user: User): Promise<T> {
 }
 
 export default function Home() {
-  const auth = useMemo(authClient, []);
+  const [auth, setAuth] = useState<Auth | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<BackendSession | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -64,11 +64,16 @@ export default function Home() {
   const [status, setStatus] = useState("Not connected");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => onAuthStateChanged(auth, setUser), [auth]);
+  useEffect(() => {
+    const client = authClient();
+    setAuth(client);
+    return onAuthStateChanged(client, setUser);
+  }, []);
 
   async function signIn() {
     setBusy(true);
     setStatus("Signing in with Google...");
+    if (!auth) return;
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       setStatus("Signed in. Verifying backend session...");
@@ -102,6 +107,7 @@ export default function Home() {
 
   async function logout() {
     setBusy(true);
+    if (!auth) return;
     try {
       await signOut(auth);
       setSession(null);
