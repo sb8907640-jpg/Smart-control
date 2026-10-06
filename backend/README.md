@@ -41,3 +41,8 @@ Sensitive device-control operations remain governed by the Android application's
 ## PostgreSQL
 
 The production data layer uses PostgreSQL through the `pg` connection pool. Set `DATABASE_URL` and, when required by the hosting environment, `PGSSL=true`. The initial schema is in `migrations/001_initial.sql`. CI runs the repository unit tests without requiring production credentials; deployment must supply the managed PostgreSQL connection securely.
+
+
+## PostgreSQL production setup
+
+Set `DATABASE_URL` to the managed PostgreSQL connection string. The service uses a bounded connection pool and TLS by default. Run `npm run migrate` during deployment before serving traffic. PostgreSQL health is exposed in the authenticated `/api/system/status` response and the service fails closed when a configured database is unavailable.
