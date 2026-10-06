@@ -43,5 +43,21 @@ class OwnerSettingsModelsTest {
             "10",
             settings.masterConfig.ownerControl.editableValues["connection.pairingTokenExpiryMinutes"]
         )
+        assertEquals(
+            "1",
+            settings.masterConfig.ownerControl.editableValues["plans.freePairingTokenExpiryMinutes"]
+        )
+        assertEquals(
+            "2",
+            settings.masterConfig.ownerControl.editableValues["plans.smallPairingTokenExpiryMinutes"]
+        )
+        assertEquals(
+            "5",
+            settings.masterConfig.ownerControl.editableValues["plans.standardPairingTokenExpiryMinutes"]
+        )
+        assertEquals(
+            "10",
+            settings.masterConfig.ownerControl.editableValues["plans.premiumPairingTokenExpiryMinutes"]
+        )
     }
 }
