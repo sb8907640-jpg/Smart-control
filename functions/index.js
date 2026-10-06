@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
@@ -276,3 +277,47 @@ exports.syncOwnerAccounts = onCall(async (request) => {
 
 // Billing and payment lifecycle exports.
 Object.assign(exports, require("./billing"));
+
+
+exports.detectConsentAnomaly = onDocumentCreated("auditLogs/{eventId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) return;
+  const eventData = snapshot.data();
+  const userId = typeof eventData.userId === "string" ? eventData.userId : "";
+  const deviceId = typeof eventData.deviceId === "string" ? eventData.deviceId : "";
+  const createdAt = Number(eventData.createdAt || Date.now());
+  if (!userId || !deviceId) return;
+
+  const windowStart = createdAt - 60_000;
+  const recent = await db.collection("auditLogs")
+    .where("userId", "==", userId)
+    .where("deviceId", "==", deviceId)
+    .where("createdAt", ">=", windowStart)
+    .orderBy("createdAt", "desc")
+    .limit(51)
+    .get();
+
+  const distinctActions = new Set(
+    recent.docs.map(doc => String(doc.data().action || "")).filter(Boolean)
+  );
+  const burst = recent.size > 20;
+  const actionSpread = recent.size >= 10 && distinctActions.size >= 8;
+  if (!burst && !actionSpread) return;
+
+  const anomalyId = crypto
+    .createHash("sha256")
+    .update([userId, deviceId, String(Math.floor(createdAt / 60_000))].join(":"))
+    .digest("hex");
+
+  await db.collection("anomalyAlerts").doc(anomalyId).set({
+    userId,
+    deviceId,
+    type: burst ? "AUDIT_BURST" : "UNUSUAL_ACTION_SPREAD",
+    severity: burst ? "HIGH" : "MEDIUM",
+    eventCount: recent.size,
+    distinctActions: distinctActions.size,
+    windowStart,
+    windowEnd: createdAt,
+    createdAt: Date.now()
+  }, { merge: true });
+});
