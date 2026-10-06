@@ -167,7 +167,7 @@ CREATE INDEX IF NOT EXISTS idx_connections_controller ON connections(controller_
 CREATE INDEX IF NOT EXISTS idx_pairing_codes_owner ON pairing_codes(owner_uid,status);
 CREATE INDEX IF NOT EXISTS idx_persistent_links_device ON persistent_links(device_id,status);
 CREATE INDEX IF NOT EXISTS idx_reconnect_queue_due ON reconnect_queue(status,next_attempt_at);
-CREATE INDEX IF NOT EXISTS idx_permission_requests_user ON permission_requests(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_permission_requests_user ON permission_requests(user_id,requested_at DESC);
 CREATE INDEX IF NOT EXISTS idx_permission_grants_device ON permission_grants(device_id,permission_key);
 CREATE INDEX IF NOT EXISTS idx_consent_user ON consent_logs(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_location_device_time ON location_data(device_id,captured_at DESC);
