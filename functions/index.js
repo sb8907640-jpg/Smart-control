@@ -5,6 +5,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
+const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
 
 initializeApp();
 const db = getFirestore();
@@ -187,13 +188,16 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   const target = await getAuth().getUser(uid);
   const action = typeof request.data?.action === "string" ? request.data.action : "set";
-  const allowedRoles = new Set(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPPORT", "USER"]);
-  const role = typeof request.data?.role === "string" ? request.data.role : "USER";
+  const role = normalizeRole(request.data?.role);
+  if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
+    throw new HttpsError("invalid-argument", "Unsupported user role.");
+  }
+  const actorRole = normalizeRole(request.auth.token?.role);
+  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
+    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  }
 
   if (action === "set") {
-    if (!allowedRoles.has(role)) {
-      throw new HttpsError("invalid-argument", "Unsupported user role.");
-    }
     const access = request.data?.access === true;
     const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
     const claims = { ...(target.customClaims || {}), role, access };
