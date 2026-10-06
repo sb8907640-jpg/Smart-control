@@ -16,7 +16,7 @@ async function createRepository() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(owner_uid, device_key)
     );
-    CREATE TABLE audit_events (
+    CREATE TABLE audit_logs (
       id BIGSERIAL PRIMARY KEY,
       actor_uid TEXT,
       event_type TEXT NOT NULL,
@@ -70,7 +70,7 @@ test("PostgreSQL repository records auditable actions", async () => {
       metadata: { source: "test" }
     });
     assert.ok(audit.id);
-    const result = await pool.query("SELECT actor_uid, event_type, resource_type, resource_id, metadata FROM audit_events");
+    const result = await pool.query("SELECT actor_uid, event_type, resource_type, resource_id, metadata FROM audit_logs");
     assert.equal(result.rows[0].actor_uid, "owner-1");
     assert.equal(result.rows[0].event_type, "grant");
     assert.equal(result.rows[0].resource_type, "permission");
