@@ -63,8 +63,8 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run check
-          npm test
           npm run migrate
+          npm test
 
   blockchain-contract:
     runs-on: ubuntu-latest
