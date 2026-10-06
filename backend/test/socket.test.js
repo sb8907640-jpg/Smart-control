@@ -134,15 +134,24 @@ test("Socket.IO client recovers after a simulated transport disconnect", async (
       client.once("connect", resolve);
       client.once("connect_error", reject);
     });
-    const reconnecting = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("automatic reconnect timed out")), 5000);
-      client.io.once("reconnect", attempt => {
-        clearTimeout(timer);
-        resolve(attempt);
-      });
-    });
+    const reconnecting = Promise.all([
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("automatic reconnect timed out")), 5000);
+        client.io.once("reconnect", attempt => {
+          clearTimeout(timer);
+          resolve(attempt);
+        });
+      }),
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("socket connect after reconnect timed out")), 5000);
+        client.once("connect", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      })
+    ]);
     client.io.engine.close();
-    const attempt = await reconnecting;
+    const [attempt] = await reconnecting;
     assert.ok(attempt >= 1);
     assert.equal(client.connected, true);
   } finally {
