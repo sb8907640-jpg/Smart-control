@@ -3,6 +3,7 @@ package com.smartcontrol.data.offline
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
@@ -10,7 +11,7 @@ import android.os.Looper
 import androidx.core.content.ContextCompat
 import java.io.Closeable
 
-class WifiDirectTransport(context: Context) : Closeable {
+class WifiDirectTransport(private val context: Context) : Closeable {
     private val manager = context.getSystemService(WifiP2pManager::class.java)
         ?: error("Wi-Fi Direct is not available on this device.")
     private val channel = manager.initialize(context, Looper.getMainLooper(), null)
@@ -24,7 +25,7 @@ class WifiDirectTransport(context: Context) : Closeable {
         })
     }
 
-    fun requestPeers(onPeers: (List<WifiP2pDevice>) -> Unit, onFailure: (Throwable) -> Unit) {
+    fun requestPeers(onPeers: (List<WifiP2pDevice>) -> Unit) {
         requireDiscoveryPermission(context)
         manager.requestPeers(channel) { list ->
             onPeers(list.deviceList.toList())
@@ -45,3 +46,16 @@ class WifiDirectTransport(context: Context) : Closeable {
         // The Wi-Fi Direct channel is owned by the process and requires no explicit close.
     }
 }
+
+
+    fun connect(device: WifiP2pDevice, onResult: (Result<Unit>) -> Unit) {
+        requireDiscoveryPermission(context)
+        val config = WifiP2pConfig().apply {
+            deviceAddress = device.deviceAddress
+        }
+        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
+            override fun onSuccess() = onResult(Result.success(Unit))
+            override fun onFailure(reason: Int) =
+                onResult(Result.failure(IllegalStateException("Wi-Fi Direct connection failed: $reason")))
+        })
+    }
