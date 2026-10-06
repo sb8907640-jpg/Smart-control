@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const { getAuth, getFirestore } = require("firebase-admin");
+const { installPostgresRoutes } = require("./postgres-api");
 
 function createApp({ verifyIdToken, db } = {}) {
   const app = express();
@@ -25,7 +26,7 @@ function createApp({ verifyIdToken, db } = {}) {
     timestamp: new Date().toISOString()
   }));
 
-  app.get("/readyz", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/readyz", async (_req, res) => {\n    const checks = { firebase: Boolean(db), postgres: false };\n    if (process.env.DATABASE_URL) { try { require("./db").pingDatabase(require("./db").createPool()); checks.postgres = true; } catch (_) {} }\n    res.status(checks.firebase ? 200 : 503).json({ ok: checks.firebase, checks });\n  });
 
   const authenticate = async (req, res, next) => {
     const header = String(req.get("authorization") || "");
@@ -40,12 +41,13 @@ function createApp({ verifyIdToken, db } = {}) {
   };
 
   const firestore = db;
+  const postgres = arguments.length ? null : null;
   const requireFirestore = (_req, res, next) => {
     if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
     next();
   };
 
-  app.get("/api/auth/session", authenticate, (req, res) => {
+  if (process.env.DATABASE_URL) {\n    const pool = require("./db").createPool();\n    installPostgresRoutes(app, { pool });\n  }\n\n  app.get("/api/auth/session", authenticate, (req, res) => {
     res.json({
       authenticated: true,
       uid: req.user.uid,
