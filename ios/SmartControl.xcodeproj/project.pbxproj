@@ -1,0 +1,59 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ classes = {};
+ objectVersion = 56;
+ objects = {
+
+/* Begin PBXBuildFile section */
+  A00000010000000000000001 /* SmartControlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000020000000000000001 /* SmartControlApp.swift */; };
+  A00000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000030000000000000002 /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+  A00000020000000000000001 /* SmartControlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartControlApp.swift; sourceTree = "<group>"; };
+  A00000030000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+  A00000040000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+  A00000050000000000000004 /* SmartControl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmartControl.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+  A00000100000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+  A00000200000000000000001 /* SmartControl */ = {isa = PBXNativeTarget; buildConfigurationList = A00000300000000000000001 /* Build configuration list for PBXNativeTarget "SmartControl" */; buildPhases = (A00000400000000000000001 /* Sources */, A00000100000000000000001 /* Frameworks */, A00000500000000000000001 /* Resources */); buildRules = (); dependencies = (); name = SmartControl; productName = SmartControl; productReference = A00000050000000000000004 /* SmartControl.app */; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+  A00000600000000000000001 /* Project object */ = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = A00000300000000000000002 /* Build configuration list for PBXProject "SmartControl" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A00000700000000000000001; productRefGroup = A00000700000000000000003 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A00000200000000000000001); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+  A00000500000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+  A00000400000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000001, A00000010000000000000002); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXGroup section */
+  A00000700000000000000001 = {isa = PBXGroup; children = (A00000700000000000000002, A00000700000000000000003); sourceTree = "<group>"; };
+  A00000700000000000000002 /* SmartControl */ = {isa = PBXGroup; children = (A00000020000000000000001, A00000030000000000000002, A00000040000000000000003); path = SmartControl; sourceTree = "<group>"; };
+  A00000700000000000000003 /* Products */ = {isa = PBXGroup; children = (A00000050000000000000004); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin XCBuildConfiguration section */
+  A00000800000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = com.smartcontrol.ios; INFOPLIST_FILE = SmartControl/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; CODE_SIGNING_ALLOWED = NO;}; name = Debug; };
+  A00000800000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = com.smartcontrol.ios; INFOPLIST_FILE = SmartControl/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; CODE_SIGNING_ALLOWED = NO;}; name = Release; };
+  A00000800000000000000003 /* Debug Project */ = {isa = XCBuildConfiguration; buildSettings = {SWIFT_VERSION = 5.0;}; name = Debug; };
+  A00000800000000000000004 /* Release Project */ = {isa = XCBuildConfiguration; buildSettings = {SWIFT_VERSION = 5.0;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+  A00000300000000000000001 /* Build configuration list for PBXNativeTarget "SmartControl" */ = {isa = XCConfigurationList; buildConfigurations = (A00000800000000000000001, A00000800000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+  A00000300000000000000002 /* Build configuration list for PBXProject "SmartControl" */ = {isa = XCConfigurationList; buildConfigurations = (A00000800000000000000003, A00000800000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+ };
+ rootObject = A00000600000000000000001;
+}
