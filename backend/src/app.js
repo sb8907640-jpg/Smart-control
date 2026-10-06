@@ -83,6 +83,8 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     let firestoreStatus = "unconfigured";
     let postgresStatus = { configured: false, ok: false };
     try { postgresStatus = await checkPostgres(postgres); } catch (_) { postgresStatus = { configured: true, ok: false }; }
+    let postgresStatus = { configured: false, ok: false };
+    try { postgresStatus = await checkPostgres(postgres); } catch (_) { postgresStatus = { configured: true, ok: false }; }
     if (firestore) {
       try {
         await firestore.collection("systemStatus").doc("health").get();
@@ -165,6 +167,7 @@ function createProductionApp() {
   createFirebaseApp();
   const auth = getAuth();
   const db = getFirestore();
+  const postgres = createPostgresPool();
   const postgres = createPostgresPool();
   const { createPool } = require("./postgres");
   const { createPostgresRepository } = require("./postgres-repository");
