@@ -44,6 +44,13 @@ jobs:
           SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
         run: gradle test assembleDebug assembleRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"
 
+      - name: Verify Node.js Express backend
+        working-directory: backend
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm test
+
       - name: Validate Firebase Functions
         shell: bash
         run: |
