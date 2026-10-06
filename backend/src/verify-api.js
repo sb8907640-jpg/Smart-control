@@ -84,7 +84,10 @@ function seedDb() {
   });
 }
 function pathFor(endpoint) {
-  return endpoint.replace("/:id", "/device-1");
+  if (endpoint.startsWith("/api/devices/:id")) return "/api/devices/device-1";
+  if (endpoint.startsWith("/api/permissions/:id")) return "/api/permissions/permission-1";
+  if (endpoint.startsWith("/api/plans/:id")) return "/api/plans/plan-1";
+  return endpoint;
 }
 function requestBody(endpoint) {
   if (endpoint.includes("/link/join")) return { code: "JOIN-CODE" };
