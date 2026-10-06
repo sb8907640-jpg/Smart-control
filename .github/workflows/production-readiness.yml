@@ -1,0 +1,104 @@
+name: Production Readiness Gate
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", ".github/workflows/production-readiness.yml"]
+  pull_request:
+    branches: ["main"]
+    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", ".github/workflows/production-readiness.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: smart_control_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d smart_control_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Test backend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test
+          PG_SSL: "false"
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm test
+          npm run migrate
+
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Validate Firebase Functions
+        working-directory: functions
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          node --check billing.js
+          node -e "const c=require('./spec/masterCatalog'); if(c.TABLES.length < 42 || c.API.length < 60) process.exit(1)"
+
+  web:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm run build
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm run build:linux
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.11.1" }
+      - run: gradle test assembleDebug
+
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: iOS simulator build
+        run: |
+          xcodebuild -project ios/SmartControl.xcodeproj -scheme SmartControl -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 15' -configuration Debug CODE_SIGNING_ALLOWED=NO build
