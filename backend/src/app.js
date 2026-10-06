@@ -79,6 +79,18 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     });
   });
 
+  app.post("/api/notifications/register", authenticate, requireFirestore, async (req, res, next) => {
+    try {
+      const token = String(req.body?.token || "");
+      if (token.length < 20 || token.length > 4096) return res.status(400).json({ error: "Invalid FCM token." });
+      await firestore.collection("fcmTokens").doc(req.user.uid).collection("tokens").doc(Buffer.from(token).toString("base64url").slice(0, 128)).set({
+        token, platform: String(req.body?.platform || "unknown").slice(0, 32),
+        updatedAtEpochMs: Date.now()
+      }, { merge: true });
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
+
   app.get("/api/system/status", authenticate, async (_req, res) => {
     let firestoreStatus = "unconfigured";
     let postgresStatus = { configured: false, ok: false };
@@ -99,6 +111,22 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
       firestore: firestoreStatus,
       postgres: postgresStatus
     });
+  });
+
+  app.post("/api/notifications/send", authenticate, requireFirestore, async (req, res, next) => {
+    if (req.user.admin !== true) return res.status(403).json({ error: "Administrator access required." });
+    try {
+      const uid = String(req.body?.uid || "");
+      const title = String(req.body?.title || "").trim().slice(0, 120);
+      const body = String(req.body?.body || "").trim().slice(0, 1000);
+      if (!uid || !title || !body) return res.status(400).json({ error: "uid, title and body are required." });
+      const snap = await firestore.collection("fcmTokens").doc(uid).collection("tokens").limit(500).get();
+      const tokens = snap.docs.map(d => d.data().token).filter(Boolean);
+      if (!tokens.length) return res.status(404).json({ error: "No registered FCM tokens." });
+      const { getMessaging } = require("firebase-admin/messaging");
+      const result = await getMessaging().sendEachForMulticast({ tokens, notification: { title, body }, data: { source: "smart-control-backend" } });
+      res.json({ successCount: result.successCount, failureCount: result.failureCount });
+    } catch (error) { next(error); }
   });
 
   app.get("/api/plans", authenticate, requireFirestore, async (_req, res, next) => {
