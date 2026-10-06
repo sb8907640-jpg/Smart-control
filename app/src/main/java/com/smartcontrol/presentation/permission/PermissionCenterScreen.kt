@@ -43,6 +43,7 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     var sequentialIndex by remember { mutableIntStateOf(0) }
     var sequentialActive by remember { mutableStateOf(false) }
     var requestedItemIndex by remember { mutableIntStateOf(-1) }
+    var skippedItems by remember { mutableStateOf(emptySet<Int>()) }
 
     fun granted(item: PermissionItem): Boolean =
         item.permissions.all {
@@ -73,6 +74,7 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     fun requestItem(index: Int) {
         sequentialActive = false
         sequentialIndex = 0
+        skippedItems = skippedItems - index
         requestedItemIndex = index
         requestLauncher.launch(permissionItems[index].permissions.toTypedArray())
     }
@@ -116,7 +118,13 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(item.label, style = MaterialTheme.typography.bodyLarge)
-                            Text(if (isGranted) "Allowed" else "Not allowed")
+                            Text(
+                                when {
+                                    isGranted -> "Allowed"
+                                    skippedItems.contains(index) -> "Skipped by user"
+                                    else -> "Not allowed"
+                                }
+                            )
                         }
                         OutlinedButton(
                             onClick = { requestItem(index) },
@@ -125,10 +133,13 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
                             Text(if (isGranted) "Allowed" else "Allow")
                         }
                         OutlinedButton(
-                            onClick = { refreshTick += 1 },
-                            enabled = isGranted
+                            onClick = {
+                                skippedItems = skippedItems + index
+                                refreshTick += 1
+                            },
+                            enabled = !isGranted
                         ) {
-                            Text("Deny/Skip")
+                            Text(if (skippedItems.contains(index)) "Skipped" else "Skip")
                         }
                     }
                 }
@@ -149,8 +160,9 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
                 }
 
                 Text(
-                    "Deny/Skip app से permission revoke नहीं करता। यदि permission पहले से Allowed है और उसे हटाना है, " +
-                        "तो Android App Settings से User स्वयं revoke कर सकता है।"
+                    "Skip का मतलब है कि app उस permission का system dialog अभी नहीं खोलेगा। " +
+                        "वास्तविक Deny/Allow का निर्णय Android के system dialog में User स्वयं करता है। " +
+                        "पहले से Allowed permission को revoke करने के लिए Android App Settings इस्तेमाल करें।"
                 )
             }
         }
