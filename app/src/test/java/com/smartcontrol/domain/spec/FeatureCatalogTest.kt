@@ -39,9 +39,9 @@ class FeatureCatalogTest {
     }
 
     @Test fun matchesMasterOfflineCoverage() {
-        assertEquals(16, FeatureCatalog.all.count { it.offline })
+        assertEquals(18, FeatureCatalog.all.count { it.offline })
         assertTrue(FeatureCatalog.all.first { it.id == FeatureId.SCREEN_SHARE }.offline.not())
-        assertTrue(FeatureCatalog.all.filter { it.id != FeatureId.SCREEN_SHARE && it.id != FeatureId.CAMERA && it.id != FeatureId.MICROPHONE }.all { it.offline })
+        assertTrue(FeatureCatalog.all.filter { it.id != FeatureId.SCREEN_SHARE }.all { it.offline })
     }
 
     @Test fun everyFeatureRequiresVisibleSessionApproval() {
