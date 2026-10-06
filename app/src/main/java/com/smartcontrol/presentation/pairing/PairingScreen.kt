@@ -47,10 +47,10 @@ fun PairingScreen(
                 onClick = viewModel::generateCode,
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Create 10-minute pairing token") }
+            ) { Text("Create pairing token") }
 
             state.code?.let {
-                Text("Share this temporary token with the intended controller:")
+                Text("Share this pairing token with the intended controller. Expiry follows the assigned plan; Owner/Admin links do not expire.")
                 Text(it.token)
                 Button(onClick = {
                     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
