@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const { getAuth, getFirestore } = require("firebase-admin/auth");
 const { createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 
@@ -58,7 +59,6 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
   };
 
   const firestore = db;
-
   const requireFirestore = (_req, res, next) => {
     if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
     next();
@@ -126,8 +126,6 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     let firestoreStatus = "unconfigured";
     let postgresStatus = { configured: false, ok: false };
     try { postgresStatus = await checkPostgres(postgres); } catch (_) { postgresStatus = { configured: true, ok: false }; }
-    let postgresStatus = { configured: false, ok: false };
-    try { postgresStatus = await checkPostgres(postgres); } catch (_) { postgresStatus = { configured: true, ok: false }; }
     if (firestore) {
       try {
         await firestore.collection("systemStatus").doc("health").get();
@@ -162,15 +160,9 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
 
   app.get("/api/plans", authenticate, requireFirestore, async (_req, res, next) => {
     try {
-      const snap = await firestore.collection("plans")
-        .where("enabled", "==", true)
-        .orderBy("displayOrder", "asc")
-        .limit(100)
-        .get();
+      const snap = await firestore.collection("plans").where("enabled", "==", true).orderBy("displayOrder", "asc").limit(100).get();
       res.json({ plans: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 
   app.get("/api/plans/:id", authenticate, requireFirestore, async (req, res, next) => {
@@ -178,9 +170,7 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
       const snap = await firestore.collection("plans").doc(req.params.id).get();
       if (!snap.exists || snap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
       res.json({ plan: { id: snap.id, ...snap.data() } });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 
   app.get("/api/devices", authenticate, async (req, res, next) => {
@@ -189,23 +179,15 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
       if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
       const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
       return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 
   app.get("/api/subscription/status", authenticate, requireFirestore, async (req, res, next) => {
     try {
-      const snap = await firestore.collection("subscriptions")
-        .where("userId", "==", req.user.uid)
-        .where("status", "in", ["TRIAL", "ACTIVE", "PAST_DUE", "PAUSED"])
-        .orderBy("updatedAtEpochMs", "desc")
-        .limit(1)
-        .get();
+      const snap = await firestore.collection("subscriptions").where("userId", "==", req.user.uid)
+        .where("status", "in", ["TRIAL", "ACTIVE", "PAST_DUE", "PAUSED"]).orderBy("updatedAtEpochMs", "desc").limit(1).get();
       res.json({ subscription: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 
   app.use((error, _req, res, _next) => {
@@ -226,11 +208,8 @@ function createProductionApp() {
   createFirebaseApp();
   const auth = getAuth();
   const db = getFirestore();
-  const postgres = createPostgresPool();
-  const postgres = createPostgresPool();
-  const { createPool } = require("./postgres");
+  const postgresPool = createPostgresPool();
   const { createPostgresRepository } = require("./postgres-repository");
-  const postgresPool = process.env.DATABASE_URL ? createPool() : null;
   return createApp({
     db,
     postgres: postgresPool ? createPostgresRepository(postgresPool) : null,
