@@ -3,6 +3,7 @@ package com.smartcontrol.data.pairing
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.smartcontrol.domain.owner.OwnerSettingsRepository
 import com.smartcontrol.domain.pairing.PairingCode
 import com.smartcontrol.domain.pairing.PairedDevice
 import com.smartcontrol.domain.pairing.PairingRepository
@@ -12,12 +13,14 @@ import javax.inject.Singleton
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 
 @Singleton
 class FirestorePairingRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val db: FirebaseFirestore
+    private val db: FirebaseFirestore,
+    private val ownerSettingsRepository: OwnerSettingsRepository
 ) : PairingRepository {
     private val random = SecureRandom()
 
@@ -58,9 +61,21 @@ class FirestorePairingRepository @Inject constructor(
     override suspend fun createPairingCode(): Result<PairingCode> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         val token = buildToken()
-        val expires = System.currentTimeMillis() + 10 * 60 * 1000L
+        val expiryMinutes = ownerSettingsRepository.observe()
+            .first()
+            .masterConfig.ownerControl.editableValues["connection.pairingTokenExpiryMinutes"]
+            ?.toLongOrNull()
+            ?.coerceIn(1L, 60L)
+            ?: DEFAULT_PAIRING_EXPIRY_MINUTES
+        val createdAt = System.currentTimeMillis()
+        val expires = createdAt + expiryMinutes * 60_000L
         db.collection("pairingCodes").document(token).set(
-            mapOf("deviceUid" to uid, "expiresAt" to expires, "createdAt" to System.currentTimeMillis())
+            mapOf(
+                "deviceUid" to uid,
+                "expiresAt" to expires,
+                "createdAt" to createdAt,
+                "expiryMinutes" to expiryMinutes
+            )
         ).await()
         PairingCode(token, uid, expires)
     }
@@ -97,5 +112,9 @@ class FirestorePairingRepository @Inject constructor(
         val bytes = ByteArray(24)
         random.nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private companion object {
+        const val DEFAULT_PAIRING_EXPIRY_MINUTES = 10L
     }
 }
