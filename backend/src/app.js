@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const { getAuth, getFirestore } = require("firebase-admin/auth");
+const { getAuth } = require("firebase-admin/auth");
+const { getFirestore } = require("firebase-admin/firestore");
 const { createPool: createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 
