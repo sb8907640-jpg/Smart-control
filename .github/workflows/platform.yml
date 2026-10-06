@@ -1,0 +1,42 @@
+name: Platform CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm run build
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: ios
+        run: |
+          xcodebuild -list -project SmartControl.xcodeproj
+          xcodebuild -project SmartControl.xcodeproj -scheme SmartControl -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
