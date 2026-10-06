@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
     var deviceOwnerConsent by remember { mutableStateOf(false) }
     var privacyConsent by remember { mutableStateOf(false) }
+    var eulaConsent by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().padding(24.dp),
@@ -20,6 +21,7 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
         Text("Smart Control uses explicit consent for remote support, camera, microphone, screen sharing, location and file transfer.")
         Text("The app stays visible while sensitive capabilities are active. Android system permission dialogs remain under the user's control.")
         Text("If the device user is under 18, a parent or guardian should approve use of family-safety features.")
+        Text("Terms, Privacy Policy and EULA must be reviewed and accepted before continuing.")
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("I am the device owner or have permission to use this app.")
@@ -29,6 +31,10 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
             Text("I understand the privacy and consent controls.")
             Checkbox(checked = privacyConsent, onCheckedChange = { privacyConsent = it })
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("I accept the Terms, Privacy Policy and EULA.")
+            Checkbox(checked = eulaConsent, onCheckedChange = { eulaConsent = it })
+        }
 
         Button(
             onClick = {
@@ -36,7 +42,7 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
                     .edit().putBoolean("accepted", true).apply()
                 onAccepted()
             },
-            enabled = deviceOwnerConsent && privacyConsent,
+            enabled = deviceOwnerConsent && privacyConsent && eulaConsent,
             modifier = Modifier.fillMaxWidth()
         ) { Text("Accept & Continue") }
     }
