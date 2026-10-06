@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/app.js && node --check src/server.js && node --check src/db.js",
+    "check": "node --check src/app.js && node --check src/server.js && node --check src/db.js && node --check src/postgres.js && node --check src/postgres-api.js && node --check src/postgres-repository.js",
     "test": "node --test",
     "test:ci": "node --test --test-reporter=spec"
   },
