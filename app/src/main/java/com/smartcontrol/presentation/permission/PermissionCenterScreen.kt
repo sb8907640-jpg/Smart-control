@@ -8,65 +8,87 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
+private data class PermissionItem(
+    val label: String,
+    val permissions: List<String>
+)
+
 @Composable
 fun PermissionCenterScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val permissions = remember {
+    val permissionItems = remember {
         listOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.READ_SMS,
-            Manifest.permission.READ_CALL_LOG
+            PermissionItem("Camera", listOf(Manifest.permission.CAMERA)),
+            PermissionItem("Microphone", listOf(Manifest.permission.RECORD_AUDIO)),
+            PermissionItem(
+                "Location",
+                listOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                )
+            ),
+            PermissionItem("Contacts", listOf(Manifest.permission.READ_CONTACTS)),
+            PermissionItem("SMS", listOf(Manifest.permission.READ_SMS)),
+            PermissionItem("Call logs", listOf(Manifest.permission.READ_CALL_LOG))
         )
     }
-    var oneByOneIndex by remember { mutableIntStateOf(0) }
-    var oneByOneActive by remember { mutableStateOf(false) }
 
-    val allLauncher = rememberLauncherForActivityResult(
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var sequentialIndex by remember { mutableIntStateOf(0) }
+    var sequentialActive by remember { mutableStateOf(false) }
+    var requestedItemIndex by remember { mutableIntStateOf(-1) }
+
+    fun granted(item: PermissionItem): Boolean =
+        item.permissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+    val requestLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-
-    val oneLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
     ) {
-        oneByOneIndex += 1
+        refreshTick += 1
+        if (sequentialActive) {
+            sequentialIndex += 1
+        }
+        requestedItemIndex = -1
     }
 
-    LaunchedEffect(oneByOneActive, oneByOneIndex) {
-        if (oneByOneActive && oneByOneIndex < permissions.size) {
-            oneLauncher.launch(permissions[oneByOneIndex])
-        } else if (oneByOneActive) {
-            oneByOneActive = false
-            oneByOneIndex = 0
+    LaunchedEffect(sequentialActive, sequentialIndex, refreshTick) {
+        if (sequentialActive && sequentialIndex < permissionItems.size) {
+            requestedItemIndex = sequentialIndex
+            requestLauncher.launch(permissionItems[sequentialIndex].permissions.toTypedArray())
+        } else if (sequentialActive) {
+            sequentialActive = false
+            sequentialIndex = 0
+            requestedItemIndex = -1
         }
     }
 
-    fun granted(permission: String) =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    fun requestItem(index: Int) {
+        sequentialActive = false
+        sequentialIndex = 0
+        requestedItemIndex = index
+        requestLauncher.launch(permissionItems[index].permissions.toTypedArray())
+    }
 
-    fun startOneByOne() {
-        oneByOneIndex = 0
-        oneByOneActive = true
+    fun startAllowAll() {
+        sequentialIndex = 0
+        sequentialActive = true
     }
 
     fun open(action: String) {
         runCatching { context.startActivity(Intent(action)) }
     }
+
+    // Keep status reads tied to Compose state so the row updates after every system dialog.
+    @Suppress("UNUSED_VARIABLE")
+    val ignoredRefreshTick = refreshTick
 
     Column(
         modifier = Modifier.fillMaxSize().padding(20.dp),
@@ -74,40 +96,61 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     ) {
         Text("Permission Center", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "This screen covers the Android permissions and special-access controls used by the 19-feature master specification. " +
-                "System settings are always the authority; no permission is silently granted."
+            "हर permission पर User अपनी इच्छा से Allow, Deny या Skip कर सकता है। " +
+                "Android system dialog ही अंतिम authority है; app किसी permission को silently grant नहीं करता।"
         )
 
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Runtime permissions", style = MaterialTheme.typography.titleMedium)
-                Text("Camera: " + if (granted(Manifest.permission.CAMERA)) "Granted" else "Not granted")
-                Text("Microphone: " + if (granted(Manifest.permission.RECORD_AUDIO)) "Granted" else "Not granted")
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Permissions", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Location: " + if (
-                        granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
-                        granted(Manifest.permission.ACCESS_COARSE_LOCATION)
-                    ) "Granted" else "Not granted"
+                    "Allow All दबाने पर permissions एक-एक करके Android के असली system dialogs में खुलेंगी। " +
+                        "हर dialog में User को खुद Allow या Deny करना होगा।"
                 )
-                Text("Contacts: " + if (granted(Manifest.permission.READ_CONTACTS)) "Granted" else "Not granted")
-                Text("SMS: " + if (granted(Manifest.permission.READ_SMS)) "Granted" else "Not granted")
-                Text("Call logs: " + if (granted(Manifest.permission.READ_CALL_LOG)) "Granted" else "Not granted")
+
+                permissionItems.forEachIndexed { index, item ->
+                    val isGranted = granted(item)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(item.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(if (isGranted) "Allowed" else "Not allowed")
+                        }
+                        OutlinedButton(
+                            onClick = { requestItem(index) },
+                            enabled = !isGranted
+                        ) {
+                            Text(if (isGranted) "Allowed" else "Allow")
+                        }
+                        OutlinedButton(
+                            onClick = { refreshTick += 1 },
+                            enabled = isGranted
+                        ) {
+                            Text("Deny/Skip")
+                        }
+                    }
+                }
 
                 Button(
-                    onClick = {
-                        allLauncher.launch(permissions.toTypedArray())
-                    },
+                    onClick = { startAllowAll() },
+                    enabled = sequentialIndex == 0 && !sequentialActive,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("क्रमवार सभी अनुमतियाँ दें") }
+                ) {
+                    Text("सबको Allow करें (Allow All)")
+                }
 
-                OutlinedButton(
-                    onClick = { startOneByOne() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("एक-एक करके अनुमति दें") }
+                if (sequentialActive) {
+                    Text(
+                        "Allow All चल रहा है: हर Android dialog पर User स्वयं Allow या Deny कर सकता है। " +
+                            "किसी dialog को Deny करने पर अगली permission पर चला जाएगा।"
+                    )
+                }
 
                 Text(
-                    "दोनों विकल्प Android के असली system permission dialogs खोलते हैं। " +
-                        "किसी permission को अपने-आप मंजूर नहीं किया जाता; हर dialog पर device user को स्वयं Allow या Deny करना होता है।"
+                    "Deny/Skip app से permission revoke नहीं करता। यदि permission पहले से Allowed है और उसे हटाना है, " +
+                        "तो Android App Settings से User स्वयं revoke कर सकता है।"
                 )
             }
         }
