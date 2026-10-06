@@ -44,7 +44,7 @@
 /* End PBXGroup section */
 
 /* Begin XCBuildConfiguration section */
-  A00000800000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = com.smartcontrol.ios; INFOPLIST_FILE = SmartControl/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; CODE_SIGNING_ALLOWED = NO;}; name = Debug; };
+  A00000800000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = com.smartcontrol.ios; PRODUCT_NAME = SmartControl; INFOPLIST_FILE = SmartControl/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; CODE_SIGNING_ALLOWED = NO;}; name = Debug; };
   A00000800000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = com.smartcontrol.ios; INFOPLIST_FILE = SmartControl/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; CODE_SIGNING_ALLOWED = NO;}; name = Release; };
   A00000800000000000000003 /* Debug Project */ = {isa = XCBuildConfiguration; buildSettings = {SWIFT_VERSION = 5.0;}; name = Debug; };
   A00000800000000000000004 /* Release Project */ = {isa = XCBuildConfiguration; buildSettings = {SWIFT_VERSION = 5.0;}; name = Release; };
