@@ -103,7 +103,7 @@ final class AppSession: ObservableObject {
             devices = deviceResult.devices
             systemStatus = try await status
             residency = try await residencyResult
-            remoteConfig = try await configResult.values
+            remoteConfig = (try await configResult).values.compactMapValues { $0 }
         } catch {
             errorMessage = error.localizedDescription
         }
