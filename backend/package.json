@@ -4,17 +4,21 @@
   "private": true,
   "description": "Smart Control production HTTP API built on Express and Firebase Admin.",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "check": "node --check src/app.js && node --check src/server.js",
     "test": "node --test",
-    "test:ci": "node --test --test-reporter=spec"
+    "test:ci": "node --test --test-reporter=spec",
+    "migrate": "node src/migrate.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "firebase-admin": "^13.5.0",
-    "helmet": "^8.1.0"
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3"
   }
 }
