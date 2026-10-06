@@ -4,7 +4,7 @@ const helmet = require("helmet");
 const { getAuth, getFirestore } = require("firebase-admin");
 const { installPostgresRoutes } = require("./postgres-api");
 
-function createApp({ verifyIdToken, db } = {}) {
+function createApp({ verifyIdToken, db, postgres } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
 
@@ -119,10 +119,12 @@ function createApp({ verifyIdToken, db } = {}) {
     }
   });
 
-  app.get("/api/devices", authenticate, requireFirestore, async (req, res, next) => {
+  app.get("/api/devices", authenticate, async (req, res, next) => {
     try {
+      if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
+      if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
       const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
-      res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+      return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
     } catch (error) {
       next(error);
     }
@@ -160,8 +162,12 @@ function createProductionApp() {
   createFirebaseApp();
   const auth = getAuth();
   const db = getFirestore();
+  const { createPool } = require("./postgres");
+  const { createPostgresRepository } = require("./postgres-repository");
+  const postgresPool = process.env.DATABASE_URL ? createPool() : null;
   return createApp({
     db,
+    postgres: postgresPool ? createPostgresRepository(postgresPool) : null,
     verifyIdToken: (token, checkRevoked) => auth.verifyIdToken(token, checkRevoked)
   });
 }
