@@ -58,7 +58,7 @@ function createApp({ verifyIdToken, db } = {}) {
   };
 
   const firestore = db;
-  const postgres = arguments.length ? null : null;
+
   const requireFirestore = (_req, res, next) => {
     if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
     next();
