@@ -17,7 +17,7 @@ class WifiDirectTransport(private val context: Context) : Closeable {
     private val channel = manager.initialize(context, Looper.getMainLooper(), null)
 
     fun discoverPeers(onResult: (Result<Unit>) -> Unit) {
-        requireDiscoveryPermission(context)
+        requireDiscoveryPermission()
         manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
             override fun onSuccess() = onResult(Result.success(Unit))
             override fun onFailure(reason: Int) =
@@ -26,13 +26,25 @@ class WifiDirectTransport(private val context: Context) : Closeable {
     }
 
     fun requestPeers(onPeers: (List<WifiP2pDevice>) -> Unit) {
-        requireDiscoveryPermission(context)
+        requireDiscoveryPermission()
         manager.requestPeers(channel) { list ->
             onPeers(list.deviceList.toList())
         }
     }
 
-    private fun requireDiscoveryPermission(context: Context) {
+    fun connect(device: WifiP2pDevice, onResult: (Result<Unit>) -> Unit) {
+        requireDiscoveryPermission()
+        val config = WifiP2pConfig().apply {
+            deviceAddress = device.deviceAddress
+        }
+        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
+            override fun onSuccess() = onResult(Result.success(Unit))
+            override fun onFailure(reason: Int) =
+                onResult(Result.failure(IllegalStateException("Wi-Fi Direct connection failed: $reason")))
+        })
+    }
+
+    private fun requireDiscoveryPermission() {
         val hasModernPermission = Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED
         val hasLegacyPermission = Build.VERSION.SDK_INT >= 33 ||
@@ -46,16 +58,3 @@ class WifiDirectTransport(private val context: Context) : Closeable {
         // The Wi-Fi Direct channel is owned by the process and requires no explicit close.
     }
 }
-
-
-    fun connect(device: WifiP2pDevice, onResult: (Result<Unit>) -> Unit) {
-        requireDiscoveryPermission(context)
-        val config = WifiP2pConfig().apply {
-            deviceAddress = device.deviceAddress
-        }
-        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() = onResult(Result.success(Unit))
-            override fun onFailure(reason: Int) =
-                onResult(Result.failure(IllegalStateException("Wi-Fi Direct connection failed: $reason")))
-        })
-    }
