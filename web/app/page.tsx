@@ -177,7 +177,7 @@ export default function Home() {
         <button onClick={sendOtp} disabled={busy || Boolean(user)}>Send OTP</button>
         {confirmation ? (
           <>
-            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\\D/g, "").slice(0, 6))} placeholder="6-digit OTP" disabled={busy} />
+            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit OTP" disabled={busy} />
             <button onClick={verifyOtp} disabled={busy}>Verify OTP</button>
           </>
         ) : null}
