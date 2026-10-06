@@ -98,3 +98,56 @@ test("backend health readiness enforces production data residency", async () => 
     else process.env.SMARTCONTROL_DATA_REGION = previousRegion;
   }
 });
+
+
+test("Socket.IO client recovers after a simulated transport disconnect", async () => {
+  const app = express();
+  const { httpServer, io } = createRealtimeServer({
+    app,
+    verifyToken: async token => {
+      assert.equal(token, "valid-token");
+      return { uid: "controller-1" };
+    },
+    firestore: fakeFirestore({
+      controllerUid: "controller-1",
+      targetDeviceId: "device-1",
+      status: "ACTIVE"
+    })
+  });
+
+  await new Promise((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", resolve);
+  });
+  const port = httpServer.address().port;
+  const client = connect("http://127.0.0.1:" + port, {
+    auth: { token: "valid-token" },
+    transports: ["polling", "websocket"],
+    timeout: 5000,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 50
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("connect_error", reject);
+    });
+    const reconnecting = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("automatic reconnect timed out")), 5000);
+      client.io.once("reconnect", attempt => {
+        clearTimeout(timer);
+        resolve(attempt);
+      });
+    });
+    client.io.engine.close();
+    const attempt = await reconnecting;
+    assert.ok(attempt >= 1);
+    assert.equal(client.connected, true);
+  } finally {
+    client.close();
+    await new Promise(resolve => io.close(resolve));
+    await new Promise(resolve => httpServer.close(resolve));
+  }
+});
