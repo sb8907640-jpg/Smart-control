@@ -157,9 +157,9 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   });
 
   app.get("/api/permissions", async(req,res,next)=>{try{res.json({permissions:await list("permissionGrants",req.catalogUid)});}catch(e){next(e);}});
-  app.get("/api/permissions/:id", async(req,res,next)=>{try{const s=await firestoreCollection("permissionGrants").doc(req.params.id).get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Permission record not found."});res.json({permission:{id:s.id,...s.data()}});}catch(e){next(e);}});
   app.get("/api/permissions/status", async(req,res,next)=>{try{const permissions=await list("permissionGrants",req.catalogUid);res.json({status:permissions.some(p=>p.granted)?"PARTIAL":"CONSENT_REQUIRED",permissions});}catch(e){next(e);}});
   app.get("/api/permissions/logs", async(req,res,next)=>{try{res.json({logs:await list("permissionRequests",req.catalogUid)});}catch(e){next(e);}});
+  app.get("/api/permissions/:id", async(req,res,next)=>{try{const s=await firestoreCollection("permissionGrants").doc(req.params.id).get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Permission record not found."});res.json({permission:{id:s.id,...s.data()}});}catch(e){next(e);}});
 
   app.post("/api/permissions/request", async(req,res,next)=>{
     try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionRequests",{userId:req.catalogUid,permission,status:"REQUESTED",requestedAt:now()});await audit(req.catalogUid,"PERMISSION_REQUESTED","permission",{permission,id});res.status(201).json({ok:true,id,status:"REQUESTED"});}catch(e){next(e);}
