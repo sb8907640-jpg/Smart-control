@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const { getAuth, getFirestore } = require("firebase-admin");
+const { createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 
 function createApp({ verifyIdToken, db, postgres } = {}) {
@@ -81,6 +81,8 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
 
   app.get("/api/system/status", authenticate, async (_req, res) => {
     let firestoreStatus = "unconfigured";
+    let postgresStatus = { configured: false, ok: false };
+    try { postgresStatus = await checkPostgres(postgres); } catch (_) { postgresStatus = { configured: true, ok: false }; }
     if (firestore) {
       try {
         await firestore.collection("systemStatus").doc("health").get();
@@ -92,7 +94,8 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     res.json({
       ok: firestoreStatus !== "error",
       service: "smart-control-backend",
-      firestore: firestoreStatus
+      firestore: firestoreStatus,
+      postgres: postgresStatus
     });
   });
 
@@ -162,6 +165,7 @@ function createProductionApp() {
   createFirebaseApp();
   const auth = getAuth();
   const db = getFirestore();
+  const postgres = createPostgresPool();
   const { createPool } = require("./postgres");
   const { createPostgresRepository } = require("./postgres-repository");
   const postgresPool = process.env.DATABASE_URL ? createPool() : null;
