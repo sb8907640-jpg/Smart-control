@@ -30,7 +30,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   }));
 
   app.get("/readyz", async (_req, res) => {
-    const checks = { firebase: Boolean(db), postgres: !process.env.DATABASE_URL };
+    const residency = getResidencyPolicy();
+    const checks = { firebase: Boolean(db), postgres: !process.env.DATABASE_URL, residency: !residency.failClosed };
     let pool = null;
     if (process.env.DATABASE_URL) {
       try {
@@ -44,7 +45,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         if (pool) await pool.end().catch(() => {});
       }
     }
-    const ok = checks.firebase && checks.postgres;
+    const ok = checks.firebase && checks.postgres && checks.residency;
     res.status(ok ? 200 : 503).json({ ok, checks });
   });
 
