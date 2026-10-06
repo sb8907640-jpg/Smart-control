@@ -9,6 +9,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -17,12 +23,43 @@ import androidx.core.content.ContextCompat
 @Composable
 fun PermissionCenterScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
+    val allLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
+    val oneLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    val permissions = remember {
+        listOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.READ_CALL_LOG
+        )
+    }
+    var oneByOneIndex by remember { mutableIntStateOf(0) }
+    var oneByOneActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(oneByOneActive, oneByOneIndex) {
+        if (oneByOneActive && oneByOneIndex < permissions.size) {
+            oneLauncher.launch(permissions[oneByOneIndex])
+        } else if (oneByOneActive) {
+            oneByOneActive = false
+            oneByOneIndex = 0
+        }
+    }
+
     fun granted(permission: String) =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    fun startOneByOne() {
+        oneByOneIndex = 0
+        oneByOneActive = true
+    }
 
     fun open(action: String) {
         runCatching { context.startActivity(Intent(action)) }
@@ -55,20 +92,20 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
 
                 Button(
                     onClick = {
-                        launcher.launch(
-                            arrayOf(
-                                Manifest.permission.CAMERA,
-                                Manifest.permission.RECORD_AUDIO,
-                                Manifest.permission.ACCESS_COARSE_LOCATION,
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.READ_CONTACTS,
-                                Manifest.permission.READ_SMS,
-                                Manifest.permission.READ_CALL_LOG
-                            )
-                        )
+                        allLauncher.launch(permissions.toTypedArray())
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Request runtime permissions") }
+                ) { Text("क्रमवार सभी अनुमतियाँ दें") }
+
+                OutlinedButton(
+                    onClick = { startOneByOne() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("एक-एक करके अनुमति दें") }
+
+                Text(
+                    "दोनों विकल्प Android के असली system permission dialogs खोलते हैं। " +
+                        "किसी permission को अपने-आप मंजूर नहीं किया जाता; हर dialog पर device user को स्वयं Allow या Deny करना होता है।"
+                )
             }
         }
 
