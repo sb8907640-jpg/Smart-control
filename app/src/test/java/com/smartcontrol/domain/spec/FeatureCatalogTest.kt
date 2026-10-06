@@ -38,6 +38,12 @@ class FeatureCatalogTest {
         )
     }
 
+    @Test fun matchesMasterOfflineCoverage() {
+        assertEquals(18, FeatureCatalog.all.count { it.offline })
+        assertTrue(FeatureCatalog.all.first { it.id == FeatureId.SCREEN_SHARE }.offline.not())
+        assertTrue(FeatureCatalog.all.filter { it.id != FeatureId.SCREEN_SHARE }.all { it.offline })
+    }
+
     @Test fun everyFeatureRequiresVisibleSessionApproval() {
         assertTrue(FeatureCatalog.all.all { ConsentKind.USER_APPROVED_SESSION in it.consent })
         assertTrue(FeatureCatalog.all.all { it.visibleWhileActive })
