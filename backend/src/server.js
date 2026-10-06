@@ -1,6 +1,7 @@
 const { createServer } = require("node:http");
 const { Server } = require("socket.io");
 const { createProductionApp } = require("./app");
+const { Server } = require("socket.io");
 
 const port = Number(process.env.PORT || 8080);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
