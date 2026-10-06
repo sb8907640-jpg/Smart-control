@@ -5,6 +5,7 @@ const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
 const { createPool: createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
+const { getResidencyPolicy } = require("./data-residency");
 
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
@@ -47,6 +48,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     res.status(ok ? 200 : 503).json({ ok, checks });
   });
 
+
+
   const authenticate = async (req, res, next) => {
     const header = String(req.get("authorization") || "");
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Authentication required." });
@@ -58,6 +61,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       return res.status(401).json({ error: "Invalid or expired authentication token." });
     }
   };
+
+  app.get("/api/system/residency", authenticate, (_req, res) => res.json(getResidencyPolicy()));
 
   const firestore = db;
   const requireFirestore = (_req, res, next) => {
