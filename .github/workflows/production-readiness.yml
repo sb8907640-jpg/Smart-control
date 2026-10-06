@@ -3,16 +3,32 @@ name: Production Readiness Gate
 on:
   push:
     branches: ["main"]
-    paths: ["app/**", "backend/**", "contracts/**", "desktop/**", "functions/**", "ios/**", "web/**", ".github/workflows/production-readiness.yml"]
+    paths: ["app/**", "backend/**", "contracts/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", ".github/workflows/production-readiness.yml"]
   pull_request:
     branches: ["main"]
-    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", ".github/workflows/production-readiness.yml"]
+    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", ".github/workflows/production-readiness.yml"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    env:
+      SMARTCONTROL_DATA_REGION: ${{ secrets.SMARTCONTROL_DATA_REGION }}
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Enforce production configuration gate
+        run: node scripts/production-readiness-preflight.js
+
   backend:
     runs-on: ubuntu-latest
     services:
@@ -105,6 +121,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1" }
       - run: gradle test assembleDebug
+
+  cross-platform-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Verify cross-platform integration surfaces
+        run: node scripts/platform-integration-check.js
 
   ios:
     runs-on: macos-14
