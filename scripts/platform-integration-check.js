@@ -34,13 +34,13 @@ const interfaceChecks = [
   ["web backend session integration", /api\/auth\/session/.test(web)],
   ["iOS backend integration", /URLSession|apiBaseURL|backend/i.test(ios)],
   ["Android FCM service registered", /SmartControlMessagingService|firebase.MESSAGING_EVENT/.test(androidManifest)],
-  ["Android Wi-Fi Direct connect", /manager\\.connect/.test(androidWifi)],
+  ["Android Wi-Fi Direct connect", /manager\.connect/.test(androidWifi)],
   ["Android Bluetooth RFCOMM", /listenUsingRfcommWithServiceRecord|createRfcommSocketToServiceRecord/.test(androidBluetooth)],
   ["Web Google and OTP auth dependencies", /firebase/.test(webPackage) && /RecaptchaVerifier|signInWithPhoneNumber/.test(web)],
   ["PostgreSQL group capacity migration", migrations.includes("002_group_pairing.sql") && migrations.includes("003_group_capacity.sql")],
-  ["FCM backend registration", /api\\/notifications\\/register/.test(backend)],
-  ["Remote Config backend", /api\\/config/.test(backend)],
-  ["Residency policy enforcement", /getResidencyPolicy\\(\\)/.test(backend) && /residency/.test(backend)]
+  ["FCM backend registration", /api\/notifications\/register/.test(backend)],
+  ["Remote Config backend", /api\/config/.test(backend)],
+  ["Residency policy enforcement", /getResidencyPolicy\(\)/.test(backend) && /residency/.test(backend)]
 ];
 
 for (const [name, ok] of interfaceChecks) console.log((ok ? "OK " : "MISSING ") + name);
