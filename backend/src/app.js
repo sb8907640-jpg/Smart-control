@@ -78,7 +78,6 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   };
 
   if (postgresPool) installPostgresRoutes(app, { pool: postgresPool });
-  installCatalogRoutes(app, { db: firestore });
 
   app.get("/api/config", authenticate, async (_req, res, next) => {
     try {
@@ -208,6 +207,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       res.json({ subscription: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } });
     } catch (error) { next(error); }
   });
+
+  installCatalogRoutes(app, { db: firestore, requireAuth: authenticate });
 
   app.use((error, _req, res, _next) => {
     if (error?.message === "CORS origin is not allowed.") return res.status(403).json({ error: error.message });
