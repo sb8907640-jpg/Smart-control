@@ -6,6 +6,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { createPool: createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 const { getResidencyPolicy } = require("./data-residency");
+const { installCatalogRoutes } = require("./catalog-api");
 
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
@@ -77,6 +78,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   };
 
   if (postgresPool) installPostgresRoutes(app, { pool: postgresPool });
+  installCatalogRoutes(app, { db: firestore });
 
   app.get("/api/config", authenticate, async (_req, res, next) => {
     try {
