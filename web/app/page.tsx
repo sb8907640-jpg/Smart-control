@@ -91,7 +91,7 @@ export default function Home() {
   async function sendOtp() {
     if (!auth) return;
     const normalized = phone.trim();
-    if (!/^\\+[1-9]\\d{9,14}$/.test(normalized)) {
+    if (!/^\+[1-9]\d{9,14}$/.test(normalized)) {
       setStatus("Enter a valid phone number with country code.");
       return;
     }
@@ -109,7 +109,7 @@ export default function Home() {
   }
 
   async function verifyOtp() {
-    if (!confirmation || !/^\\d{6}$/.test(otp.trim())) {
+    if (!confirmation || !/^\d{6}$/.test(otp.trim())) {
       setStatus("Enter the 6-digit OTP.");
       return;
     }
@@ -131,7 +131,7 @@ export default function Home() {
     setBusy(true);
     setStatus("Loading authenticated Smart Control data...");
     try {
-      const [nextSession, deviceResponse, nextSystem] = await Promise.all([
+      const [nextSession, deviceResponse, nextSystem, configResponse] = await Promise.all([
         apiGet<BackendSession>("/api/auth/session", user),
         apiGet<{ devices: Device[] }>("/api/devices", user),
         apiGet<SystemStatus>("/api/system/status", user),
