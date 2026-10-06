@@ -65,7 +65,8 @@ class FirestorePairingRepository @Inject constructor(
         val createdAt = System.currentTimeMillis()
 
         // Owner/Admin pairing is an owner-level link and does not expire.
-        val isOwner = auth.currentUser?.getIdToken(false)?.await()?.claims?.get("admin") == true
+        val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
+        val isOwner = claims["admin"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
         val editable = settings.masterConfig.ownerControl.editableValues
         val expiryMinutes = if (isOwner) {
             NO_EXPIRY_MINUTES
