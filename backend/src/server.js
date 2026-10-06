@@ -2,6 +2,7 @@ const { createServer } = require("node:http");
 const { Server } = require("socket.io");
 const { createProductionApp } = require("./app");
 const { getAuth } = require("firebase-admin/auth");
+const { getFirestore } = require("firebase-admin/firestore");
 
 const port = Number(process.env.PORT || 8080);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -29,9 +30,24 @@ io.use(async (socket, next) => {
 
 io.on("connection", socket => {
   socket.join("user:" + socket.user.uid);
-  socket.on("session:join", ({ sessionId } = {}) => {
-    if (typeof sessionId !== "string" || !sessionId || sessionId.length > 128) return;
-    socket.join("session:" + sessionId);
+  socket.on("session:join", async ({ sessionId } = {}, acknowledge) => {
+    try {
+      if (typeof sessionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
+        throw new Error("Invalid session ID.");
+      }
+      const doc = await getFirestore().collection("mediaSessions").doc(sessionId).get();
+      if (!doc.exists) throw new Error("Session not found.");
+      const data = doc.data() || {};
+      const allowed = data.controllerUid === socket.user.uid || data.targetDeviceId === socket.user.uid;
+      if (!allowed) throw new Error("Not authorized for this session.");
+      if (!["REQUESTED", "APPROVED", "ACTIVE"].includes(String(data.status || ""))) {
+        throw new Error("Session is not active.");
+      }
+      socket.join("session:" + sessionId);
+      if (typeof acknowledge === "function") acknowledge({ ok: true });
+    } catch (error) {
+      if (typeof acknowledge === "function") acknowledge({ ok: false, error: error.message });
+    }
   });
   socket.on("session:leave", ({ sessionId } = {}) => {
     if (typeof sessionId === "string") socket.leave("session:" + sessionId);
