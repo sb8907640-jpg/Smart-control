@@ -75,6 +75,7 @@ jobs:
           npm run check
           node --check src/server.js
           grep -q '"socket.io"' package.json
+          grep -q 'new Server(httpServer' src/server.js
           grep -q '/api/notifications/register' src/app.js
           grep -q '/api/config' src/app.js
 
