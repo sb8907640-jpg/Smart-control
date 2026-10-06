@@ -60,13 +60,14 @@ jobs:
 
       - name: Verify PostgreSQL backend code
         working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test
+          PG_SSL: "false"
         run: |
           npm install --no-audit --no-fund
           npm run check
           npm test
-          test -f src/migrate.js
-          grep -q "CREATE TABLE IF NOT EXISTS users" src/migrate.js
-          grep -q "CREATE TABLE IF NOT EXISTS devices" src/migrate.js
+          npm run migrate
 
       - name: Verify realtime and Firebase backend modules
         working-directory: backend
@@ -81,11 +82,14 @@ jobs:
 
       - name: Verify Node.js Express backend
         working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test
+          PG_SSL: "false"
         run: |
           npm install --no-audit --no-fund
           npm run check
-          DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test node src/migrate.js
-          DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test npm test
+          npm run migrate
+          npm test
           node -e "require('./src/db'); require('./src/postgres-api'); console.log('postgres modules ok')"
 
       - name: Validate Firebase Functions
