@@ -23,15 +23,6 @@ import androidx.core.content.ContextCompat
 @Composable
 fun PermissionCenterScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val allLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-
-    val oneLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        oneByOneIndex += 1
-    }
     val permissions = remember {
         listOf(
             Manifest.permission.CAMERA,
@@ -45,6 +36,16 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     }
     var oneByOneIndex by remember { mutableIntStateOf(0) }
     var oneByOneActive by remember { mutableStateOf(false) }
+
+    val allLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
+    val oneLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        oneByOneIndex += 1
+    }
 
     LaunchedEffect(oneByOneActive, oneByOneIndex) {
         if (oneByOneActive && oneByOneIndex < permissions.size) {
