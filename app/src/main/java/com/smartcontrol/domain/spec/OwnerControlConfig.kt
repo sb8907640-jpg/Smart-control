@@ -52,6 +52,12 @@ data class OwnerControlConfig(
             "plans.freeDurationSeconds" to "",
             "plans.defaultPlan" to "",
             "plans.currency" to "INR",
+            // Public pairing-token expiry is plan-controlled; values are minutes.
+            // Owner/Admin pairing is handled separately and has no token expiry.
+            "plans.freePairingTokenExpiryMinutes" to "1",
+            "plans.smallPairingTokenExpiryMinutes" to "2",
+            "plans.standardPairingTokenExpiryMinutes" to "5",
+            "plans.premiumPairingTokenExpiryMinutes" to "10",
 
             // 5. User management
             "users.allowAdd" to "true",
