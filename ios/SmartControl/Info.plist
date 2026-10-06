@@ -6,8 +6,6 @@
     <string>Smart Control</string>
     <key>CFBundleIdentifier</key>
     <string>com.smartcontrol.ios</string>
-    <key>SMARTCONTROL_API_BASE_URL</key>
-    <string>https://api.example.invalid/</string>
     <key>UILaunchScreen</key>
     <dict/>
 </dict>
