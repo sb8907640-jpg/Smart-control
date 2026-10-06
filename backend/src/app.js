@@ -69,6 +69,37 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     installPostgresRoutes(app, { pool });
   }
 
+  app.get("/api/config", authenticate, async (_req, res, next) => {
+    try {
+      const { getRemoteConfig } = require("firebase-admin/remote-config");
+      const template = await getRemoteConfig().getTemplate();
+      const values = {};
+      for (const [key, parameter] of Object.entries(template.parameters || {})) {
+        const v = parameter.defaultValue;
+        values[key] = v?.value ?? null;
+      }
+      res.json({ values, etag: template.etag || null, fetchedAt: new Date().toISOString() });
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/config", authenticate, async (req, res, next) => {
+    if (req.user.admin !== true) return res.status(403).json({ error: "Administrator access required." });
+    try {
+      const values = req.body?.values;
+      if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
+      const { getRemoteConfig } = require("firebase-admin/remote-config");
+      const remoteConfig = getRemoteConfig();
+      const template = await remoteConfig.getTemplate();
+      for (const [key, value] of Object.entries(values)) {
+        if (!/^[A-Za-z0-9_-]{1,200}$/.test(key)) return res.status(400).json({ error: "Invalid Remote Config key." });
+        if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return res.status(400).json({ error: "Remote Config values must be scalar." });
+        template.parameters[key] = { defaultValue: { value: String(value) } };
+      }
+      const updated = await remoteConfig.publishTemplate(template);
+      res.json({ ok: true, etag: updated.etag || null });
+    } catch (error) { next(error); }
+  });
+
   app.get("/api/auth/session", authenticate, (req, res) => {
     res.json({
       authenticated: true,
