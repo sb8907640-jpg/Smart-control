@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const express = require("express");
 const { io: connect } = require("socket.io-client");
 const { createRealtimeServer } = require("../src/server");
+const { createApp } = require("../src/app");
 
 function fakeFirestore(session) {
   return {
@@ -56,5 +57,37 @@ test("Socket.IO authenticates clients and authorizes session rooms", async () =>
     client.close();
     await new Promise(resolve => io.close(resolve));
     await new Promise(resolve => httpServer.close(resolve));
+  }
+});
+
+
+test("backend health readiness enforces production data residency", async () => {
+  const http = require("node:http");
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousRegion = process.env.SMARTCONTROL_DATA_REGION;
+  process.env.NODE_ENV = "production";
+  delete process.env.SMARTCONTROL_DATA_REGION;
+  const app = createApp();
+  const server = await new Promise(resolve => {
+    const s = app.listen(0, "127.0.0.1", () => resolve(s));
+  });
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const req = http.get({ host: "127.0.0.1", port: server.address().port, path: "/healthz" }, res => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", chunk => { body += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+      });
+      req.on("error", reject);
+    });
+    assert.equal(result.status, 503);
+    assert.equal(result.body.ok, false);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousRegion === undefined) delete process.env.SMARTCONTROL_DATA_REGION;
+    else process.env.SMARTCONTROL_DATA_REGION = previousRegion;
   }
 });
