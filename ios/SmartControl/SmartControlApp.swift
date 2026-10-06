@@ -20,6 +20,8 @@ final class AppSession: ObservableObject {
     @Published private(set) var account: AuthSession?
     @Published private(set) var devices: [SmartDevice] = []
     @Published private(set) var systemStatus: SystemStatus?
+    @Published private(set) var residency: ResidencyPolicy?
+    @Published private(set) var remoteConfig: [String: String] = [:]
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
     @Published var apiBaseURL: String
@@ -94,10 +96,14 @@ final class AppSession: ObservableObject {
             async let session = client.session()
             async let deviceResponse = client.devices()
             async let status = client.systemStatus()
+            async let residencyResult = client.residency()
+            async let configResult = client.remoteConfig()
             account = try await session
             let deviceResult = try await deviceResponse
             devices = deviceResult.devices
             systemStatus = try await status
+            residency = try await residencyResult
+            remoteConfig = try await configResult.values
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -141,6 +147,20 @@ struct PostgresStatus: Decodable {
     let ok: Bool
 }
 
+struct ResidencyPolicy: Decodable {
+    let configured: Bool
+    let region: String?
+    let production: Bool
+    let failClosed: Bool
+    let supportedRegions: [String]
+}
+
+struct RemoteConfig: Decodable {
+    let values: [String: String]
+    let etag: String?
+    let fetchedAt: String
+}
+
 struct BackendError: Decodable {
     let error: String?
 }
@@ -177,6 +197,14 @@ final class BackendClient {
 
     func systemStatus() async throws -> SystemStatus {
         try await request(path: "api/system/status", authenticated: true)
+    }
+
+    func residency() async throws -> ResidencyPolicy {
+        try await request(path: "api/system/residency", authenticated: true)
+    }
+
+    func remoteConfig() async throws -> RemoteConfig {
+        try await request(path: "api/config", authenticated: true)
     }
 
     private func request<T: Decodable>(path: String, authenticated: Bool) async throws -> T {
