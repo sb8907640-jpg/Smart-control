@@ -37,3 +37,7 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` or use the hosting platform's default Fireb
 - `GET /api/subscription/status`
 
 Sensitive device-control operations remain governed by the Android application's explicit permission/session boundaries. This service does not bypass OS permissions or create hidden access.
+
+## PostgreSQL
+
+The production data layer uses PostgreSQL through the `pg` connection pool. Set `DATABASE_URL` and, when required by the hosting environment, `PGSSL=true`. The initial schema is in `migrations/001_initial.sql`. CI runs the repository unit tests without requiring production credentials; deployment must supply the managed PostgreSQL connection securely.
