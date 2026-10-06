@@ -12,7 +12,8 @@
     "check": "node --check src/app.js && node --check src/server.js && node --check src/db.js && node --check src/postgres.js && node --check src/postgres-api.js && node --check src/postgres-repository.js && node --check src/migrate.js",
     "migrate": "node src/migrate.js",
     "test": "node --test",
-    "test:ci": "node --test --test-reporter=spec"
+    "test:ci": "node --test --test-reporter=spec",
+    "verify:schema": "node src/verify-schema.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
