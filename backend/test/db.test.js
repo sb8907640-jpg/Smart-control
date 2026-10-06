@@ -15,5 +15,9 @@ test("PostgreSQL schema creates required production tables and indexes", async()
   await pool.query("INSERT INTO users(firebase_uid,email) VALUES($1,$2)",["u1","u@example.invalid"]);
   const row=await pool.query("SELECT firebase_uid FROM users WHERE email=$1",["u@example.invalid"]);
   assert.equal(row.rows[0].firebase_uid,"u1");
+  await pool.query("INSERT INTO devices(owner_uid,device_key,platform,name) VALUES($1,$2,$3,$4)",["u1","device-1","android","Test phone"]);
+  const device=await pool.query("SELECT owner_uid,device_key,name FROM devices WHERE owner_uid=$1",["u1"]);
+  assert.equal(device.rows[0].device_key,"device-1");
+  assert.equal(device.rows[0].name,"Test phone");
   await pool.end();
 });
