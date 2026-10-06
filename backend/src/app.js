@@ -26,7 +26,24 @@ function createApp({ verifyIdToken, db } = {}) {
     timestamp: new Date().toISOString()
   }));
 
-  app.get("/readyz", async (_req, res) => {\n    const checks = { firebase: Boolean(db), postgres: false };\n    if (process.env.DATABASE_URL) { try { require("./db").pingDatabase(require("./db").createPool()); checks.postgres = true; } catch (_) {} }\n    res.status(checks.firebase ? 200 : 503).json({ ok: checks.firebase, checks });\n  });
+  app.get("/readyz", async (_req, res) => {
+    const checks = { firebase: Boolean(db), postgres: !process.env.DATABASE_URL };
+    let pool = null;
+    if (process.env.DATABASE_URL) {
+      try {
+        const { createPool, pingDatabase } = require("./db");
+        pool = createPool();
+        await pingDatabase(pool);
+        checks.postgres = true;
+      } catch (_) {
+        checks.postgres = false;
+      } finally {
+        if (pool) await pool.end().catch(() => {});
+      }
+    }
+    const ok = checks.firebase && checks.postgres;
+    res.status(ok ? 200 : 503).json({ ok, checks });
+  });
 
   const authenticate = async (req, res, next) => {
     const header = String(req.get("authorization") || "");
@@ -47,7 +64,12 @@ function createApp({ verifyIdToken, db } = {}) {
     next();
   };
 
-  if (process.env.DATABASE_URL) {\n    const pool = require("./db").createPool();\n    installPostgresRoutes(app, { pool });\n  }\n\n  app.get("/api/auth/session", authenticate, (req, res) => {
+  if (process.env.DATABASE_URL) {
+    const pool = require("./db").createPool();
+    installPostgresRoutes(app, { pool });
+  }
+
+  app.get("/api/auth/session", authenticate, (req, res) => {
     res.json({
       authenticated: true,
       uid: req.user.uid,
