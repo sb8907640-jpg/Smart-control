@@ -31,15 +31,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
       - name: Test backend
         working-directory: backend
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/smart_control_test
           PG_SSL: "false"
         run: |
-          npm ci --no-audit --no-fund
+          npm install --no-audit --no-fund
           npm run check
           npm run migrate
           npm test
