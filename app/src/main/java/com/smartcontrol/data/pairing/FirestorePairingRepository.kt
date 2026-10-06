@@ -61,20 +61,40 @@ class FirestorePairingRepository @Inject constructor(
     override suspend fun createPairingCode(): Result<PairingCode> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         val token = buildToken()
-        val expiryMinutes = ownerSettingsRepository.observe()
-            .first()
-            .masterConfig.ownerControl.editableValues["connection.pairingTokenExpiryMinutes"]
-            ?.toLongOrNull()
-            ?.coerceIn(1L, 60L)
-            ?: DEFAULT_PAIRING_EXPIRY_MINUTES
+        val settings = ownerSettingsRepository.observe().first()
         val createdAt = System.currentTimeMillis()
-        val expires = createdAt + expiryMinutes * 60_000L
+
+        // Owner/Admin pairing is an owner-level link and does not expire.
+        val isOwner = auth.currentUser?.getIdToken(false)?.await()?.claims?.get("admin") == true
+        val editable = settings.masterConfig.ownerControl.editableValues
+        val expiryMinutes = if (isOwner) {
+            NO_EXPIRY_MINUTES
+        } else {
+            val planId = settings.masterConfig.access.perUser[uid]?.planId
+                ?.takeIf { it.isNotBlank() }
+                ?: editable["plans.defaultPlan"]?.takeIf { it.isNotBlank() }
+                ?: DEFAULT_PUBLIC_PLAN_ID
+            val planKey = "plans.${planId.normalizedPlanKey()}PairingTokenExpiryMinutes"
+            editable[planKey]
+                ?.toLongOrNull()
+                ?.coerceIn(1L, 60L)
+                ?: editable["plans.freePairingTokenExpiryMinutes"]
+                    ?.toLongOrNull()
+                    ?.coerceIn(1L, 60L)
+                ?: DEFAULT_PUBLIC_EXPIRY_MINUTES
+        }
+        val expires = if (expiryMinutes == NO_EXPIRY_MINUTES) {
+            Long.MAX_VALUE
+        } else {
+            createdAt + expiryMinutes * 60_000L
+        }
         db.collection("pairingCodes").document(token).set(
             mapOf(
                 "deviceUid" to uid,
                 "expiresAt" to expires,
                 "createdAt" to createdAt,
-                "expiryMinutes" to expiryMinutes
+                "expiryMinutes" to expiryMinutes,
+                "expiryMode" to if (expiryMinutes == NO_EXPIRY_MINUTES) "NO_EXPIRY" else "PLAN"
             )
         ).await()
         PairingCode(token, uid, expires)
@@ -114,7 +134,12 @@ class FirestorePairingRepository @Inject constructor(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    private fun String.normalizedPlanKey(): String =
+        trim().lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+
     private companion object {
-        const val DEFAULT_PAIRING_EXPIRY_MINUTES = 10L
+        const val DEFAULT_PUBLIC_PLAN_ID = "free"
+        const val DEFAULT_PUBLIC_EXPIRY_MINUTES = 1L
+        const val NO_EXPIRY_MINUTES = 0L
     }
 }
