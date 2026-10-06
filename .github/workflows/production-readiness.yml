@@ -53,6 +53,8 @@ jobs:
           npm install --no-audit --no-fund
           npm run check
           node --check billing.js
+          node --check blockchain-audit.js
+          node --test blockchain-audit.test.js
           node -e "const c=require('./spec/masterCatalog'); if(c.TABLES.length < 42 || c.API.length < 60) process.exit(1)"
 
   web:
