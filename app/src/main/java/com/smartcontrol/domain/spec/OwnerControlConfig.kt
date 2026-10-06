@@ -91,6 +91,7 @@ data class OwnerControlConfig(
             "connection.persistentPairing" to "true",
             "connection.autoReconnect" to "true",
             "connection.groupPairingLimit" to "100",
+            "connection.pairingTokenExpiryMinutes" to "10",
             "connection.p2pFallback" to "true",
             "connection.offlineMode" to "true",
             "connection.sessionApprovalRequired" to "true",
