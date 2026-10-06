@@ -37,7 +37,7 @@ const interfaceChecks = [
   ["Android Wi-Fi Direct connect", /manager\.connect/.test(androidWifi)],
   ["Android Bluetooth RFCOMM", /listenUsingRfcommWithServiceRecord|createRfcommSocketToServiceRecord/.test(androidBluetooth)],
   ["Web Google and OTP auth dependencies", /firebase/.test(webPackage) && /RecaptchaVerifier|signInWithPhoneNumber/.test(web)],
-  ["PostgreSQL group capacity migration", migrations.includes("002_group_pairing.sql") && migrations.includes("003_group_capacity.sql")],
+  ["PostgreSQL group capacity migration", migrations.includes("002_group_pairing.sql") && /max_clients\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+100/i.test(fs.readFileSync(path.join(root, "backend/migrations/002_group_pairing.sql"), "utf8"))],
   ["FCM backend registration", /api\/notifications\/register/.test(backend)],
   ["Remote Config backend", /api\/config/.test(backend)],
   ["Residency policy enforcement", /getResidencyPolicy\(\)/.test(backend) && /residency/.test(backend)]
