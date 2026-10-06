@@ -95,7 +95,8 @@ final class AppSession: ObservableObject {
             async let deviceResponse = client.devices()
             async let status = client.systemStatus()
             account = try await session
-            devices = try await deviceResponse.devices
+            let deviceResult = try await deviceResponse
+            devices = deviceResult.devices
             systemStatus = try await status
         } catch {
             errorMessage = error.localizedDescription
@@ -180,7 +181,7 @@ final class BackendClient {
 
     private func request<T: Decodable>(path: String, authenticated: Bool) async throws -> T {
         guard let baseURL else { throw ClientError.configuration("Configure the Smart Control backend URL first.") }
-        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+        guard let url = URL(string: path).flatMap({ baseURL.appendingPathComponent($0.path) }) else {
             throw ClientError.configuration("The backend URL is invalid.")
         }
 
@@ -255,7 +256,7 @@ final class KeychainTokenStore {
 
     func delete() {
         let query: [String: Any] = [
-            kSecClass as String,
+            kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
