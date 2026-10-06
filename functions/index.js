@@ -4,6 +4,7 @@ const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
+const { anchorAuditRoot } = require("./blockchain-audit");
 
 initializeApp();
 const db = getFirestore();
@@ -274,6 +275,19 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   return { ok: true, granted, revoked, unresolved };
 });
 
+
+exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (request) => {
+  requireAdmin(request);
+  const root = typeof request.data?.root === "string" ? request.data.root : "";
+  if (!/^0x[0-9a-fA-F]{64}$/.test(root)) {
+    throw new HttpsError("invalid-argument", "A 32-byte audit root is required.");
+  }
+  try {
+    return await anchorAuditRoot(root);
+  } catch (error) {
+    throw new HttpsError("failed-precondition", error.message);
+  }
+});
 
 // Billing and payment lifecycle exports.
 Object.assign(exports, require("./billing"));
