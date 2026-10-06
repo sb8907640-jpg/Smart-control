@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
-import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -63,6 +63,9 @@ export default function Home() {
   const [system, setSystem] = useState<SystemStatus | null>(null);
   const [status, setStatus] = useState("Not connected");
   const [busy, setBusy] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
 
   useEffect(() => {
     const client = authClient();
@@ -79,6 +82,44 @@ export default function Home() {
       setStatus("Signed in. Verifying backend session...");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendOtp() {
+    if (!auth) return;
+    const normalized = phone.trim();
+    if (!/^\\+[1-9]\\d{9,14}$/.test(normalized)) {
+      setStatus("Enter a valid phone number with country code.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      const result = await signInWithPhoneNumber(auth, normalized, verifier);
+      setConfirmation(result);
+      setStatus("OTP sent. Enter the verification code.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "OTP request failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyOtp() {
+    if (!confirmation || !/^\\d{6}$/.test(otp.trim())) {
+      setStatus("Enter the 6-digit OTP.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await confirmation.confirm(otp.trim());
+      setConfirmation(null);
+      setOtp("");
+      setStatus("Phone authentication verified. Loading backend session...");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "OTP verification failed");
     } finally {
       setBusy(false);
     }
@@ -128,6 +169,15 @@ export default function Home() {
         <h2>Authentication</h2>
         <p>{user ? `Signed in as ${user.email ?? user.uid}` : "Not signed in"}</p>
         <button onClick={signIn} disabled={busy || Boolean(user)}>Continue with Google</button>{" "}
+        <div id="recaptcha-container" />
+        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" disabled={busy || Boolean(user)} />
+        <button onClick={sendOtp} disabled={busy || Boolean(user)}>Send OTP</button>
+        {confirmation ? (
+          <>
+            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\\D/g, "").slice(0, 6))} placeholder="6-digit OTP" disabled={busy} />
+            <button onClick={verifyOtp} disabled={busy}>Verify OTP</button>
+          </>
+        ) : null}
         <button onClick={logout} disabled={busy || !user}>Sign out</button>
       </section>
 
