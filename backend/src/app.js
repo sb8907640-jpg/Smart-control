@@ -5,7 +5,7 @@ const { getAuth, getFirestore } = require("firebase-admin/auth");
 const { createPool: createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 
-function createApp({ verifyIdToken, db, postgres } = {}) {
+function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
 
@@ -64,10 +64,7 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     next();
   };
 
-  if (process.env.DATABASE_URL) {
-    const pool = require("./db").createPool();
-    installPostgresRoutes(app, { pool });
-  }
+  if (postgresPool) installPostgresRoutes(app, { pool: postgresPool });
 
   app.get("/api/config", authenticate, async (_req, res, next) => {
     try {
@@ -213,6 +210,7 @@ function createProductionApp() {
   return createApp({
     db,
     postgres: postgresPool ? createPostgresRepository(postgresPool) : null,
+    postgresPool,
     verifyIdToken: (token, checkRevoked) => auth.verifyIdToken(token, checkRevoked)
   });
 }
