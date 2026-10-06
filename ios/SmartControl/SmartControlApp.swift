@@ -18,7 +18,7 @@ final class AppSession: ObservableObject {
     @Published private(set) var lastHealth: BackendHealth?
     @Published private(set) var errorMessage: String?
 
-    private let client = BackendClient()
+    private var client = BackendClient()
 
     func refresh() async {
         errorMessage = nil
