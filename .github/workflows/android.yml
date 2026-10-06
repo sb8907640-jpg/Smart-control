@@ -58,6 +58,16 @@ jobs:
           SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
         run: gradle test assembleDebug assembleRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"
 
+      - name: Verify PostgreSQL backend code
+        working-directory: backend
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm test
+          test -f src/migrate.js
+          grep -q "CREATE TABLE IF NOT EXISTS users" src/migrate.js
+          grep -q "CREATE TABLE IF NOT EXISTS devices" src/migrate.js
+
       - name: Verify Node.js Express backend
         working-directory: backend
         run: |
