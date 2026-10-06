@@ -32,9 +32,9 @@ function createApp({ verifyIdToken, db, postgres } = {}) {
     let pool = null;
     if (process.env.DATABASE_URL) {
       try {
-        const { createPool, pingDatabase } = require("./db");
+        const { createPool, checkDatabase } = require("./db");
         pool = createPool();
-        await pingDatabase(pool);
+        await checkDatabase(pool);
         checks.postgres = true;
       } catch (_) {
         checks.postgres = false;
