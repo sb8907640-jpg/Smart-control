@@ -26,7 +26,7 @@ function createPostgresRepository(pool) {
 
     async recordAudit({ userId, deviceId, feature, action, metadata = {} }) {
       const result = await pool.query(
-        `INSERT INTO audit_events (actor_uid, event_type, resource_type, resource_id, metadata)
+        `INSERT INTO audit_logs (actor_uid, event_type, resource_type, resource_id, metadata)
          VALUES ($1, $2, $3, $4, $5::jsonb)
          RETURNING id, created_at`,
         [userId, action || feature || "unknown", feature || null, deviceId ? String(deviceId) : null, JSON.stringify(metadata)]
