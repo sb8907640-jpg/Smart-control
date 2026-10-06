@@ -140,8 +140,15 @@ class FamilySafetyService : Service() {
     private fun granted(permission: String) =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15+ dataSync foreground services have a rolling 6-hour/24-hour limit.
+        // Stop promptly and let the persisted pairing/recovery layer reconnect when allowed.
+        stopSelf(startId)
+    }
+
+    @Suppress("DEPRECATION")
     override fun onTimeout(startId: Int) {
-        stopSelf()
+        stopSelf(startId)
     }
 
     override fun onDestroy() {
