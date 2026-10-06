@@ -29,7 +29,9 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
 
     val oneLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) {
+        oneByOneIndex += 1
+    }
     val permissions = remember {
         listOf(
             Manifest.permission.CAMERA,
