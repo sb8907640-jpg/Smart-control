@@ -90,7 +90,7 @@ function installPostgresRoutes(app, { pool }) {
         "SELECT id,owner_uid,name,join_code,max_clients,created_at FROM device_groups WHERE join_code=$1 FOR UPDATE",
         [code]
       );
-      if (!groupResult.rowCount) return res.status(404).json({ error: "Group not found." });
+      if (!groupResult.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Group not found." }); }
       const group = groupResult.rows[0];
       const existing = await client.query(
         "SELECT role FROM device_group_members WHERE group_id=$1 AND member_uid=$2",
@@ -102,6 +102,7 @@ function installPostgresRoutes(app, { pool }) {
           [group.id]
         );
         if (count.rows[0].count >= group.max_clients) {
+          await client.query("ROLLBACK");
           return res.status(409).json({ error: "Group has reached its client limit." });
         }
         await client.query(
