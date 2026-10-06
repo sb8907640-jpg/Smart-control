@@ -1,0 +1,8 @@
+{
+  "name": "smart-control-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {"check": "node --check src/main.js && node --check src/preload.js", "start": "electron ."},
+  "dependencies": {"electron": "^38.2.0"}
+}
