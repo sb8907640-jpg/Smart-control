@@ -25,6 +25,11 @@
   </activity>
   <service android:name=".service.FamilySafetyService" android:exported="false" android:foregroundServiceType="dataSync|camera|microphone|mediaProjection"/>
   <service android:name=".service.MediaProjectionForegroundService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+  <service android:name=".service.SmartControlMessagingService" android:exported="false">
+   <intent-filter>
+    <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+   </intent-filter>
+  </service>
   <service
       android:name=".service.NotificationAccessService"
       android:label="Smart Control Notification Access"
