@@ -70,6 +70,7 @@ jobs:
           npm run check
           npm run migrate
           npm run verify:schema
+          npm run verify:api
           npm test
 
       - name: Verify realtime and Firebase backend modules
