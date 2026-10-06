@@ -34,22 +34,30 @@ test("Socket.IO authenticates clients and authorizes session rooms", async () =>
     })
   });
 
-  await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", resolve);
+  });
   const port = httpServer.address().port;
   const client = connect("http://127.0.0.1:" + port, {
     auth: { token: "valid-token" },
-    transports: ["websocket"]
+    transports: ["polling", "websocket"],
+    timeout: 5000,
+    reconnection: false
   });
 
   try {
-    const connected = await new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       client.once("connect", resolve);
       client.once("connect_error", reject);
     });
-    assert.ok(connected);
 
-    const result = await new Promise(resolve => {
-      client.emit("session:join", { sessionId: "session-1" }, resolve);
+    const result = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("session:join acknowledgement timed out")), 5000);
+      client.emit("session:join", { sessionId: "session-1" }, response => {
+        clearTimeout(timer);
+        resolve(response);
+      });
     });
     assert.deepEqual(result, { ok: true });
     assert.ok(io.sockets.sockets.size >= 1);
@@ -59,7 +67,6 @@ test("Socket.IO authenticates clients and authorizes session rooms", async () =>
     await new Promise(resolve => httpServer.close(resolve));
   }
 });
-
 
 test("backend health readiness enforces production data residency", async () => {
   const http = require("node:http");
