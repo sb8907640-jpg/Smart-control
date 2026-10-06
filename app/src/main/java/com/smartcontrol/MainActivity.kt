@@ -32,6 +32,8 @@ import com.smartcontrol.presentation.localdata.ClipboardScreen
 import com.smartcontrol.presentation.localdata.AppInstallScreen
 import com.smartcontrol.presentation.localdata.NotificationCenterScreen
 import com.smartcontrol.presentation.billing.BillingScreen
+import com.smartcontrol.presentation.onboarding.AgeVerificationScreen
+import com.smartcontrol.presentation.onboarding.ModeSelectScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -43,6 +45,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             var signedIn by remember { mutableStateOf(false) }
             var consented by remember { mutableStateOf(getSharedPreferences("legal_consent", MODE_PRIVATE).getBoolean("accepted", false)) }
+            var ageVerified by remember { mutableStateOf(getSharedPreferences("legal_consent", MODE_PRIVATE).getBoolean("age_verified", false)) }
+            var modeSelected by remember { mutableStateOf(getSharedPreferences("smart_control_mode", MODE_PRIVATE).getString("mode", null) != null) }
             var settings by remember { mutableStateOf(false) }; var pairing by remember { mutableStateOf(false) }; var permissions by remember { mutableStateOf(false) }
             var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
             var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
@@ -51,7 +55,10 @@ class MainActivity : ComponentActivity() {
             var notifications by remember { mutableStateOf(false) }; var billing by remember { mutableStateOf(false) }
             var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }; var appInstall by remember { mutableStateOf(false) }
             if (!consented) ConsentScreen(this@MainActivity) { consented = true }
-            else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true }) else {
+            else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true })
+            else if (!ageVerified) AgeVerificationScreen(this@MainActivity) { ageVerified = true }
+            else if (!modeSelected) ModeSelectScreen(this@MainActivity) { modeSelected = true }
+            else {
                 LaunchedEffect(Unit) {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
                 }
