@@ -8,7 +8,7 @@ function createWindow() {
     width: 1100, height: 760, minWidth: 800, minHeight: 600,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  const target = process.env.SMARTCONTROL_WEB_URL;
+  const target = process.env.SMARTCONTROL_WEB_URL || (apiBase ? `${apiBase}/desktop` : "");
   if (target) return win.loadURL(target);
   win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
     "<main style='font-family:system-ui;padding:32px'><h1>Smart Control Desktop</h1>" +
