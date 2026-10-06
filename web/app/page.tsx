@@ -61,6 +61,7 @@ export default function Home() {
   const [session, setSession] = useState<BackendSession | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [system, setSystem] = useState<SystemStatus | null>(null);
+  const [remoteConfig, setRemoteConfig] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState("Not connected");
   const [busy, setBusy] = useState(false);
   const [phone, setPhone] = useState("");
@@ -133,11 +134,13 @@ export default function Home() {
       const [nextSession, deviceResponse, nextSystem] = await Promise.all([
         apiGet<BackendSession>("/api/auth/session", user),
         apiGet<{ devices: Device[] }>("/api/devices", user),
-        apiGet<SystemStatus>("/api/system/status", user)
+        apiGet<SystemStatus>("/api/system/status", user),
+        apiGet<{ values: Record<string, unknown> }>("/api/config", user)
       ]);
       setSession(nextSession);
       setDevices(deviceResponse.devices);
       setSystem(nextSystem);
+      setRemoteConfig(configResponse.values);
       setStatus("Backend session verified");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Backend request failed");
@@ -210,6 +213,12 @@ export default function Home() {
             <section>
               <h2>System status</h2>
               <p>{system.ok ? "Healthy" : "Degraded"} · Firestore: {system.firestore} · PostgreSQL: {system.postgres.ok ? "Healthy" : system.postgres.configured ? "Unavailable" : "Not configured"}</p>
+            </section>
+          ) : null}
+          {remoteConfig ? (
+            <section>
+              <h2>Remote configuration</h2>
+              <pre><code>{JSON.stringify(remoteConfig, null, 2)}</code></pre>
             </section>
           ) : null}
         </>
