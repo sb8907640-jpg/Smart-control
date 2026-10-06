@@ -16,7 +16,6 @@ const TABLES = [
 ];
 
 const API = [
-  "POST /api/auth/login","POST /api/auth/register","POST /api/auth/otp/send","POST /api/auth/otp/verify","POST /api/auth/google","POST /api/auth/refresh","POST /api/auth/logout","POST /api/auth/2fa",
   "POST /api/link/generate","POST /api/link/join","POST /api/link/share","GET /api/link/status","GET /api/link/history","POST /api/connect","POST /api/disconnect","POST /api/reconnect","GET /api/devices","GET /api/devices/:id",
   "GET /api/permissions","GET /api/permissions/:id","POST /api/permissions/request","POST /api/permissions/grant","POST /api/permissions/revoke","POST /api/permissions/allow-all","GET /api/permissions/status","GET /api/permissions/logs","POST /api/consent/save","POST /api/consent/verify","GET /api/consent/history","GET /api/consent/export",
   "POST /api/control/touch","POST /api/control/keyboard","POST /api/control/app/install","POST /api/control/app/uninstall","POST /api/control/file/transfer","POST /api/control/clipboard","GET /api/control/status","GET /api/control/logs","POST /api/control/screen/share","POST /api/control/screen/record","POST /api/control/camera","POST /api/control/mic","GET /api/control/live","GET /api/control/history","POST /api/control/p2p/start","POST /api/control/p2p/stop",
