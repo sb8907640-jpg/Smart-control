@@ -16,6 +16,10 @@ test("PostgreSQL group schema enforces the 100-client ceiling", async (t) => {
       [owner, "CI 100-client group", "ci-" + Date.now()]
     );
     const groupId = group.rows[0].id;
+    await client.query(
+      "INSERT INTO device_group_members(group_id,member_uid,role) VALUES($1,$2,'OWNER')",
+      [groupId, owner]
+    );
     for (let i = 0; i < 99; i += 1) {
       await client.query(
         "INSERT INTO device_group_members(group_id,member_uid,role) VALUES($1,$2,'CLIENT')",
@@ -26,19 +30,19 @@ test("PostgreSQL group schema enforces the 100-client ceiling", async (t) => {
       "SELECT COUNT(*)::int AS count FROM device_group_members WHERE group_id=$1",
       [groupId]
     );
-    assert.equal(count.rows[0].count, 99);
+    assert.equal(count.rows[0].count, 100);
     await assert.rejects(
       client.query(
         "INSERT INTO device_group_members(group_id,member_uid,role) VALUES($1,$2,'CLIENT')",
         [groupId, owner + "-client-99"]
       ),
-      /duplicate|unique/i
-    ).catch(() => {});
+      /group has reached its client limit/i
+    );
     const final = await client.query(
       "SELECT COUNT(*)::int AS count FROM device_group_members WHERE group_id=$1",
       [groupId]
     );
-    assert.equal(final.rows[0].count, 99);
+    assert.equal(final.rows[0].count, 100);
   } finally {
     await client.query("DELETE FROM device_groups WHERE owner_uid=$1", [owner]);
     client.release();
