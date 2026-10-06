@@ -23,11 +23,16 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   }));
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/healthz", (_req, res) => res.status(200).json({
-    ok: true,
-    service: "smart-control-backend",
-    timestamp: new Date().toISOString()
-  }));
+  app.get("/healthz", (_req, res) => {
+    const residency = getResidencyPolicy();
+    const ok = !residency.failClosed;
+    return res.status(ok ? 200 : 503).json({
+      ok,
+      service: "smart-control-backend",
+      residency: residency.region,
+      timestamp: new Date().toISOString()
+    });
+  });
 
   app.get("/readyz", async (_req, res) => {
     const residency = getResidencyPolicy();
@@ -158,7 +163,15 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       if (!tokens.length) return res.status(404).json({ error: "No registered FCM tokens." });
       const { getMessaging } = require("firebase-admin/messaging");
       const result = await getMessaging().sendEachForMulticast({ tokens, notification: { title, body }, data: { source: "smart-control-backend" } });
-      res.json({ successCount: result.successCount, failureCount: result.failureCount });
+      const invalidCodes = new Set(["messaging/invalid-registration-token", "messaging/registration-token-not-registered"]);
+      const cleanup = [];
+      result.responses.forEach((response, index) => {
+        if (!response.success && invalidCodes.has(response.error?.code)) {
+          cleanup.push(snap.docs[index].ref.delete());
+        }
+      });
+      await Promise.allSettled(cleanup);
+      res.json({ successCount: result.successCount, failureCount: result.failureCount, cleanedInvalidTokens: cleanup.length });
     } catch (error) { next(error); }
   });
 
