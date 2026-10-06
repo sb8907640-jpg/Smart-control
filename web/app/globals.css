@@ -1,0 +1,8 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; font-family: system-ui, sans-serif; }
+body { background: #f6f7f9; color: #15171a; }
+main { max-width: 960px; margin: 0 auto; padding: 48px 20px; }
+section { background: white; border: 1px solid #e1e4e8; border-radius: 14px; padding: 20px; margin-top: 16px; }
+button { border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+code { word-break: break-word; }
