@@ -2,16 +2,17 @@
   "name": "smart-control-desktop",
   "version": "1.0.0",
   "private": true,
+  "description": "Smart Control desktop client.",
+  "author": "Smart Control",
   "main": "src/main.js",
   "scripts": {
     "check": "node --check src/main.js && node --check src/preload.js",
     "start": "electron .",
     "build:linux": "electron-builder --linux AppImage --publish never"
   },
-  "dependencies": {
-    "electron": "^38.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "electron": "^38.2.0",
     "electron-builder": "^26.0.12"
   },
   "build": {
