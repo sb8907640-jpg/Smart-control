@@ -10,6 +10,7 @@ val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT
 val turnUrls = providers.gradleProperty("SMARTCONTROL_TURN_URLS").orElse("").get()
 val turnUsername = providers.gradleProperty("SMARTCONTROL_TURN_USERNAME").orElse("").get()
 val turnCredential = providers.gradleProperty("SMARTCONTROL_TURN_CREDENTIAL").orElse("").get()
+val apiBaseUrl = providers.gradleProperty("SMARTCONTROL_API_BASE_URL").orElse("").get()
 
 android {
     namespace="com.smartcontrol"
@@ -25,6 +26,7 @@ android {
         buildConfigField("String","TURN_URLS","\"$turnUrls\"")
         buildConfigField("String","TURN_USERNAME","\"$turnUsername\"")
         buildConfigField("String","TURN_CREDENTIAL","\"$turnCredential\"")
+        buildConfigField("String","SMARTCONTROL_API_BASE_URL","\"$apiBaseUrl\"")
     }
     buildFeatures { compose=true; buildConfig=true }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
@@ -51,6 +53,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.google.firebase:firebase-storage")
+    implementation("com.google.firebase:firebase-messaging")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
