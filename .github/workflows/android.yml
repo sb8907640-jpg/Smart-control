@@ -68,6 +68,16 @@ jobs:
           grep -q "CREATE TABLE IF NOT EXISTS users" src/migrate.js
           grep -q "CREATE TABLE IF NOT EXISTS devices" src/migrate.js
 
+      - name: Verify realtime and Firebase backend modules
+        working-directory: backend
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          node --check src/server.js
+          grep -q '"socket.io"' package.json
+          grep -q '/api/notifications/register' src/app.js
+          grep -q '/api/config' src/app.js
+
       - name: Verify Node.js Express backend
         working-directory: backend
         run: |
