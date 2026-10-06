@@ -50,6 +50,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check
           npm test
+          node -e "require('./src/db'); require('./src/postgres-api'); console.log('postgres modules ok')"
 
       - name: Validate Firebase Functions
         shell: bash
