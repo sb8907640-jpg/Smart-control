@@ -69,6 +69,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check
           npm run migrate
+          npm run verify:schema
           npm test
 
       - name: Verify realtime and Firebase backend modules
