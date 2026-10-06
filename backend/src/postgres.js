@@ -1,18 +1,20 @@
 const { Pool } = require("pg");
 
-function createPool(options = {}) {
+function createPool(connectionString = process.env.DATABASE_URL) {
+  if (!connectionString) return null;
   return new Pool({
-    connectionString: options.connectionString || process.env.DATABASE_URL,
-    max: Number(process.env.PG_POOL_MAX || 20),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
-    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 5000),
-    ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: true } : undefined
+    connectionString,
+    max: Number(process.env.PG_POOL_MAX || 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ssl: process.env.PG_SSL === "false" ? false : { rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== "false" }
   });
 }
 
-async function healthcheck(pool) {
+async function checkPostgres(pool) {
+  if (!pool) return { configured: false, ok: false };
   const result = await pool.query("SELECT 1 AS ok");
-  return result.rows[0]?.ok === 1;
+  return { configured: true, ok: result.rows[0]?.ok === 1 };
 }
 
-module.exports = { createPool, healthcheck };
+module.exports = { createPool, checkPostgres };
