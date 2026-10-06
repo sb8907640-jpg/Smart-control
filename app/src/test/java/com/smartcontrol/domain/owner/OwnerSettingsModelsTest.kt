@@ -39,5 +39,9 @@ class OwnerSettingsModelsTest {
         assertTrue(settings.masterConfig.ownerControl.realtimeApply)
         assertTrue(settings.masterConfig.ownerControl.editableValues.keys.any { it.startsWith("payment.") })
         assertEquals(16, settings.masterConfig.ownerControl.editableValues.keys.map { it.substringBefore(".") }.distinct().size)
+        assertEquals(
+            "10",
+            settings.masterConfig.ownerControl.editableValues["connection.pairingTokenExpiryMinutes"]
+        )
     }
 }
