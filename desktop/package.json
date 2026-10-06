@@ -3,6 +3,28 @@
   "version": "1.0.0",
   "private": true,
   "main": "src/main.js",
-  "scripts": {"check": "node --check src/main.js && node --check src/preload.js", "start": "electron ."},
-  "dependencies": {"electron": "^38.2.0"}
+  "scripts": {
+    "check": "node --check src/main.js && node --check src/preload.js",
+    "start": "electron .",
+    "build:linux": "electron-builder --linux AppImage --publish never"
+  },
+  "dependencies": {
+    "electron": "^38.2.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.smartcontrol.desktop",
+    "productName": "Smart Control",
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  }
 }
