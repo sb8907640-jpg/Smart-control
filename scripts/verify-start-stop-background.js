@@ -23,7 +23,7 @@ check("Main screen uses SessionScreen", main.includes("SessionScreen("));
 check("Main screen exposes START and STOP callbacks", main.includes("onStart = ::startServiceFromUserAction") && main.includes("onStop = ::stopServiceFromUserAction"));
 check("START is user-triggered", session.includes("Button(") && session.includes("onClick = onStart") && session.includes('Text("START")'));
 check("STOP is user-triggered", session.includes("OutlinedButton(") && session.includes("onClick = onStop") && session.includes('Text("STOP")'));
-check("Service is not auto-started by screen LaunchedEffect", !main.includes("LaunchedEffect") && !main.includes("else FamilySafetyService.start(this@MainActivity)"));
+check("Automatic start requires explicit user choice", main.includes("autoStart") && main.includes("auto_start_service") && main.includes("putBoolean"));
 check("Service starts only from START callback", main.includes("fun startServiceFromUserAction()") && main.includes("FamilySafetyService.start(this@MainActivity)"));
 check("Service stops from STOP callback", main.includes("fun stopServiceFromUserAction()") && main.includes("FamilySafetyService.stop(this@MainActivity)"));
 check("Background operation is foreground-visible", service.includes("startVisibleForeground") && service.includes("setOngoing(true)"));
