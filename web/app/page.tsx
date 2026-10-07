@@ -195,6 +195,16 @@ export default function Home() {
       </section>
 
       <section>
+        <h2>Support</h2>
+        <button onClick={async () => {
+          if (!user) { setStatus("Sign in to contact support."); return; }
+          setBusy(true);
+          try { await initiateWhatsAppSupport(user); } catch (error) { setStatus(error instanceof Error ? error.message : "WhatsApp support failed"); } finally { setBusy(false); }
+        }} disabled={busy || !user}>💬 WhatsApp Support</button>
+        <p>Click → Talk to Support</p>
+      </section>
+
+      <section>
         <h2>Backend session</h2>
         <button onClick={verifySession} disabled={busy || !user}>Verify authenticated session</button>
         <p>{status}</p>
