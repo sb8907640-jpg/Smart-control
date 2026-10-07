@@ -1,0 +1,86 @@
+name: Android APK Download
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "APK set to build"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - debug
+          - release
+  push:
+    branches: ["main"]
+    paths:
+      - "app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Materialize Firebase config
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
+        run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
+
+      - name: Build APKs
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
+          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
+          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+          BUILD_TYPE: ${{ inputs.build_type || 'all' }}
+        run: |
+          set -euo pipefail
+          case "$BUILD_TYPE" in
+            debug)
+              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              ;;
+            release)
+              gradle assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              ;;
+            all)
+              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              ;;
+            *)
+              echo "Unsupported BUILD_TYPE=$BUILD_TYPE" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Verify APK outputs are present
+        run: |
+          set -euo pipefail
+          test -n "$(find app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          find app/build/outputs/apk -type f -name '*.apk' -print | sort
+
+      - name: Upload APK bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-control-apks
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
