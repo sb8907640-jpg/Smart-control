@@ -1,91 +1,94 @@
 package com.smartcontrol
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import com.smartcontrol.presentation.auth.AuthScreen
-import com.smartcontrol.presentation.filetransfer.FileTransferScreen
-import com.smartcontrol.presentation.health.DeviceStatusScreen
-import com.smartcontrol.presentation.location.LocationSharingScreen
-import com.smartcontrol.presentation.pairing.PairingScreen
-import com.smartcontrol.presentation.permission.PermissionCenterScreen
-import com.smartcontrol.presentation.profile.ProfileScreen
-import com.smartcontrol.presentation.owner.OwnerAdminScreen
-import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
-import com.smartcontrol.presentation.audit.AuditLogScreen
-import com.smartcontrol.presentation.privacy.PrivacyControlsScreen
-import com.google.firebase.auth.FirebaseAuth
-import com.smartcontrol.presentation.session.SessionScreen
-import com.smartcontrol.presentation.safety.SafetyAlertsScreen
-import com.smartcontrol.presentation.features.FeatureCenterScreen
 import com.smartcontrol.presentation.consent.ConsentScreen
-import com.smartcontrol.presentation.settings.SettingsScreen
-import com.smartcontrol.presentation.localdata.ContactsScreen
-import com.smartcontrol.presentation.localdata.SmsScreen
-import com.smartcontrol.presentation.localdata.CallLogsScreen
-import com.smartcontrol.presentation.localdata.AppUsageScreen
-import com.smartcontrol.presentation.localdata.ClipboardScreen
-import com.smartcontrol.presentation.localdata.AppInstallScreen
-import com.smartcontrol.presentation.localdata.NotificationCenterScreen
-import com.smartcontrol.presentation.billing.BillingScreen
 import com.smartcontrol.presentation.onboarding.AgeVerificationScreen
 import com.smartcontrol.presentation.onboarding.ModeSelectScreen
+import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { FamilySafetyService.start(this) }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            FamilySafetyService.start(this)
+            FamilySafetyService.setSyncing(this)
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContent {
             var signedIn by remember { mutableStateOf(false) }
-            var consented by remember { mutableStateOf(getSharedPreferences("legal_consent", MODE_PRIVATE).getBoolean("accepted", false)) }
-            var ageVerified by remember { mutableStateOf(getSharedPreferences("legal_consent", MODE_PRIVATE).getBoolean("age_verified", false)) }
-            var modeSelected by remember { mutableStateOf(getSharedPreferences("smart_control_mode", MODE_PRIVATE).getString("mode", null) != null) }
-            var settings by remember { mutableStateOf(false) }; var pairing by remember { mutableStateOf(false) }; var permissions by remember { mutableStateOf(false) }
-            var profile by remember { mutableStateOf(intent.getBooleanExtra(FamilySafetyService.EXTRA_OPEN_PROFILE, false)) }
-            var location by remember { mutableStateOf(false) }; var fileTransfer by remember { mutableStateOf(false) }; var deviceStatus by remember { mutableStateOf(false) }
-            var safetyAlerts by remember { mutableStateOf(false) }; var ownerAdmin by remember { mutableStateOf(false) }; var emergencyContacts by remember { mutableStateOf(false) }
-            var auditLog by remember { mutableStateOf(false) }; var privacyControls by remember { mutableStateOf(false) }; var featureCenter by remember { mutableStateOf(false) }
-            var notifications by remember { mutableStateOf(false) }; var billing by remember { mutableStateOf(false) }
-            var contacts by remember { mutableStateOf(false) }; var sms by remember { mutableStateOf(false) }; var callLogs by remember { mutableStateOf(false) }; var appUsage by remember { mutableStateOf(false) }; var clipboard by remember { mutableStateOf(false) }; var appInstall by remember { mutableStateOf(false) }
-            if (!consented) ConsentScreen(this@MainActivity) { consented = true }
-            else if (!signedIn) AuthScreen(onAuthenticated = { signedIn = true })
-            else if (!ageVerified) AgeVerificationScreen(this@MainActivity) { ageVerified = true }
-            else if (!modeSelected) ModeSelectScreen(this@MainActivity) { modeSelected = true }
-            else {
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else FamilySafetyService.start(this@MainActivity)
+            var consented by remember {
+                mutableStateOf(
+                    getSharedPreferences("legal_consent", MODE_PRIVATE)
+                        .getBoolean("accepted", false)
+                )
+            }
+            var ageVerified by remember {
+                mutableStateOf(
+                    getSharedPreferences("legal_consent", MODE_PRIVATE)
+                        .getBoolean("age_verified", false)
+                )
+            }
+            var modeSelected by remember {
+                mutableStateOf(
+                    getSharedPreferences("smart_control_mode", MODE_PRIVATE)
+                        .getString("mode", null) != null
+                )
+            }
+            var running by remember { mutableStateOf(false) }
+
+            fun startServiceFromUserAction() {
+                if (running) return
+                if (
+                    Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    FamilySafetyService.start(this@MainActivity)
+                    FamilySafetyService.setSyncing(this@MainActivity)
                 }
-                when {
-                    billing -> BillingScreen(onBack = { billing = false })
-                    notifications -> NotificationCenterScreen(onBack = { notifications = false })
-                    appInstall -> AppInstallScreen(onBack = { appInstall = false })
-                    contacts -> ContactsScreen(onBack = { contacts = false })
-                    sms -> SmsScreen(onBack = { sms = false })
-                    callLogs -> CallLogsScreen(onBack = { callLogs = false })
-                    appUsage -> AppUsageScreen(onBack = { appUsage = false })
-                    clipboard -> ClipboardScreen(onBack = { clipboard = false })
-                    featureCenter -> FeatureCenterScreen(onBack = { featureCenter = false }, onNotifications = { notifications = true }, onContacts = { contacts = true }, onSms = { sms = true }, onCallLogs = { callLogs = true }, onAppUsage = { appUsage = true }, onClipboard = { clipboard = true }, onAppInstall = { appInstall = true })
-                    safetyAlerts -> SafetyAlertsScreen(onBack = { safetyAlerts = false })
-                    deviceStatus -> DeviceStatusScreen(onBack = { deviceStatus = false })
-                    location -> LocationSharingScreen(onBack = { location = false })
-                    fileTransfer -> FileTransferScreen(onBack = { fileTransfer = false })
-                    pairing -> PairingScreen(onBack = { pairing = false })
-                    permissions -> PermissionCenterScreen(onBack = { permissions = false })
-                    ownerAdmin -> OwnerAdminScreen(onBack = { ownerAdmin = false })
-                    emergencyContacts -> EmergencyContactsScreen(ownerUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(), onBack = { emergencyContacts = false })
-                    auditLog -> AuditLogScreen(deviceId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(), onBack = { auditLog = false })
-                    privacyControls -> PrivacyControlsScreen(onBack = { privacyControls = false }, context = this@MainActivity)
-                    profile -> ProfileScreen(onBack = { profile = false }, onOwnerAdmin = { ownerAdmin = true }, onEmergencyContacts = { emergencyContacts = true }, onAuditLog = { auditLog = true }, onPrivacyControls = { privacyControls = true })
-                    settings -> SettingsScreen(onBack = { settings = false }, onEndSession = { settings = false }, onPairing = { pairing = true }, onPermissions = { permissions = true })
-                    else -> SessionScreen(onSettings = { settings = true }, onProfile = { profile = true }, onLocation = { location = true }, onFileTransfer = { fileTransfer = true }, onDeviceStatus = { deviceStatus = true }, onSafetyAlerts = { safetyAlerts = true }, onFeatureCenter = { featureCenter = true }, onBilling = { billing = true })
-                }
+                running = true
+            }
+
+            fun stopServiceFromUserAction() {
+                if (!running) return
+                FamilySafetyService.setIdle(this@MainActivity)
+                FamilySafetyService.stop(this@MainActivity)
+                running = false
+            }
+
+            if (!consented) {
+                ConsentScreen(this@MainActivity) { consented = true }
+            } else if (!signedIn) {
+                AuthScreen(onAuthenticated = { signedIn = true })
+            } else if (!ageVerified) {
+                AgeVerificationScreen(this@MainActivity) { ageVerified = true }
+            } else if (!modeSelected) {
+                ModeSelectScreen(this@MainActivity) { modeSelected = true }
+            } else {
+                SessionScreen(
+                    running = running,
+                    onStart = ::startServiceFromUserAction,
+                    onStop = ::stopServiceFromUserAction
+                )
             }
         }
     }
