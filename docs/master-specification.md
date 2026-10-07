@@ -41,3 +41,27 @@ Run:
 `node scripts/master-spec-verify.js`
 
 Then run the backend schema/API verification and the platform-specific CI workflows. The final status must distinguish **VERIFIED**, **PENDING RUNTIME/PRODUCTION EVIDENCE**, and **BLOCKED**.
+
+## 11-step Owner + Receiver flow verification
+
+The repository now has an explicit structural verifier:
+
+`node scripts/verify-11-step-flow.js`
+
+It checks the required flow in order:
+
+1. App Install — Owner + Receiver Android build/manifest surfaces.
+2. Login — Google + Mobile OTP interfaces.
+3. Mode Select — Controller + Client pairing surfaces.
+4. Link Generate/Open — pairing code creation/claim and expiry model.
+5. Auto Device Link — paired-device state surfaces.
+6. Permission Screen — Permission Center and Android runtime permission declarations.
+7. Manual choice — user-controlled permission path; no permission bypass.
+8. Permission execution — 19-feature catalog plus separate Allow-All and One-by-One runtime gates.
+9. Full Control — approved/active session gating.
+10. Background operation — persistent-link recovery policy.
+11. Persistent Link — retained link state and network recovery policy.
+
+The verifier intentionally reports physical-device/provider checks as **PENDING RUNTIME** rather than claiming they are proven by source inspection. In particular, real two-device installation, Google/OTP sign-in, Controller/Client UI selection, automatic connection, all 19 OS permission dialogs, manual Allow/Deny choices, background operation, network interruption, app restart, and reset/disconnect behavior require runtime evidence.
+
+The Production Readiness workflow executes this verifier on every applicable run.
