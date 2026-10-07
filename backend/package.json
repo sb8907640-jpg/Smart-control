@@ -17,7 +17,8 @@
     "verify:api": "node src/verify-api.js",
     "verify:owner": "node src/verify-owner-config.js",
     "verify:support": "node src/verify-support-whatsapp.js",
-    "verify:11-step-flow": "node ../scripts/verify-11-step-flow.js"
+    "verify:11-step-flow": "node ../scripts/verify-11-step-flow.js",
+    "verify:smart-autolink": "node ../scripts/verify-smart-autolink-persistent.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
