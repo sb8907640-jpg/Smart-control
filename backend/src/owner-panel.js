@@ -24,6 +24,16 @@ function installOwnerPanelRoutes(app, { db }) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   };
 
+  const expireFreeGrantIfNeeded = async (id, grant) => {
+    const endsAt = grant?.endsAt == null ? null : Number(grant.endsAt);
+    if (grant?.status === "ACTIVE" && Number.isFinite(endsAt) && endsAt <= now()) {
+      const expiredAt = now();
+      await collection("freeAccessGrants").doc(id).set({ status: "EXPIRED", expiredAt, updatedAt: expiredAt }, { merge: true });
+      return { ...grant, status: "EXPIRED", expiredAt };
+    }
+    return grant;
+  };
+
   const update = async (req, res, collectionName, id, resource, action) => {
     const values = req.body?.values;
     if (!values || typeof values !== "object" || Array.isArray(values)) {
@@ -135,6 +145,15 @@ function installOwnerPanelRoutes(app, { db }) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/owner/free-access", requireOwner, async (req, res, next) => {
+    try {
+      const grants = await read("freeAccessGrants");
+      const normalized = [];
+      for (const grant of grants) normalized.push({ id: grant.id, ...(await expireFreeGrantIfNeeded(grant.id, grant)) });
+      res.json({ grants: normalized });
+    } catch (e) { next(e); }
+  });
+
   app.post("/api/owner/free-access", requireOwner, async (req, res, next) => {
     try {
       const userId = String(req.body?.userId || "").trim();
@@ -145,7 +164,19 @@ function installOwnerPanelRoutes(app, { db }) {
       res.status(201).json({ ok: true, id: ref.id, status: "ACTIVE", endsAt });
     } catch (e) { next(e); }
   });
-  app.patch("/api/owner/free-access/:id", requireOwner, (req, res, next) => update(req, res, "freeAccessGrants", req.params.id, "freeAccessGrant", "OWNER_FREE_ACCESS_EDITED").catch(next));
+  app.patch("/api/owner/free-access/:id", requireOwner, async (req, res, next) => {
+    try {
+      const current = await collection("freeAccessGrants").doc(req.params.id).get();
+      if (!current.exists) return res.status(404).json({ error: "Free access grant not found." });
+      const values = req.body?.values;
+      if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
+      const endsAt = values.endsAt == null ? null : Number(values.endsAt);
+      if (endsAt !== null && (!Number.isFinite(endsAt) || endsAt <= now())) return res.status(400).json({ error: "endsAt must be a future timestamp." });
+      await collection("freeAccessGrants").doc(req.params.id).set({ ...values, endsAt, status: "ACTIVE", updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
+      await audit(req, "OWNER_FREE_ACCESS_EDITED", "freeAccessGrant", { id: req.params.id });
+      res.json({ ok: true, id: req.params.id, status: "ACTIVE", endsAt });
+    } catch (e) { next(e); }
+  });
   app.post("/api/owner/free-access/:id/revoke", requireOwner, async (req, res, next) => {
     try {
       await collection("freeAccessGrants").doc(req.params.id).set({ status: "REVOKED", revokedAt: now(), updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
