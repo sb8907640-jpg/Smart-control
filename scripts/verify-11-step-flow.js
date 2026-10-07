@@ -31,7 +31,7 @@ const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/Sess
 
 console.log("SMART CONTROL — 11-STEP OWNER + RECEIVER FLOW VERIFICATION");
 
-check("STEP 1 App Install — Android build surfaces", /assembleOwner(Debug|Release)/.test(gradle) && /assembleLite(Debug|Release)/.test(gradle) && /assembleFull(Debug|Release)/.test(gradle));
+check("STEP 1 App Install — Android build surfaces", ["owner", "lite", "full"].every(flavor => new RegExp(`create\\("${flavor}"\\)`).test(gradle)));
 check("STEP 1 App Install — manifest exists", Boolean(manifest));
 
 check("STEP 2 Login — Google", auth.includes("signInWithGoogle"));
@@ -57,7 +57,7 @@ check("STEP 6 Permission Screen — Android runtime permissions declared", [
 check("STEP 7 Manual choice — no permission bypass policy", read("scripts/master-spec-verify.js").includes("no permission bypass"));
 runtime("STEP 7 Manual choice — Allow All / One-by-One taps", "Requires physical UI evidence that the user manually chooses either path; no silent grant is accepted.");
 
-const featureCount = (features.match(/^[ ]+[A-Z0-9_]+\(/gm) || []).length;
+const featureCount = (features.match(/\\b[A-Z][A-Z0-9_]+\\s*\\(/g) || []).length;
 check("STEP 8 19 control features catalogued", featureCount === 19, String(featureCount));
 check("STEP 8 OS permission flow remains explicit", !read("scripts/master-spec-verify.js").includes("permissionBypass=true"));
 runtime("STEP 8A Allow All — 19 sequential OS dialogs", "Requires physical Android evidence for all 19 feature-permission steps; CI cannot prove OS dialogs.");
