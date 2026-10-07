@@ -57,7 +57,7 @@ function installOwnerPanelRoutes(app, { db }) {
         capabilities: {
           users: ["VIEW", "EDIT", "DELETE", "BAN"],
           features: ["ENABLE", "DISABLE", "CONFIGURE"],
-          plans: ["CREATE", "EDIT", "DELETE"],
+          plans: ["CREATE", "EDIT", "DELETE", "PRICE", "DURATION", "FEATURES", "LINK_VALIDITY", "ENABLE", "DISABLE", "UPGRADE", "DOWNGRADE", "SPECIAL_OFFERS", "EMI"],
           settings: ["GLOBAL_CONFIGURE"],
           audit: ["VIEW_FULL_AUDIT_TRAIL"],
           freeAccess: ["GRANT", "CUSTOM_DURATION", "EDIT", "REVOKE"],
@@ -66,6 +66,7 @@ function installOwnerPanelRoutes(app, { db }) {
           legalTemplates: ["VIEW", "EDIT"],
           supportTickets: ["VIEW", "EDIT"],
           systemHealth: ["VIEW"],
+           deviceLinks: ["GENERATE", "REGENERATE", "REVOKE"],
           featureFlags: ["ENABLE", "DISABLE", "CONFIGURE"]
         },
         ownerIdentity: null,
