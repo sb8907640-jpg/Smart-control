@@ -15,7 +15,8 @@
     "test:ci": "node --test --test-reporter=spec",
     "verify:schema": "node src/verify-schema.js",
     "verify:api": "node src/verify-api.js",
-    "verify:owner": "node src/verify-owner-config.js"
+    "verify:owner": "node src/verify-owner-config.js",
+    "verify:support": "node src/verify-support-whatsapp.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
