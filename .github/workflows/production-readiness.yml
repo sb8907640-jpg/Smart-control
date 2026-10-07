@@ -35,6 +35,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
+      - name: Verify final master specification
+        run: node scripts/master-spec-verify.js
+
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
