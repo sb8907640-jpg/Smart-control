@@ -1,5 +1,7 @@
 function installOwnerPanelRoutes(app, { db }) {
   const collection = (name) => db.collection(name);
+  const crypto = require("node:crypto");
+  const { getLinkValidity, calculateExpiry } = require("./plan-policy");
   const now = () => Date.now();
 
   const requireOwner = (req, res, next) => {
@@ -115,6 +117,58 @@ function installOwnerPanelRoutes(app, { db }) {
       await collection("plans").doc(req.params.id).delete();
       await audit(req, "OWNER_PLAN_DELETED", "plan", { id: req.params.id });
       res.json({ ok: true, id: req.params.id, status: "DELETED" });
+    } catch (e) { next(e); }
+  });
+
+  app.post("/api/owner/device-links/generate", requireOwner, async (req, res, next) => {
+    try {
+      const planId = String(req.body?.planId || "").trim();
+      if (!planId) return res.status(400).json({ error: "planId is required." });
+      const planSnap = await collection("plans").doc(planId).get();
+      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
+      const plan = { id: planSnap.id, ...planSnap.data() };
+      const validity = getLinkValidity(plan);
+      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
+      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
+      const createdAt = now();
+      const expiresAt = calculateExpiry(createdAt, validity);
+      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
+      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, code, expiresAt });
+      res.status(201).json({ ok: true, code, planId, expiresAt });
+    } catch (e) { next(e); }
+  });
+
+  app.post("/api/owner/device-links/regenerate/:code", requireOwner, async (req, res, next) => {
+    try {
+      const oldCode = String(req.params.code || "").trim().toUpperCase();
+      const oldRef = collection("pairingCodes").doc(oldCode);
+      const oldSnap = await oldRef.get();
+      if (!oldSnap.exists || oldSnap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
+      await oldRef.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
+      const planId = String(oldSnap.data()?.planId || req.body?.planId || "").trim();
+      if (!planId) return res.status(400).json({ error: "planId is required." });
+      const planSnap = await collection("plans").doc(planId).get();
+      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
+      const validity = getLinkValidity({ id: planSnap.id, ...planSnap.data() });
+      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
+      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
+      const createdAt = now();
+      const expiresAt = calculateExpiry(createdAt, validity);
+      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
+      await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, newCode: code, expiresAt });
+      res.status(201).json({ ok: true, code, planId, expiresAt, previousCode: oldCode });
+    } catch (e) { next(e); }
+  });
+
+  app.post("/api/owner/device-links/revoke/:code", requireOwner, async (req, res, next) => {
+    try {
+      const code = String(req.params.code || "").trim().toUpperCase();
+      const ref = collection("pairingCodes").doc(code);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
+      await ref.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
+      await audit(req, "OWNER_DEVICE_LINK_REVOKED", "pairingCode", { code });
+      res.json({ ok: true, code, status: "REVOKED" });
     } catch (e) { next(e); }
   });
 
