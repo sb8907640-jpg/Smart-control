@@ -81,3 +81,21 @@ Subscription activation snapshots the selected plan duration and calculates star
 An expired or revoked pairing code is rejected by the link-join path, so it cannot create a new device connection. Owner-only device-link controls are available for generate, regenerate, and revoke, and every such action is audited.
 
 The existing OWNER plan CRUD endpoint accepts per-plan values, allowing price, duration, features, link validity, enable/disable, and custom-plan fields to be edited independently. Plan upgrade/downgrade, special offers, and EMI metadata remain management data and do not alter another plan automatically.
+
+## Owner manual Free Access approval
+
+Free access is not a public plan and cannot be self-subscribed. Only an authenticated server-side OWNER can approve it.
+
+The approval record supports:
+
+- user name
+- email or mobile
+- optional user ID
+- preset duration such as 1 day, 7 days, or 30 days, or CUSTOM
+- explicit start and end timestamps
+- all 19 permissions or a selected feature list
+- approval timestamp and OWNER audit record
+
+After approval the access record is ACTIVE. Owner can edit it to extend or reduce the end time, change the selected features, or revoke/cancel it. Expired records are normalized to EXPIRED and the user access-status endpoint also enforces expiry, so access does not remain active after the end time.
+
+Every approval/edit/revoke action is recorded in the private owner audit trail. A notification-before-expiry workflow still requires the notification scheduler/provider runtime integration; source-level free-access expiry enforcement does not by itself constitute delivery evidence.
