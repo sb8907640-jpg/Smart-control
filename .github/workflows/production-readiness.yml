@@ -40,6 +40,8 @@ jobs:
 
       - name: Verify 11-step Owner + Receiver flow
         run: node scripts/verify-11-step-flow.js
+      - name: Verify Smart Auto-Link + Persistent Connection
+        run: node scripts/verify-smart-autolink-persistent.js
 
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
