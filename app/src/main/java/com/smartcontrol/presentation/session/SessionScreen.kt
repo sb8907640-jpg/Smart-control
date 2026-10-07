@@ -11,7 +11,9 @@ import androidx.compose.ui.unit.dp
 fun SessionScreen(
     running: Boolean,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    autoStart: Boolean,
+    onAutoStartChanged: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -44,11 +46,21 @@ fun SessionScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Automatic Service Start", modifier = Modifier.weight(1f))
+            Switch(checked = autoStart, onCheckedChange = onAutoStartChanged)
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         Text(
             if (running)
                 "Approved permissions may continue while the service runs in the background."
             else
-                "Press START to begin. Android permissions are never granted silently in the background.",
+                "Automatic start is optional. Android permissions are never granted silently in the background.",
             style = MaterialTheme.typography.bodyMedium
         )
     }
