@@ -55,7 +55,17 @@ async function apiGet<T>(path: string, user: User): Promise<T> {
   return body as T;
 }
 
-async function initiateWhatsAppSupport(user: User) {\n  const token = await user.getIdToken();\n  const base = apiBase();\n  if (!base) throw new Error("Smart Control API URL is not configured.");\n  const response = await fetch(base + "/api/support/whatsapp/initiate", { method: "POST", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });\n  const body = await response.json().catch(() => ({}));\n  if (!response.ok || !body.url) throw new Error(body.error ?? "WhatsApp support is unavailable.");\n  window.location.assign(body.url as string);\n}\n\nexport default function Home() {
+async function initiateWhatsAppSupport(user: User) {
+  const token = await user.getIdToken();
+  const base = apiBase();
+  if (!base) throw new Error("Smart Control API URL is not configured.");
+  const response = await fetch(base + "/api/support/whatsapp/initiate", { method: "POST", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.url) throw new Error(body.error ?? "WhatsApp support is unavailable.");
+  window.location.assign(body.url as string);
+}
+
+export default function Home() {
   const [auth, setAuth] = useState<Auth | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<BackendSession | null>(null);
