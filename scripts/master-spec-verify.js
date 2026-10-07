@@ -23,6 +23,11 @@ check("remote commands approved-session gated", POLICY.everyRemoteCommandRequire
 check("admin routes authenticated", POLICY.adminEndpointsRequireAuthenticatedAdminRole === true);
 check("no hidden owner/hidden capture", POLICY.noHiddenOwnerIdentityOrHiddenCapture === true);
 check("no permission bypass", POLICY.noPermissionBypass === true);
+check("secure owner auth module", fs.existsSync(path.join(root, "backend/src/owner-auth.js")));
+const backendApp = fs.readFileSync(path.join(root, "backend/src/app.js"), "utf8");
+check("authenticated owner role enforcement", backendApp.includes("applyOwnerRole(verifiedUser)"));
+check("owner allowlist is server-side", backendApp.includes('require("./owner-auth")'));
+check("owner access documentation", fs.existsSync(path.join(root, "docs/owner-access.md")));
 
 const requiredPaths = [
   "app/src/main/AndroidManifest.xml",
@@ -76,6 +81,7 @@ note("24x7 continuous operation", "Requires long-running runtime evidence and re
 note("auto-reconnect/persistent link", "Requires physical/runtime network interruption and app-restart tests.");
 note("physical Android/iOS", "Static CI cannot substitute for a real device.");
 note("production blockchain", "Compilation is not deployment/wallet/RPC evidence.");
+note("owner identity configuration", "Real owner identities must be supplied through private deployment secrets OWNER_EMAILS and OWNER_MOBILE_NUMBERS; they are intentionally not stored in public source.");
 
 console.log("");
 if (failures.length) {
