@@ -108,6 +108,23 @@ check(
 );
 
 check(
+  "Family-safety background mode requires approved session and permission grant",
+  session.includes("APPROVED") &&
+  session.includes("ACTIVE") &&
+  sessionRepo.includes("suspend fun approve(") &&
+  permission.includes("DevicePermission"),
+  "Background family-safety control may become active only after explicit user/guardian approval and required OS permissions; no silent activation is accepted."
+);
+
+check(
+  "Persistent mode is not treated as a permission bypass",
+  !/bypass|silent|automatically.?grant|auto.?grant|without.?approval/i.test(
+    service + sessionRepo + permission
+  ),
+  "Persistence/recovery cannot override the user's approval or Android's protected-permission controls."
+);
+
+check(
   "No silent/background permission bypass is present",
   !/autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|withoutUserAction/i.test(
     appText
@@ -165,6 +182,30 @@ runtime(
 runtime(
   "Airplane mode P2P fallback",
   "Requires real hardware and an implemented Wi-Fi Direct/Bluetooth transport; Airplane Mode behavior is platform/OEM dependent."
+);
+runtime(
+  "Family/child-safety approved activation",
+  "Requires real-device confirmation that the family/guardian user explicitly enables background mode and the receiver user/guardian approves the session and required OS permissions before protected control activates."
+);
+runtime(
+  "Force Stop / watchdog",
+  "Requires real-device testing. Android Force Stop is OS-enforced; a normal app cannot guarantee self-restart until the OS/user permits it. Watchdog behavior must never become a permission or force-stop bypass."
+);
+runtime(
+  "Battery optimization user consent",
+  "Requires an explicit user-facing exemption flow where supported; exemption must never be silently granted."
+);
+runtime(
+  "Doze mode",
+  "Requires real-device Doze testing; idle restrictions cannot be silently bypassed."
+);
+runtime(
+  "Background restriction user consent",
+  "Requires real-device/OEM testing; any exemption must be explicitly user-approved and subject to platform policy."
+);
+runtime(
+  "24×7 family-safety endurance/soak",
+  "Requires an extended real-device soak test across charging/battery, network changes, screen lock, app closure, reboot, and OS power-management states."
 );
 runtime(
   "Approved session + Android permission grant",
