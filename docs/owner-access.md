@@ -56,3 +56,12 @@ The authenticated support button calls `POST /api/support/whatsapp/initiate`. Th
 The web UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render the direct number. The number is never returned as a standalone field.
 
 Run `npm run verify:support` in the backend deployment environment to verify that the private number is configured without printing the number. Do not place the real number in source code, README files, public issues, CI logs, or client bundles.
+
+
+## Owner-controlled Free Plan
+
+The public `/api/plans` catalog excludes plans marked as free/owner-only, and direct lookup/self-subscription for such plans returns **404**. Free access is granted separately through OWNER-authorized free-access controls.
+
+Only an authenticated server-side OWNER session can grant, edit, or revoke free access. A grant may carry a custom `endsAt` timestamp; when the OWNER free-access list is read after that timestamp, an ACTIVE grant is automatically normalized to `EXPIRED`. Editing a grant requires a future expiry timestamp when one is supplied.
+
+The FREE plan is therefore not a public subscription option and is not intended to appear in public pricing/catalog UI.
