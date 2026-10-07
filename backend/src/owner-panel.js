@@ -26,6 +26,20 @@ function installOwnerPanelRoutes(app, { db }) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   };
 
+  const normalizeFeatures = (body = {}) => {
+    const all19 = body.all19 === true || body.allPermissions === true;
+    const selected = Array.isArray(body.features) ? body.features.map(String).filter(Boolean) : [];
+    return { all19, features: all19 ? Array.from({ length: 19 }, (_, i) => "PERMISSION_" + (i + 1)) : selected };
+  };
+
+  const normalizeFreeAccessDates = (body = {}) => {
+    const start = body.startsAt == null ? now() : Number(body.startsAt);
+    const end = body.endsAt == null ? null : Number(body.endsAt);
+    if (!Number.isFinite(start)) throw Object.assign(new Error("startsAt must be a valid timestamp."), { statusCode: 400 });
+    if (end !== null && (!Number.isFinite(end) || end <= start)) throw Object.assign(new Error("endsAt must be after startsAt."), { statusCode: 400 });
+    return { startsAt: start, endsAt: end };
+  };
+
   const expireFreeGrantIfNeeded = async (id, grant) => {
     const endsAt = grant?.endsAt == null ? null : Number(grant.endsAt);
     if (grant?.status === "ACTIVE" && Number.isFinite(endsAt) && endsAt <= now()) {
@@ -211,13 +225,26 @@ function installOwnerPanelRoutes(app, { db }) {
 
   app.post("/api/owner/free-access", requireOwner, async (req, res, next) => {
     try {
-      const userId = String(req.body?.userId || "").trim();
-      if (!userId) return res.status(400).json({ error: "userId is required." });
-      const endsAt = req.body?.endsAt ?? null;
-      const ref = await collection("freeAccessGrants").add({ userId, grantedBy: req.user.uid, reason: String(req.body?.reason || "").slice(0, 500), status: "ACTIVE", startsAt: now(), endsAt, createdAt: now(), updatedAt: now() });
-      await audit(req, "OWNER_FREE_ACCESS_GRANTED", "freeAccessGrant", { id: ref.id, userId });
-      res.status(201).json({ ok: true, id: ref.id, status: "ACTIVE", endsAt });
-    } catch (e) { next(e); }
+      const userName = String(req.body?.userName || "").trim();
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const mobile = String(req.body?.mobile || "").trim();
+      const userId = String(req.body?.userId || "").trim() || null;
+      if (!userName || (!email && !mobile)) return res.status(400).json({ error: "userName and email or mobile are required." });
+      const dates = normalizeFreeAccessDates(req.body);
+      if (dates.startsAt > now()) return res.status(400).json({ error: "startsAt cannot be in the future for instant approval." });
+      if (dates.endsAt !== null && dates.endsAt <= now()) return res.status(400).json({ error: "endsAt must be in the future." });
+      const features = normalizeFeatures(req.body);
+      const ref = await collection("freeAccessGrants").add({
+        userId, userName, email: email || null, mobile: mobile || null,
+        grantedBy: req.user.uid, status: "ACTIVE", startsAt: dates.startsAt, endsAt: dates.endsAt,
+        all19: features.all19, features: features.features,
+        durationPreset: String(req.body?.durationPreset || "CUSTOM").toUpperCase(),
+        reason: String(req.body?.reason || "").slice(0, 500),
+        approvedAt: now(), createdAt: now(), updatedAt: now()
+      });
+      await audit(req, "OWNER_FREE_ACCESS_APPROVED", "freeAccessGrant", { id: ref.id, userId, email: email || null, mobile: mobile || null, all19: features.all19, featureCount: features.features.length, startsAt: dates.startsAt, endsAt: dates.endsAt });
+      res.status(201).json({ ok: true, id: ref.id, status: "ACTIVE", startsAt: dates.startsAt, endsAt: dates.endsAt, all19: features.all19, featureCount: features.features.length });
+    } catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ error: e.message }); next(e); }
   });
   app.patch("/api/owner/free-access/:id", requireOwner, async (req, res, next) => {
     try {
@@ -225,11 +252,19 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!current.exists) return res.status(404).json({ error: "Free access grant not found." });
       const values = req.body?.values;
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
-      const endsAt = values.endsAt == null ? null : Number(values.endsAt);
-      if (endsAt !== null && (!Number.isFinite(endsAt) || endsAt <= now())) return res.status(400).json({ error: "endsAt must be a future timestamp." });
-      await collection("freeAccessGrants").doc(req.params.id).set({ ...values, endsAt, status: "ACTIVE", updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
-      await audit(req, "OWNER_FREE_ACCESS_EDITED", "freeAccessGrant", { id: req.params.id });
-      res.json({ ok: true, id: req.params.id, status: "ACTIVE", endsAt });
+      const nextValues = { ...values };
+      if (Object.prototype.hasOwnProperty.call(values, "startsAt") || Object.prototype.hasOwnProperty.call(values, "endsAt")) {
+        const dates = normalizeFreeAccessDates(values);
+        if (dates.endsAt !== null && dates.endsAt <= now()) return res.status(400).json({ error: "endsAt must be in the future." });
+        nextValues.startsAt = dates.startsAt;
+        nextValues.endsAt = dates.endsAt;
+      }
+      if (Object.prototype.hasOwnProperty.call(values, "all19") || Object.prototype.hasOwnProperty.call(values, "allPermissions") || Object.prototype.hasOwnProperty.call(values, "features")) {
+        Object.assign(nextValues, normalizeFeatures(values));
+      }
+      await collection("freeAccessGrants").doc(req.params.id).set({ ...nextValues, status: "ACTIVE", updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
+      await audit(req, "OWNER_FREE_ACCESS_EDITED", "freeAccessGrant", { id: req.params.id, changedFields: Object.keys(nextValues) });
+      res.json({ ok: true, id: req.params.id, status: "ACTIVE", startsAt: nextValues.startsAt, endsAt: nextValues.endsAt, all19: nextValues.all19, features: nextValues.features });
     } catch (e) { next(e); }
   });
   app.post("/api/owner/free-access/:id/revoke", requireOwner, async (req, res, next) => {
