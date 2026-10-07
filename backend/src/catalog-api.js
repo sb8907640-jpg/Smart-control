@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { getPlanDuration, getLinkValidity, calculateExpiry } = require("./plan-policy");
 
 function installCatalogRoutes(app, { db, requireAuth }) {
   const firestoreCollection = (name) => db.collection(name);
@@ -95,11 +96,31 @@ function installCatalogRoutes(app, { db, requireAuth }) {
 
   app.post("/api/link/generate", async (req,res,next) => {
     try {
+      const requestedPlanId = String(req.body?.planId || "").trim();
+      let plan = null;
+      if (req.user?.owner === true && String(req.user?.role || "").toUpperCase() === "OWNER") {
+        plan = requestedPlanId ? ((await firestoreCollection("plans").doc(requestedPlanId).get()).data() || null) : null;
+      } else {
+        const subSnap = await firestoreCollection("subscriptions").where("userId","==",req.catalogUid).where("status","==","ACTIVE").limit(20).get();
+        const matching = subSnap.docs.map(d=>({id:d.id,...d.data()})).find(s => !requestedPlanId || s.planId === requestedPlanId);
+        if (!matching) return res.status(403).json({error:"An active paid subscription is required for plan-based device links."});
+        const planSnap = await firestoreCollection("plans").doc(matching.planId).get();
+        if (!planSnap.exists || planSnap.data()?.enabled !== true || isOwnerOnlyFreePlan(planSnap.data())) return res.status(403).json({error:"Paid plan is unavailable."});
+        plan = { id: planSnap.id, ...planSnap.data() };
+      }
+      const linkValidity = plan ? getLinkValidity(plan) : null;
+      if (plan && !linkValidity) return res.status(400).json({error:"Plan device-link validity is not configured."});
       const code=crypto.randomBytes(8).toString("base64url").slice(0,11).toUpperCase();
-      const expiresAt=now()+10*60*1000;
-      await firestoreCollection("pairingCodes").doc(code).set({ownerUid:req.catalogUid,status:"PENDING",createdAt:now(),expiresAt});
-      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{code});
-      res.status(201).json({code,expiresAt});
+      const createdAt=now();
+      const expiresAt=plan ? calculateExpiry(createdAt, linkValidity) : null;
+      await firestoreCollection("pairingCodes").doc(code).set({
+        ownerUid:req.catalogUid,status:"PENDING",createdAt,expiresAt,
+        planId:plan?.id || requestedPlanId || null,
+        linkValidityValue:linkValidity?.value ?? null,
+        linkValidityUnit:linkValidity?.unit ?? "LIFETIME"
+      });
+      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{code,planId:plan?.id || requestedPlanId || null,expiresAt});
+      res.status(201).json({code,expiresAt,planId:plan?.id || requestedPlanId || null});
     } catch(e){next(e);}
   });
 
@@ -229,9 +250,9 @@ function installCatalogRoutes(app, { db, requireAuth }) {
 
   app.get("/api/plans",async(req,res,next)=>{try{const s=await firestoreCollection("plans").where("enabled","==",true).limit(100).get();const plans=s.docs.map(d=>({id:d.id,...d.data()})).filter(plan=>!isOwnerOnlyFreePlan(plan));res.json({plans});}catch(e){next(e);}});
   app.get("/api/plans/:id",async(req,res,next)=>{try{const s=await firestoreCollection("plans").doc(req.params.id).get();if(!s.exists)return res.status(404).json({error:"Plan not found."});const plan={id:s.id,...s.data()};if(plan.enabled!==true||isOwnerOnlyFreePlan(plan))return res.status(404).json({error:"Plan not found."});res.json({plan});}catch(e){next(e);}});
-  app.post("/api/subscribe",async(req,res,next)=>{try{const planId=String(req.body?.planId||"").trim();if(!planId)return res.status(400).json({error:"planId is required."});const p=await firestoreCollection("plans").doc(planId).get();if(!p.exists||p.data()?.enabled!==true||isOwnerOnlyFreePlan(p.data()))return res.status(404).json({error:"Plan not found."});const id=await add("subscriptions",{userId:req.catalogUid,planId,status:"PENDING_PAYMENT"});await audit(req.catalogUid,"SUBSCRIPTION_CREATED","subscription",{id,planId});res.status(201).json({id,status:"PENDING_PAYMENT",planId});}catch(e){next(e);}});
+  app.post("/api/subscribe",async(req,res,next)=>{try{const planId=String(req.body?.planId||"").trim();if(!planId)return res.status(400).json({error:"planId is required."});const p=await firestoreCollection("plans").doc(planId).get();if(!p.exists||p.data()?.enabled!==true||isOwnerOnlyFreePlan(p.data()))return res.status(404).json({error:"Plan not found."});const plan={id:p.id,...p.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const id=await add("subscriptions",{userId:req.catalogUid,planId,status:"PENDING_PAYMENT",planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms});await audit(req.catalogUid,"SUBSCRIPTION_CREATED","subscription",{id,planId,planDurationUnit:duration.unit});res.status(201).json({id,status:"PENDING_PAYMENT",planId,planDurationValue:duration.value,planDurationUnit:duration.unit});}catch(e){next(e);}});
   app.post("/api/payment/initiate",async(req,res,next)=>{try{const subscriptionId=String(req.body?.subscriptionId||"");const amountMinor=Number(req.body?.amountMinor||0);if(!subscriptionId||!Number.isFinite(amountMinor)||amountMinor<0)return res.status(400).json({error:"subscriptionId and valid amountMinor are required."});const id=await add("payments",{userId:req.catalogUid,subscriptionId,amountMinor,currency:"INR",provider:String(req.body?.provider||"UNSPECIFIED"),status:"INITIATED"});await audit(req.catalogUid,"PAYMENT_INITIATED","payment",{id});res.status(201).json({paymentId:id,status:"INITIATED"});}catch(e){next(e);}});
-  app.post("/api/payment/verify",async(req,res,next)=>{try{const id=String(req.body?.paymentId||"");if(!id)return res.status(400).json({error:"paymentId is required."});const ref=firestoreCollection("payments").doc(id);const s=await ref.get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Payment not found."});await ref.set({status:"VERIFIED",verifiedAt:now(),updatedAt:now()},{merge:true});await audit(req.catalogUid,"PAYMENT_VERIFIED","payment",{id});res.json({paymentId:id,status:"VERIFIED"});}catch(e){next(e);}});
+  app.post("/api/payment/verify",async(req,res,next)=>{try{const id=String(req.body?.paymentId||"");if(!id)return res.status(400).json({error:"paymentId is required."});const ref=firestoreCollection("payments").doc(id);const s=await ref.get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Payment not found."});const payment=s.data();const subRef=firestoreCollection("subscriptions").doc(payment.subscriptionId);const subSnap=await subRef.get();if(!subSnap.exists||subSnap.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Subscription not found."});const sub=subSnap.data();const planSnap=await firestoreCollection("plans").doc(sub.planId).get();if(!planSnap.exists||planSnap.data()?.enabled!==true||isOwnerOnlyFreePlan(planSnap.data()))return res.status(400).json({error:"Paid plan is unavailable."});const plan={id:planSnap.id,...planSnap.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const startsAt=now();const expiresAt=calculateExpiry(startsAt,duration);await ref.set({status:"VERIFIED",verifiedAt:startsAt,updatedAt:startsAt},{merge:true});await subRef.set({status:"ACTIVE",startsAt,expiresAt,planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms,updatedAt:startsAt},{merge:true});await audit(req.catalogUid,"PAYMENT_VERIFIED","payment",{id,subscriptionId:payment.subscriptionId});res.json({paymentId:id,status:"VERIFIED",subscriptionStatus:"ACTIVE",startsAt,expiresAt});}catch(e){next(e);}});
   app.post("/api/emi/apply",async(req,res,next)=>{try{const paymentId=String(req.body?.paymentId||"");const installmentCount=Number(req.body?.installmentCount||0);if(!paymentId||!Number.isInteger(installmentCount)||installmentCount<1||installmentCount>60)return res.status(400).json({error:"paymentId and installmentCount 1-60 are required."});const id=await add("emiApplications",{userId:req.catalogUid,paymentId,installmentCount,status:"PENDING_REVIEW"});await audit(req.catalogUid,"EMI_APPLICATION_CREATED","emi",{id});res.status(201).json({id,status:"PENDING_REVIEW"});}catch(e){next(e);}});
   app.get("/api/subscription/status",async(req,res,next)=>{try{const s=await firestoreCollection("subscriptions").where("userId","==",req.catalogUid).limit(20).get();res.json({subscriptions:s.docs.map(d=>({id:d.id,...d.data()}))});}catch(e){next(e);}});
   app.get("/api/payment/history",async(req,res,next)=>{try{res.json({payments:await list("payments",req.catalogUid)});}catch(e){next(e);}});
