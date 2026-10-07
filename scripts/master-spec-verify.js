@@ -31,7 +31,10 @@ check("owner access documentation", fs.existsSync(path.join(root, "docs/owner-ac
 check("owner config verifier", fs.existsSync(path.join(root, "backend/src/verify-owner-config.js")));
 const backendPackage = JSON.parse(fs.readFileSync(path.join(root, "backend/package.json"), "utf8"));
 check("owner config verification script", backendPackage.scripts?.["verify:owner"] === "node src/verify-owner-config.js");
-check("owner panel API module", fs.existsSync(path.join(root, "backend/src/owner-panel.js")));\ncheck("private WhatsApp support helper", fs.existsSync(path.join(root, "backend/src/support-whatsapp.js")));\ncheck("WhatsApp support verifier", fs.existsSync(path.join(root, "backend/src/verify-support-whatsapp.js")));\ncheck("WhatsApp support verification script", backendPackage.scripts?.["verify:support"] === "node src/verify-support-whatsapp.js");
+check("owner panel API module", fs.existsSync(path.join(root, "backend/src/owner-panel.js")));
+check("private WhatsApp support helper", fs.existsSync(path.join(root, "backend/src/support-whatsapp.js")));
+check("WhatsApp support verifier", fs.existsSync(path.join(root, "backend/src/verify-support-whatsapp.js")));
+check("WhatsApp support verification script", backendPackage.scripts?.["verify:support"] === "node src/verify-support-whatsapp.js");
 check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore })"));
 const ownerPanel = fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8");
 check("owner panel requires OWNER role", ownerPanel.includes('req.user?.owner !== true') && ownerPanel.includes('role || "").toUpperCase() !== "OWNER"'));
@@ -43,7 +46,7 @@ const requiredPaths = [
   "app/src/main/AndroidManifest.xml",
   "ios/SmartControl/SmartControlApp.swift",
   "web/app/page.tsx",
-  "web/app/owner/page.tsx",\n  "web/app/page.tsx",
+  "web/app/owner/page.tsx",
   "desktop/package.json",
   "backend/src/server.js",
   "functions/index.js",
@@ -93,7 +96,8 @@ note("auto-reconnect/persistent link", "Requires physical/runtime network interr
 note("physical Android/iOS", "Static CI cannot substitute for a real device.");
 note("production blockchain", "Compilation is not deployment/wallet/RPC evidence.");
 note("owner identity configuration", "Real owner identities must be supplied through private deployment secrets OWNER_EMAILS and OWNER_MOBILE_NUMBERS; they are intentionally not stored in public source.");
-note("owner panel runtime", "Requires authenticated OWNER runtime verification against the private allowlist and live backend data.");\nnote("WhatsApp support runtime", "Requires private SUPPORT_WHATSAPP_NUMBER deployment configuration and an authenticated click-through test; the number is intentionally not stored in public source.");
+note("owner panel runtime", "Requires authenticated OWNER runtime verification against the private allowlist and live backend data.");
+note("WhatsApp support runtime", "Requires private SUPPORT_WHATSAPP_NUMBER deployment configuration and an authenticated click-through test; the number is intentionally not stored in public source.");
 
 console.log("");
 if (failures.length) {
