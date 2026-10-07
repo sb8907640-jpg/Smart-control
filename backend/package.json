@@ -14,7 +14,8 @@
     "test": "node --test",
     "test:ci": "node --test --test-reporter=spec",
     "verify:schema": "node src/verify-schema.js",
-    "verify:api": "node src/verify-api.js"
+    "verify:api": "node src/verify-api.js",
+    "verify:owner": "node src/verify-owner-config.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
