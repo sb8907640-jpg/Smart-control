@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
  <uses-permission android:name="android.permission.INTERNET"/>
+ <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
  <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>
  <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
@@ -25,6 +26,9 @@
   </activity>
   <service android:name=".service.FamilySafetyService" android:exported="false" android:foregroundServiceType="dataSync|camera|microphone|mediaProjection"/>
   <service android:name=".service.MediaProjectionForegroundService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+  <receiver android:name=".service.SmartControlBootReceiver" android:enabled="true" android:exported="false">
+   <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/></intent-filter>
+  </receiver>
   <service android:name=".service.SmartControlMessagingService" android:exported="false">
    <intent-filter>
     <action android:name="com.google.firebase.MESSAGING_EVENT"/>
