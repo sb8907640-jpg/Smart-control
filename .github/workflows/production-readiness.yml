@@ -38,6 +38,9 @@ jobs:
       - name: Verify final master specification
         run: node scripts/master-spec-verify.js
 
+      - name: Verify 11-step Owner + Receiver flow
+        run: node scripts/verify-11-step-flow.js
+
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
