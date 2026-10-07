@@ -1,0 +1,43 @@
+# Smart Control — Total Control System Master Specification
+
+This document is the verification target for the repository. A metric is **verified** only when repository code/tests provide evidence; catalog entries alone are not sufficient.
+
+| Target | Requirement |
+|---|---:|
+| Control permissions | 19 |
+| Modes | 2 — Controller + Client |
+| Platforms | 5 — Android / iOS / Web / Desktop / Backend |
+| App variants | 4 — Owner / Lite / Full / Desktop |
+| User roles | 8 |
+| Database tables | 42+ |
+| API endpoints | 60+ |
+| Offline support | 18/19 |
+| Online support | 19/19 |
+| Continuous operation | Designed for 24×7 operation, subject to OS/platform restrictions |
+| Auto-reconnect | Automatic recovery on network restoration |
+| Persistent link | Until explicit disconnect/reset, subject to OS/platform restrictions |
+| Auto-Allow | Manual user tap required |
+| Manual Allow | One-by-one user choice supported |
+| Dual permission system | Controller + Client |
+| Owner access | Authenticated, authorized, auditable privileged access |
+| Free-plan control | Owner approval is explicit and auditable |
+
+## Verification rules
+
+1. The PostgreSQL verifier must require every master table and at least 42 public application tables.
+2. The API verifier must exercise every catalogued endpoint and require a real HTTP 2xx response.
+3. Android verification must build Owner, Lite and Full variants; Desktop is the fourth app variant.
+4. All five platform implementation surfaces and their CI workflows must exist.
+5. Sensitive device capabilities must remain consent-gated, session-gated and auditable.
+6. Android permission flows must not bypass OS permission dialogs or silently grant permissions.
+7. Continuous/background operation is a design target, not a claim that an OS can be bypassed.
+8. Physical-device tests, production credentials, real network recovery, and deployed blockchain evidence remain separate runtime/production gates and must not be marked verified by static source checks.
+9. The repository's existing safety policy remains authoritative: no hidden capture, hidden owner identity, or permission bypass.
+
+## Current verification status
+
+Run:
+
+`node scripts/master-spec-verify.js`
+
+Then run the backend schema/API verification and the platform-specific CI workflows. The final status must distinguish **VERIFIED**, **PENDING RUNTIME/PRODUCTION EVIDENCE**, and **BLOCKED**.
