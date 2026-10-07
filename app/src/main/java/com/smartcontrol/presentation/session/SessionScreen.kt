@@ -3,70 +3,53 @@ package com.smartcontrol.presentation.session
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.smartcontrol.presentation.media.MediaSessionPanel
 
 @Composable
 fun SessionScreen(
-    onSettings: () -> Unit,
-    onProfile: () -> Unit,
-    onLocation: () -> Unit,
-    onFileTransfer: () -> Unit,
-    onDeviceStatus: () -> Unit,
-    onSafetyAlerts: () -> Unit,
-    onFeatureCenter: () -> Unit,
-    onBilling: () -> Unit,
-    viewModel: SessionViewModel = hiltViewModel()
+    running: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit
 ) {
-    val active by viewModel.active.collectAsState()
-    val pending by viewModel.pending.collectAsState()
-
     Column(
-        Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Family Safety", style = MaterialTheme.typography.headlineSmall)
-        Text("Sessions are visible and require explicit consent.")
+        Text(
+            if (running) "RUNNING" else "STOPPED",
+            style = MaterialTheme.typography.headlineMedium
+        )
+        Spacer(Modifier.height(24.dp))
 
-        active?.let {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("REMOTE SESSION ACTIVE")
-                    Text("Reason: " + it.request.reason)
-                    Text("Capabilities: " + it.request.capabilities.joinToString())
-                }
-            }
+        Button(
+            onClick = onStart,
+            enabled = !running,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("START")
         }
 
-        pending.forEach { request ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Support request")
-                    Text(request.reason)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button({ viewModel.approve(request.sessionId) }) { Text("Approve") }
-                        Button({ viewModel.deny(request.sessionId) }) { Text("Deny") }
-                    }
-                }
-            }
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onStop,
+            enabled = running,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("STOP")
         }
 
-        MediaSessionPanel()
+        Spacer(Modifier.height(16.dp))
 
-        Button(viewModel::demoRequest) { Text("Create legacy test request") }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onLocation, modifier = Modifier.weight(1f)) { Text("Location") }
-            OutlinedButton(onClick = onFileTransfer, modifier = Modifier.weight(1f)) { Text("File Transfer") }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onDeviceStatus, modifier = Modifier.weight(1f)) { Text("Device Status") }
-            OutlinedButton(onClick = onFeatureCenter, modifier = Modifier.weight(1f)) { Text("19 Features") }
-            OutlinedButton(onClick = onBilling, modifier = Modifier.weight(1f)) { Text("Plans & Billing") }
-            OutlinedButton(onClick = onProfile, modifier = Modifier.weight(1f)) { Text("Profile") }
-            OutlinedButton(onClick = onSafetyAlerts, modifier = Modifier.weight(1f)) { Text("Safety") }
-            Button(onClick = onSettings, modifier = Modifier.weight(1f)) { Text("Settings") }
-        }
+        Text(
+            if (running)
+                "Approved permissions may continue while the service runs in the background."
+            else
+                "Press START to begin. Android permissions are never granted silently in the background.",
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
