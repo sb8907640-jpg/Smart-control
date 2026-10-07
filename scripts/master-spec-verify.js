@@ -35,6 +35,12 @@ check("owner panel API module", fs.existsSync(path.join(root, "backend/src/owner
 check("private WhatsApp support helper", fs.existsSync(path.join(root, "backend/src/support-whatsapp.js")));
 check("WhatsApp support verifier", fs.existsSync(path.join(root, "backend/src/verify-support-whatsapp.js")));
 check("WhatsApp support verification script", backendPackage.scripts?.["verify:support"] === "node src/verify-support-whatsapp.js");
+check("free plan public catalog protection", fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("isOwnerOnlyFreePlan") && fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes(".filter(plan=>!isOwnerOnlyFreePlan(plan))"));
+check("free plan direct lookup protection", fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("plan.enabled!==true||isOwnerOnlyFreePlan(plan)"));
+check("free plan self-subscribe protection", fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("p.data()?.enabled!==true||isOwnerOnlyFreePlan(p.data())"));
+check("free access grant OWNER-only", fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("const requireOwnerAdmin") && fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes('/api/admin/free-access/grant",requireOwnerAdmin'));
+check("free access edit/revoke OWNER-only", ["/api/admin/free-access/edit", "/api/admin/free-access/revoke"].every(p => fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes(p + '",requireOwnerAdmin')));
+check("free access expiry enforcement", fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8").includes('status: "EXPIRED"') && fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8").includes("endsAt <= now()"));
 check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore })"));
 const ownerPanel = fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8");
 check("owner panel requires OWNER role", ownerPanel.includes('req.user?.owner !== true') && ownerPanel.includes('role || "").toUpperCase() !== "OWNER"'));
