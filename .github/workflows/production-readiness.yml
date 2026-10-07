@@ -44,6 +44,8 @@ jobs:
         run: node scripts/verify-smart-autolink-persistent.js
       - name: Verify Manual Permission Choice
         run: node scripts/verify-manual-permission-choice.js
+      - name: Verify Start Stop background behavior
+        run: node scripts/verify-start-stop-background.js
 
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
