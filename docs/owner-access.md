@@ -41,3 +41,18 @@ The OWNER panel exposes authenticated management surfaces for:
 Owner name, email, mobile and owner identity details are never returned by the OWNER panel API. Owner actions are recorded in the private audit trail for authenticated OWNER access.
 
 The panel does **not** bypass user consent, Android/iOS OS permission dialogs, or approved remote-control sessions. Existing safety and consent gates remain authoritative.
+
+
+## WhatsApp support
+
+The support WhatsApp destination is intentionally **not stored in public source code or public documentation**. Configure it only in the private deployment environment:
+
+`SUPPORT_WHATSAPP_NUMBER`
+
+The authenticated support button calls `POST /api/support/whatsapp/initiate`. The backend creates the support session/audit record and returns a WhatsApp deep link containing the configured private destination plus the pre-filled message:
+
+`Hello, I need support for Total Control System`
+
+The web UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render the direct number. The number is never returned as a standalone field.
+
+Run `npm run verify:support` in the backend deployment environment to verify that the private number is configured without printing the number. Do not place the real number in source code, README files, public issues, CI logs, or client bundles.
