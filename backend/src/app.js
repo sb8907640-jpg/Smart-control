@@ -8,6 +8,7 @@ const { installPostgresRoutes } = require("./postgres-api");
 const { getResidencyPolicy } = require("./data-residency");
 const { installCatalogRoutes } = require("./catalog-api");
 const { applyOwnerRole } = require("./owner-auth");
+const { installOwnerPanelRoutes } = require("./owner-panel");
 
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
@@ -213,6 +214,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   });
 
   installCatalogRoutes(app, { db: firestore, requireAuth: authenticate });
+  installOwnerPanelRoutes(app, { db: firestore });
 
   app.use((error, _req, res, _next) => {
     if (error?.message === "CORS origin is not allowed.") return res.status(403).json({ error: error.message });
