@@ -47,6 +47,8 @@ jobs:
         run: node scripts/verify-start-stop-background.js
       - name: Verify Designed for Continuous 24x7 Operation
         run: node scripts/verify-continuous-24x7.js
+      - name: Verify Security, Encryption, Consent and Safety Controls
+        run: node scripts/verify-security-controls.js
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
