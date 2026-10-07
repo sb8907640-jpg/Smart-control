@@ -1,5 +1,9 @@
 package com.smartcontrol.domain.control
 
+import com.smartcontrol.domain.session.RemoteSession
+import com.smartcontrol.domain.session.SessionCapability
+import com.smartcontrol.domain.session.SessionStatus
+
 /**
  * Safety boundary for remote-command delivery.
  *
@@ -33,5 +37,32 @@ class RemoteCommandSessionGate(
         }
 
         return Result.success(command)
+    }
+
+    /**
+     * Session-level authorization used before a remote feature command is
+     * dispatched. APPROVED is accepted as the transition state; ACTIVE is
+     * required once command delivery is actually started.
+     *
+     * This method never requests, grants, or bypasses Android permissions.
+     */
+    fun isAllowed(
+        session: RemoteSession?,
+        capability: SessionCapability,
+        grantedCapabilities: Set<SessionCapability>,
+        visibleIndicatorActive: Boolean,
+    ): Boolean {
+        if (session == null) return false
+
+        val approvedSession =
+            session.status == SessionStatus.APPROVED ||
+                session.status == SessionStatus.ACTIVE
+
+        if (!approvedSession) return false
+        if (!session.request.capabilities.contains(capability)) return false
+        if (!grantedCapabilities.contains(capability)) return false
+        if (!visibleIndicatorActive) return false
+
+        return true
     }
 }
