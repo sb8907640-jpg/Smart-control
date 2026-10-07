@@ -21,9 +21,11 @@ function runtime(name, detail) {
 const service = read("app/src/main/java/com/smartcontrol/service/FamilySafetyService.kt");
 const manifest = read("app/src/main/AndroidManifest.xml");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
-const gradle = read("app/build.gradle.kts");
 const docs = read("docs/master-specification.md");
 const smartLink = read("scripts/verify-smart-autolink-persistent.js");
+const session = read("app/src/main/java/com/smartcontrol/domain/session/SessionModels.kt");
+const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/SessionRepository.kt");
+const permission = read("app/src/main/java/com/smartcontrol/domain/permission/PermissionCenter.kt");
 
 const receiverCandidates = [
   "app/src/main/java/com/smartcontrol/BootReceiver.kt",
@@ -33,13 +35,7 @@ const receiverCandidates = [
 const hasBootReceiver = manifest.includes("android.intent.action.BOOT_COMPLETED") &&
   receiverCandidates.some(file => read(file).includes("BOOT_COMPLETED"));
 
-const p2pFiles = [
-  "app/src/main/java/com/smartcontrol",
-  "backend/src",
-  "web/app"
-];
-
-function allJavaKotlinFiles(dir) {
+function allCodeFiles(dir) {
   const abs = path.join(root, dir);
   if (!fs.existsSync(abs)) return [];
   const out = [];
@@ -53,11 +49,11 @@ function allJavaKotlinFiles(dir) {
   walk(abs);
   return out;
 }
-const codeFiles = p2pFiles.flatMap(allJavaKotlinFiles);
-const p2pText = codeFiles.map(f => fs.readFileSync(f, "utf8")).join("\n");
+const codeFiles = allCodeFiles("app/src/main/java");
+const appText = codeFiles.map(f => fs.readFileSync(f, "utf8")).join("\n");
 
 console.log("SMART CONTROL — DESIGNED FOR CONTINUOUS 24×7 OPERATION VERIFICATION");
-console.log("Subject: persistent background operation, explicit OS/platform restrictions, recovery and offline fallback.");
+console.log("Subject: persistent background operation, explicit user/OS authorization, recovery and offline fallback.");
 console.log("");
 
 check(
@@ -97,17 +93,37 @@ check(
 );
 
 check(
+  "Approved session state exists",
+  session.includes("SessionStatus") &&
+  session.includes("APPROVED") &&
+  session.includes("ACTIVE") &&
+  sessionRepo.includes("suspend fun approve("),
+  "Control authorization must be approved before an active session; this does not bypass Android permission dialogs."
+);
+
+check(
+  "Permission Center exists for user-controlled permission approval",
+  permission.includes("DevicePermission"),
+  "Android protected permissions remain user/OS controlled."
+);
+
+check(
+  "No silent/background permission bypass is present",
+  !/autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|withoutUserAction/i.test(
+    appText
+  ),
+  "No automatic protected-permission grant path is accepted."
+);
+
+check(
   "Boot auto-start surface",
   hasBootReceiver,
-  "BOOT_COMPLETED receiver must restore eligible service/link state after reboot."
+  "BOOT_COMPLETED receiver must restore only eligible, previously authorized state."
 );
 
 check(
   "Wi-Fi Direct / Bluetooth P2P fallback implementation surface",
-  p2pText.includes("WifiP2pManager") ||
-  p2pText.includes("WifiP2p") ||
-  p2pText.includes("BluetoothAdapter") ||
-  p2pText.includes("BluetoothManager"),
+  /WifiP2pManager|WifiP2p|BluetoothAdapter|BluetoothManager/.test(appText),
   "Manifest permissions alone do not establish an operational P2P fallback."
 );
 
@@ -116,7 +132,7 @@ check(
   manifest.includes("android.permission.NEARBY_WIFI_DEVICES") &&
   manifest.includes("android.permission.BLUETOOTH_CONNECT") &&
   manifest.includes("android.permission.BLUETOOTH_SCAN"),
-  "Declared permissions are only a prerequisite; runtime authorization remains user/OS controlled."
+  "Runtime authorization remains user/OS controlled."
 );
 
 check(
@@ -149,6 +165,10 @@ runtime(
 runtime(
   "Airplane mode P2P fallback",
   "Requires real hardware and an implemented Wi-Fi Direct/Bluetooth transport; Airplane Mode behavior is platform/OEM dependent."
+);
+runtime(
+  "Approved session + Android permission grant",
+  "Requires real-device confirmation that control starts only after the receiver user has approved the session and granted the required OS permissions."
 );
 runtime(
   "Long-running 24×7 endurance",
