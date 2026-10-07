@@ -123,8 +123,9 @@ function queryFor(endpoint) {
   const app = createApp({
     db,
     verifyIdToken: async token => {
-      if (token !== "integration-token") throw new Error("invalid token");
-      return { uid: "user-1", email: "integration@example.invalid", admin: true, owner: true, role: "OWNER" };
+      if (token === "integration-token") return { uid: "user-1", email: "integration@example.invalid", admin: true, owner: true, role: "OWNER" };
+      if (token === "user-token") return { uid: "user-1", email: "integration-user@example.invalid", admin: false, owner: false, role: "USER" };
+      throw new Error("invalid token");
     }
   });
   const server = app.listen(0, "127.0.0.1");
@@ -149,6 +150,15 @@ function queryFor(endpoint) {
   assert.equal(linkPayload.planId, "plan-1");
   assert.ok(Number(linkPayload.expiresAt) > Date.now());
   assert.ok(Number(linkPayload.expiresAt) <= Date.now() + 10 * 60 * 1000 + 2000);
+
+  await db.collection("subscriptions").doc("sub-1").set({ expiresAt: Date.now() - 1 }, { merge: true });
+  const expiredLinkResponse = await fetch(base + "/api/link/generate", {
+    method: "POST",
+    headers: { authorization: "Bearer user-token", "content-type": "application/json" },
+    body: JSON.stringify({ planId: "plan-1" })
+  });
+  assert.equal(expiredLinkResponse.status, 403);
+  await db.collection("subscriptions").doc("sub-1").set({ expiresAt: null }, { merge: true });
 
   try {
     for (const route of API) {
