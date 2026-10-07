@@ -65,3 +65,19 @@ The public `/api/plans` catalog excludes plans marked as free/owner-only, and di
 Only an authenticated server-side OWNER session can grant, edit, or revoke free access. A grant may carry a custom `endsAt` timestamp; when the OWNER free-access list is read after that timestamp, an ACTIVE grant is automatically normalized to `EXPIRED`. Editing a grant requires a future expiry timestamp when one is supplied.
 
 The FREE plan is therefore not a public subscription option and is not intended to appear in public pricing/catalog UI.
+
+## Paid plan duration and device-link validity
+
+Each paid plan stores its own independent commercial and link settings. Owner edits are scoped to the selected plan document, so changing Basic does not change Standard, Premium, Pro, Business, Enterprise, or Lifetime.
+
+Supported independent plan controls include:
+
+- durationValue + durationUnit: MINUTES, HOURS, DAYS, or MONTHS
+- linkValidityValue + linkValidityUnit: MINUTES, HOURS, or DAYS
+- price, features/permissions, enabled state, and other plan metadata
+
+Subscription activation snapshots the selected plan duration and calculates startsAt/expiresAt. Lifetime is represented by durationUnit=LIFETIME (or lifetime=true) and has no expiry. Device-link validity is separate from subscription duration; link generation calculates its own expiresAt from the selected plan's link-validity setting.
+
+An expired or revoked pairing code is rejected by the link-join path, so it cannot create a new device connection. Owner-only device-link controls are available for generate, regenerate, and revoke, and every such action is audited.
+
+The existing OWNER plan CRUD endpoint accepts per-plan values, allowing price, duration, features, link validity, enable/disable, and custom-plan fields to be edited independently. Plan upgrade/downgrade, special offers, and EMI metadata remain management data and do not alter another plan automatically.
