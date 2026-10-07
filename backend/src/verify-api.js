@@ -72,7 +72,7 @@ function seedDb() {
   return new MemoryFirestore({
     users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
     devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
-    plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan" } },
+    plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
@@ -124,13 +124,32 @@ function queryFor(endpoint) {
     db,
     verifyIdToken: async token => {
       if (token !== "integration-token") throw new Error("invalid token");
-      return { uid: "user-1", email: "integration@example.invalid", admin: true, role: "ADMIN" };
+      return { uid: "user-1", email: "integration@example.invalid", admin: true, owner: true, role: "OWNER" };
     }
   });
   const server = app.listen(0, "127.0.0.1");
   await new Promise(resolve => server.once("listening", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
   const results = [];
+  const planResponse = await fetch(base + "/api/plans", { headers: { authorization: "Bearer integration-token" } });
+  assert.equal(planResponse.status, 200);
+  const planPayload = await planResponse.json();
+  assert.equal(planPayload.plans[0].durationValue, 1);
+  assert.equal(planPayload.plans[0].durationUnit, "MONTHS");
+  assert.equal(planPayload.plans[0].linkValidityValue, 10);
+  assert.equal(planPayload.plans[0].linkValidityUnit, "MINUTES");
+
+  const linkResponse = await fetch(base + "/api/link/generate", {
+    method: "POST",
+    headers: { authorization: "Bearer integration-token", "content-type": "application/json" },
+    body: JSON.stringify({ planId: "plan-1" })
+  });
+  assert.equal(linkResponse.status, 201);
+  const linkPayload = await linkResponse.json();
+  assert.equal(linkPayload.planId, "plan-1");
+  assert.ok(Number(linkPayload.expiresAt) > Date.now());
+  assert.ok(Number(linkPayload.expiresAt) <= Date.now() + 10 * 60 * 1000 + 2000);
+
   try {
     for (const route of API) {
       const [method, rawEndpoint] = route.split(" ");
