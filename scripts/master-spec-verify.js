@@ -49,6 +49,7 @@ check("subscription stores plan duration", catalogApi.includes("planDurationValu
 check("payment activation calculates plan expiry", catalogApi.includes("calculateExpiry(startsAt,duration)") && catalogApi.includes("subscriptionStatus:\"ACTIVE\""));
 check("plan-wise link validity", catalogApi.includes("getLinkValidity(plan)") && catalogApi.includes("linkValidityValue") && catalogApi.includes("linkValidityUnit"));
 check("expired/revoked link cannot join", catalogApi.includes('data.status!=="PENDING"||Number(data.expiresAt)<now()'));
+check("expired paid subscription blocks new link", catalogApi.includes("expiry > now()") && catalogApi.includes("unexpired paid subscription"));
 const ownerPlanApi = fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8");
 check("owner independent plan editing", ownerPlanApi.includes('/api/owner/plans/:id') && ownerPlanApi.includes("OWNER_PLAN_EDITED"));
 check("owner device-link generate", ownerPlanApi.includes("/api/owner/device-links/generate"));
