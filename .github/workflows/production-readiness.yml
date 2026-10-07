@@ -49,6 +49,8 @@ jobs:
         run: node scripts/verify-continuous-24x7.js
       - name: Verify Security, Encryption, Consent and Safety Controls
         run: node scripts/verify-security-controls.js
+      - name: Verify Feature / Mode / Platform / Role contract
+        run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
