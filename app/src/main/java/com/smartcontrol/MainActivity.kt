@@ -50,6 +50,12 @@ class MainActivity : ComponentActivity() {
                 )
             }
             var running by remember { mutableStateOf(false) }
+            var autoStart by remember {
+                mutableStateOf(
+                    getSharedPreferences("smart_control_settings", MODE_PRIVATE)
+                        .getBoolean("auto_start_service", false)
+                )
+            }
 
             fun startServiceFromUserAction() {
                 if (running) return
@@ -75,6 +81,12 @@ class MainActivity : ComponentActivity() {
                 running = false
             }
 
+            LaunchedEffect(autoStart, modeSelected, signedIn, consented, ageVerified) {
+                if (autoStart && signedIn && consented && ageVerified && modeSelected && !running) {
+                    startServiceFromUserAction()
+                }
+            }
+
             if (!consented) {
                 ConsentScreen(this@MainActivity) { consented = true }
             } else if (!signedIn) {
@@ -87,7 +99,13 @@ class MainActivity : ComponentActivity() {
                 SessionScreen(
                     running = running,
                     onStart = ::startServiceFromUserAction,
-                    onStop = ::stopServiceFromUserAction
+                    onStop = ::stopServiceFromUserAction,
+                    autoStart = autoStart,
+                    onAutoStartChanged = { enabled ->
+                        autoStart = enabled
+                        getSharedPreferences("smart_control_settings", MODE_PRIVATE)
+                            .edit().putBoolean("auto_start_service", enabled).apply()
+                    }
                 )
             }
         }
