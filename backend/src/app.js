@@ -7,6 +7,7 @@ const { createPool: createPostgresPool, checkPostgres } = require("./postgres");
 const { installPostgresRoutes } = require("./postgres-api");
 const { getResidencyPolicy } = require("./data-residency");
 const { installCatalogRoutes } = require("./catalog-api");
+const { applyOwnerRole } = require("./owner-auth");
 
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
@@ -62,7 +63,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Authentication required." });
     if (typeof verifyIdToken !== "function") return res.status(503).json({ error: "Authentication service is unavailable." });
     try {
-      req.user = await verifyIdToken(header.slice(7), true);
+      const verifiedUser = await verifyIdToken(header.slice(7), true);
+      req.user = applyOwnerRole(verifiedUser);
       return next();
     } catch (_) {
       return res.status(401).json({ error: "Invalid or expired authentication token." });
@@ -116,7 +118,9 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       uid: req.user.uid,
       email: req.user.email || null,
       phoneNumber: req.user.phone_number || null,
-      admin: req.user.admin === true
+      admin: req.user.admin === true,
+      owner: req.user.owner === true,
+      role: req.user.role || null
     });
   });
 
