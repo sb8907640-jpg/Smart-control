@@ -19,7 +19,8 @@
     "verify:smart-autolink": "node ../scripts/verify-smart-autolink-persistent.js",
     "verify:manual-permission-choice": "node ../scripts/verify-manual-permission-choice.js",
     "verify:start-stop-background": "node ../scripts/verify-start-stop-background.js",
-    "verify:continuous-24x7": "node ../scripts/verify-continuous-24x7.js"
+    "verify:continuous-24x7": "node ../scripts/verify-continuous-24x7.js",
+    "verify:security-controls": "node ../scripts/verify-security-controls.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
