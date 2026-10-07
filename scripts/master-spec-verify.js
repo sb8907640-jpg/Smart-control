@@ -28,6 +28,9 @@ const backendApp = fs.readFileSync(path.join(root, "backend/src/app.js"), "utf8"
 check("authenticated owner role enforcement", backendApp.includes("applyOwnerRole(verifiedUser)"));
 check("owner allowlist is server-side", backendApp.includes('require("./owner-auth")'));
 check("owner access documentation", fs.existsSync(path.join(root, "docs/owner-access.md")));
+check("owner config verifier", fs.existsSync(path.join(root, "backend/src/verify-owner-config.js")));
+const backendPackage = JSON.parse(fs.readFileSync(path.join(root, "backend/package.json"), "utf8"));
+check("owner config verification script", backendPackage.scripts?.["verify:owner"] === "node src/verify-owner-config.js");
 
 const requiredPaths = [
   "app/src/main/AndroidManifest.xml",
