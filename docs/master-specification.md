@@ -65,3 +65,27 @@ It checks the required flow in order:
 The verifier intentionally reports physical-device/provider checks as **PENDING RUNTIME** rather than claiming they are proven by source inspection. In particular, real two-device installation, Google/OTP sign-in, Controller/Client UI selection, automatic connection, all 19 OS permission dialogs, manual Allow/Deny choices, background operation, network interruption, app restart, and reset/disconnect behavior require runtime evidence.
 
 The Production Readiness workflow executes this verifier on every applicable run.
+
+## Smart Auto-Link + Persistent Connection verification
+
+The repository also has a dedicated verifier:
+
+`node scripts/verify-smart-autolink-persistent.js`
+
+It verifies the requested Controller -> Receiver flow without treating source inspection as proof of physical behavior:
+
+1. Controller generates a unique pairing credential.
+2. QR representation and URL/deep-link surfaces are required.
+3. Sharing surface is required, including explicit WhatsApp/SMS/Email/Copy actions.
+4. Receiver link-open/app-launch and automatic pairing-code extraction are required.
+5. Automatic device linking is checked against the persisted pairing repository/state.
+6. Persistent link state is checked separately from the temporary pairing-code expiry.
+7. Explicit user disconnect/unpair is required to terminate a link.
+8. Automatic network recovery is checked against the persistent recovery policy.
+9. Android boot persistence requires an explicit `BOOT_COMPLETED` receiver and persisted-link restoration surface.
+10. Group pairing requires an explicit 100-client capacity declaration; 100-client runtime load remains a separate test.
+11. Google and Mobile OTP login interfaces are checked.
+12. Physical two-device, provider, network interruption/recovery, reboot and 100-client tests remain **PENDING RUNTIME** until real evidence exists.
+
+The verifier is executed by the Production Readiness workflow. Missing static implementation surfaces fail the verifier; physical/runtime behavior is never promoted to PASS from source inspection alone.
+
