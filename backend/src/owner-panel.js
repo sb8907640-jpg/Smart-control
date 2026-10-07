@@ -72,6 +72,13 @@ function installOwnerPanelRoutes(app, { db }) {
     try { res.json({ users: await read("users") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => update(req, res, "users", req.params.id, "user", "OWNER_USER_EDITED").catch(next));
+  app.post("/api/owner/users/:id/ban", requireOwner, async (req, res, next) => {
+    try {
+      await collection("users").doc(req.params.id).set({ status: "BANNED", bannedAt: now(), bannedBy: req.user.uid }, { merge: true });
+      await audit(req, "OWNER_USER_BANNED", "user", { id: req.params.id });
+      res.json({ ok: true, id: req.params.id, status: "BANNED" });
+    } catch (e) { next(e); }
+  });
   app.delete("/api/owner/users/:id", requireOwner, async (req, res, next) => {
     try {
       await collection("users").doc(req.params.id).delete();
@@ -125,6 +132,25 @@ function installOwnerPanelRoutes(app, { db }) {
       await collection("subscriptions").doc(req.params.id).delete();
       await audit(req, "OWNER_SUBSCRIPTION_DELETED", "subscription", { id: req.params.id });
       res.json({ ok: true, id: req.params.id, status: "DELETED" });
+    } catch (e) { next(e); }
+  });
+
+  app.post("/api/owner/free-access", requireOwner, async (req, res, next) => {
+    try {
+      const userId = String(req.body?.userId || "").trim();
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const endsAt = req.body?.endsAt ?? null;
+      const ref = await collection("freeAccessGrants").add({ userId, grantedBy: req.user.uid, reason: String(req.body?.reason || "").slice(0, 500), status: "ACTIVE", startsAt: now(), endsAt, createdAt: now(), updatedAt: now() });
+      await audit(req, "OWNER_FREE_ACCESS_GRANTED", "freeAccessGrant", { id: ref.id, userId });
+      res.status(201).json({ ok: true, id: ref.id, status: "ACTIVE", endsAt });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/free-access/:id", requireOwner, (req, res, next) => update(req, res, "freeAccessGrants", req.params.id, "freeAccessGrant", "OWNER_FREE_ACCESS_EDITED").catch(next));
+  app.post("/api/owner/free-access/:id/revoke", requireOwner, async (req, res, next) => {
+    try {
+      await collection("freeAccessGrants").doc(req.params.id).set({ status: "REVOKED", revokedAt: now(), updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
+      await audit(req, "OWNER_FREE_ACCESS_REVOKED", "freeAccessGrant", { id: req.params.id });
+      res.json({ ok: true, id: req.params.id, status: "REVOKED" });
     } catch (e) { next(e); }
   });
 
