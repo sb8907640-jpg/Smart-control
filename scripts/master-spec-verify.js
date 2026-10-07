@@ -41,6 +41,14 @@ check("free plan self-subscribe protection", fs.readFileSync(path.join(root, "ba
 check("free access grant OWNER-only", fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("const requireOwnerAdmin") && fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes('/api/admin/free-access/grant",requireOwnerAdmin'));
 check("free access edit/revoke OWNER-only", ["/api/admin/free-access/edit", "/api/admin/free-access/revoke"].every(p => fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes(p + '",requireOwnerAdmin')));
 check("free access expiry enforcement", fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8").includes('status: "EXPIRED"') && fs.readFileSync(path.join(root, "backend/src/owner-panel.js"), "utf8").includes("endsAt <= now()"));
+check("free access manual approval fields", ownerPanel.includes("userName") && ownerPanel.includes("email") && ownerPanel.includes("mobile") && ownerPanel.includes("approvedAt"));
+check("free access duration presets/custom dates", ownerPanel.includes("durationPreset") && ownerPanel.includes("startsAt") && ownerPanel.includes("endsAt"));
+check("free access all-19 or selected features", ownerPanel.includes("all19") && ownerPanel.includes("normalizeFeatures") && ownerPanel.includes("featureCount"));
+check("free access owner approval audit", ownerPanel.includes("OWNER_FREE_ACCESS_APPROVED"));
+check("free access edit extend/reduce", ownerPanel.includes("OWNER_FREE_ACCESS_EDITED") && ownerPanel.includes("changedFields"));
+check("free access cancel/revoke", ownerPanel.includes("OWNER_FREE_ACCESS_REVOKED"));
+check("free access user expiry enforcement", catalogApi.includes("/api/free-access/status") && catalogApi.includes("expireFreeAccessForUser"));
+
 const planPolicy = fs.readFileSync(path.join(root, "backend/src/plan-policy.js"), "utf8");
 check("independent plan duration policy", planPolicy.includes("durationValue") && planPolicy.includes("durationUnit") && planPolicy.includes("MONTHS"));
 check("independent device-link validity policy", planPolicy.includes("linkValidityValue") && planPolicy.includes("linkValidityUnit") && planPolicy.includes("MINUTES"));
