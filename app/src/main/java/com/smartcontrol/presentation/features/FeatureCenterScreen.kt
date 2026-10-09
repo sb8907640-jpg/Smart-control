@@ -8,37 +8,43 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
+import com.smartcontrol.domain.spec.FeatureId
 
 private data class FeatureRow(
     val number: Int,
+    val featureId: FeatureId,
     val name: String,
     val status: String,
     val detail: String
 )
 
 private val features = listOf(
-    FeatureRow(1, "Location", "READY", "Explicit location permission and visible share/stop controls."),
-    FeatureRow(2, "Notifications", "READY", "Visible notification permission and foreground status notification."),
-    FeatureRow(3, "Battery & Network", "READY", "Local device health/status screen."),
-    FeatureRow(4, "Camera", "READY", "Camera publishing is available only in an approved visible media session."),
-    FeatureRow(5, "Microphone", "READY", "Microphone publishing is available only in an approved visible media session."),
-    FeatureRow(6, "Gallery", "USER-SELECTED", "Files/media can be selected through Android's system picker; no background gallery scan."),
-    FeatureRow(7, "Screen Share", "READY", "MediaProjection requires the Android system consent dialog and visible session state."),
-    FeatureRow(8, "Screen Recording", "CONSENT-GATED", "Screen capture transport uses MediaProjection; hidden/background recording is not used."),
-    FeatureRow(9, "Touch Control", "SAFETY-GATED", "Session command validation exists; arbitrary remote touch injection is not enabled."),
-    FeatureRow(10, "Keyboard Input", "SAFETY-GATED", "Session command validation exists; arbitrary remote keyboard injection is not enabled."),
-    FeatureRow(11, "App Install / Uninstall", "SYSTEM-CONFIRMED", "APK selection opens the Android installer; uninstall opens the Android system confirmation."),
-    FeatureRow(12, "File Transfer", "READY", "User-selected files require receiver approval before upload."),
-    FeatureRow(13, "Clipboard Sync", "LOCAL-ONLY", "Visible clipboard read/copy tools; no background monitoring or remote clipboard collection."),
-    FeatureRow(14, "Files Access", "USER-SELECTED", "Android Storage Access Framework is used instead of directory scanning."),
-    FeatureRow(15, "Contacts", "LOCAL-ONLY", "Explicit READ_CONTACTS permission and visible local viewer; no remote collection."),
-    FeatureRow(16, "SMS", "LOCAL-ONLY", "Explicit READ_SMS permission and visible read-only local viewer; no remote collection."),
-    FeatureRow(17, "Call Logs", "LOCAL-ONLY", "Explicit READ_CALL_LOG permission and visible read-only local viewer; no remote collection."),
-    FeatureRow(18, "App Usage", "LOCAL-ONLY", "Explicit Android Usage Access special permission and visible local statistics; no hidden monitoring."),
-    FeatureRow(19, "SOS Alerts", "READY", "Visible SOS alert creation and acknowledgement are supported.")
+    FeatureRow(1, FeatureId.LOCATION, "Location", "READY", "Explicit location permission and visible share/stop controls."),
+    FeatureRow(2, FeatureId.NOTIFICATIONS, "Notifications", "READY", "Visible notification permission and foreground status notification."),
+    FeatureRow(3, FeatureId.BATTERY_NETWORK, "Battery & Network", "READY", "Local device health/status screen."),
+    FeatureRow(4, FeatureId.CAMERA, "Camera", "READY", "Camera publishing is available only in an approved visible media session."),
+    FeatureRow(5, FeatureId.MICROPHONE, "Microphone", "READY", "Microphone publishing is available only in an approved visible media session."),
+    FeatureRow(6, FeatureId.GALLERY, "Gallery", "USER-SELECTED", "Files/media can be selected through Android's system picker; no background gallery scan."),
+    FeatureRow(7, FeatureId.SCREEN_SHARE, "Screen Share", "READY", "MediaProjection requires the Android system consent dialog and visible session state."),
+    FeatureRow(8, FeatureId.SCREEN_RECORDING, "Screen Recording", "CONSENT-GATED", "Screen capture transport uses MediaProjection; hidden/background recording is not used."),
+    FeatureRow(9, FeatureId.TOUCH_CONTROL, "Touch Control", "SAFETY-GATED", "Session command validation exists; arbitrary remote touch injection is not enabled."),
+    FeatureRow(10, FeatureId.KEYBOARD_INPUT, "Keyboard Input", "SAFETY-GATED", "Session command validation exists; arbitrary remote keyboard injection is not enabled."),
+    FeatureRow(11, FeatureId.APP_INSTALL, "App Install / Uninstall", "SYSTEM-CONFIRMED", "APK selection opens the Android installer; uninstall opens the Android system confirmation."),
+    FeatureRow(12, FeatureId.FILE_TRANSFER, "File Transfer", "READY", "User-selected files require receiver approval before upload."),
+    FeatureRow(13, FeatureId.CLIPBOARD_SYNC, "Clipboard Sync", "LOCAL-ONLY", "Visible clipboard read/copy tools; no background monitoring or remote clipboard collection."),
+    FeatureRow(14, FeatureId.FILES_ACCESS, "Files Access", "USER-SELECTED", "Android Storage Access Framework is used instead of directory scanning."),
+    FeatureRow(15, FeatureId.CONTACTS, "Contacts", "LOCAL-ONLY", "Explicit READ_CONTACTS permission and visible local viewer; no remote collection."),
+    FeatureRow(16, FeatureId.SMS, "SMS", "LOCAL-ONLY", "Explicit READ_SMS permission and visible read-only local viewer; no remote collection."),
+    FeatureRow(17, FeatureId.CALL_LOGS, "Call Logs", "LOCAL-ONLY", "Explicit READ_CALL_LOG permission and visible read-only local viewer; no remote collection."),
+    FeatureRow(18, FeatureId.APP_USAGE, "App Usage", "LOCAL-ONLY", "Explicit Android Usage Access special permission and visible local statistics; no hidden monitoring."),
+    FeatureRow(19, FeatureId.SOS_ALERTS, "SOS Alerts", "READY", "Visible SOS alert creation and acknowledgement are supported.")
 )
 
 @Composable
@@ -58,9 +64,13 @@ fun FeatureCenterScreen(
     onSafetyAlerts: () -> Unit,
     onBilling: () -> Unit,
     onProfile: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    featureAccess: FeatureAccessViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val ownerSettings by featureAccess.settings.collectAsState()
+    val settingsLoaded = ownerSettings != null
+    val userId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             runCatching {
@@ -78,29 +88,30 @@ fun FeatureCenterScreen(
     ) {
         Text("Family Suraksha - Feature Center", style = MaterialTheme.typography.headlineSmall)
         Text("All 19 master features are listed here. Sensitive capabilities remain visible, consent-gated, and subject to Android OS security.")
-        OutlinedButton(onClick = onLocation, modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") }
-        OutlinedButton(onClick = onDeviceStatus, modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") }
-        OutlinedButton(onClick = onFileTransfer, modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") }
+        OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") }
+        OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") }
+        OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") }
         OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") }
-        OutlinedButton(onClick = onSafetyAlerts, modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") }
+        OutlinedButton(onClick = onSafetyAlerts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SOS_ALERTS, userId), modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") }
         OutlinedButton(onClick = onBilling, modifier = Modifier.fillMaxWidth()) { Text("Plans & Billing") }
         OutlinedButton(onClick = onProfile, modifier = Modifier.fillMaxWidth()) { Text("Profile & Privacy") }
         OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") }
         OutlinedButton(
             onClick = { picker.launch(arrayOf("image/*", "video/*")) },
+            enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.GALLERY, userId),
             modifier = Modifier.fillMaxWidth()
         ) { Text("Open Gallery Picker") }
-        OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text("Notification Access") }
+        OutlinedButton(onClick = onNotifications, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.NOTIFICATIONS, userId), modifier = Modifier.fillMaxWidth()) { Text("Notification Access") }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onContacts, modifier = Modifier.weight(1f)) { Text("Contacts") }
-            OutlinedButton(onClick = onSms, modifier = Modifier.weight(1f)) { Text("SMS") }
+            OutlinedButton(onClick = onContacts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CONTACTS, userId), modifier = Modifier.weight(1f)) { Text("Contacts") }
+            OutlinedButton(onClick = onSms, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SMS, userId), modifier = Modifier.weight(1f)) { Text("SMS") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onCallLogs, modifier = Modifier.weight(1f)) { Text("Call Logs") }
-            OutlinedButton(onClick = onAppUsage, modifier = Modifier.weight(1f)) { Text("App Usage") }
+            OutlinedButton(onClick = onCallLogs, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CALL_LOGS, userId), modifier = Modifier.weight(1f)) { Text("Call Logs") }
+            OutlinedButton(onClick = onAppUsage, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_USAGE, userId), modifier = Modifier.weight(1f)) { Text("App Usage") }
         }
-        OutlinedButton(onClick = onClipboard, modifier = Modifier.fillMaxWidth()) { Text("Clipboard (local)") }
-        OutlinedButton(onClick = onAppInstall, modifier = Modifier.fillMaxWidth()) { Text("App Install / Uninstall") }
+        OutlinedButton(onClick = onClipboard, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CLIPBOARD_SYNC, userId), modifier = Modifier.fillMaxWidth()) { Text("Clipboard (local)") }
+        OutlinedButton(onClick = onAppInstall, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_INSTALL, userId), modifier = Modifier.fillMaxWidth()) { Text("App Install / Uninstall") }
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
@@ -109,7 +120,15 @@ fun FeatureCenterScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("${item.number}. ${item.name}", style = MaterialTheme.typography.titleMedium)
-                        Text(item.status, style = MaterialTheme.typography.labelMedium)
+                        val enabled = settingsLoaded && featureAccess.isEnabled(item.featureId, userId)
+                        Text(
+                            when {
+                                !settingsLoaded -> "LOADING OWNER SETTINGS"
+                                !enabled -> "DISABLED BY OWNER"
+                                else -> item.status
+                            },
+                            style = MaterialTheme.typography.labelMedium
+                        )
                         Text(item.detail)
                     }
                 }
