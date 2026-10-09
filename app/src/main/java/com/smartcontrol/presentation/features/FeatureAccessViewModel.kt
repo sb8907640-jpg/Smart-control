@@ -62,6 +62,7 @@ class FeatureAccessViewModel @Inject constructor(
         if (!isGloballyEnabled(featureId)) return false
         val perUser = _settings.value?.userPolicy ?: return true
         if (!perUser.enabled) return false
+        if (perUser.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) return false
         return perUser.featureOverrides[featureId] != false
     }
 }
