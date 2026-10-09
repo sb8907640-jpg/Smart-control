@@ -57,9 +57,18 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
                 )
             ).await()
         }
-        firestore.collection("ownerSettings").document("global")
-            .set(stripNulls(encoded), SetOptions.merge())
-            .await()
+        val batch = firestore.batch()
+        batch.set(
+            firestore.collection("ownerSettings").document("global"),
+            stripNulls(encoded),
+            SetOptions.merge()
+        )
+        batch.set(
+            firestore.collection("featurePolicy").document("global"),
+            encodeFeaturePolicy(settings),
+            SetOptions.merge()
+        )
+        batch.commit().await()
     }
 
     override suspend fun observeHistory(): Flow<List<com.smartcontrol.domain.owner.OwnerSettingsHistoryEntry>> =
@@ -97,13 +106,39 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         val raw = snapshot.data?.get("settings") as? Map<*, *>
             ?: error("History snapshot not found.")
         val typed = raw.entries.filter { it.value != null }.associate { it.key.toString() to it.value!! }
-        firestore.collection("ownerSettings").document("global")
-            .set(stripNulls(encode(decode(typed))), SetOptions.merge())
-            .await()
+        val restored = decode(typed)
+        val batch = firestore.batch()
+        batch.set(
+            firestore.collection("ownerSettings").document("global"),
+            stripNulls(encode(restored)),
+            SetOptions.merge()
+        )
+        batch.set(
+            firestore.collection("featurePolicy").document("global"),
+            encodeFeaturePolicy(restored),
+            SetOptions.merge()
+        )
+        batch.commit().await()
     }
 
     private fun stripNulls(value: Map<String, Any?>): Map<String, Any> =
         value.entries.filter { it.value != null }.associate { it.key to it.value!! }
+
+    private fun encodeFeaturePolicy(settings: OwnerSettings): Map<String, Any> = mapOf(
+        "globalFeaturesEnabled" to settings.globalFeaturesEnabled,
+        "globalEnabled" to settings.masterConfig.access.globalEnabled,
+        "featureOverrides" to settings.featureOverrides.mapKeys { it.key.name }
+            .mapValues { it.value.enabled },
+        "globalFeatureOverrides" to settings.masterConfig.access.globalFeatureOverrides
+            .mapKeys { it.key.name }.mapValues { it.value.enabled },
+        "perUser" to settings.masterConfig.access.perUser.mapValues { (_, user) ->
+            mapOf(
+                "enabled" to user.enabled,
+                "featureOverrides" to user.featureOverrides.mapKeys { it.key.name }
+                    .mapValues { it.value.enabled }
+            )
+        }
+    )
 
     private fun encode(settings: OwnerSettings): Map<String, Any?> {
         val config = settings.masterConfig
