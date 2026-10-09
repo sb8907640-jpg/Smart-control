@@ -56,7 +56,7 @@ const pairingModels = read("app/src/main/java/com/smartcontrol/domain/pairing/Pa
 const pairingRepo = read("app/src/main/java/com/smartcontrol/domain/pairing/PairingRepository.kt");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
 const auth = read("app/src/main/java/com/smartcontrol/domain/auth/AuthRepository.kt");
-const catalog = read("backend/src/catalog-api.js");
+const catalog = read("backend/src/catalog-api.js") + read("backend/src/postgres-api.js");
 const gradle = read("app/build.gradle.kts");
 
 console.log("SMART CONTROL — SMART AUTO-LINK + PERSISTENT CONNECTION VERIFICATION");
