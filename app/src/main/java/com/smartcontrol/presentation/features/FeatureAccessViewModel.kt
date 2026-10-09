@@ -56,7 +56,7 @@ class FeatureAccessViewModel @Inject constructor(
         if (current.featureOverrides[featureId] == false) return false
         if (current.globalFeatureOverrides[featureId] == false) return false
 
-        val perUser = current.perUser[userId] ?: return true
+        val perUser = current.userPolicy ?: return true
         if (!perUser.enabled) return false
         return perUser.featureOverrides[featureId] != false
     }
