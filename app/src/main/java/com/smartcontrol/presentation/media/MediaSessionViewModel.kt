@@ -120,11 +120,11 @@ class MediaSessionViewModel @Inject constructor(
             MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
         }
         runCatching {
-            val policy = featurePolicyRepository.observe().first()
+            val policy = featurePolicyRepository.observe(targetDeviceId).first()
             if (!policy.globalFeaturesEnabled || !policy.globalEnabled) return@runCatching false
             if (policy.featureOverrides[featureId] == false) return@runCatching false
             if (policy.globalFeatureOverrides[featureId] == false) return@runCatching false
-            val perUser = policy.perUser[targetDeviceId]
+            val perUser = policy.userPolicy
             if (perUser != null &&
                 (!perUser.enabled || perUser.featureOverrides[featureId] == false)
             ) return@runCatching false
