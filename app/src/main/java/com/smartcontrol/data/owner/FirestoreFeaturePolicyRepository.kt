@@ -60,7 +60,8 @@ class FirestoreFeaturePolicyRepository @Inject constructor(
 
     private fun decodeUser(data: Map<String, Any>): UserFeaturePolicy = UserFeaturePolicy(
         enabled = data["enabled"] as? Boolean ?: true,
-        featureOverrides = boolFeatureMap(data["featureOverrides"])
+        featureOverrides = boolFeatureMap(data["featureOverrides"]),
+        expiresAtEpochMs = (data["expiresAtEpochMs"] as? Number)?.toLong()
     )
 
     private fun boolFeatureMap(raw: Any?): Map<FeatureId, Boolean> =
