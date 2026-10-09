@@ -160,6 +160,10 @@ function queryFor(endpoint) {
   assert.equal(expiredLinkResponse.status, 403);
   await db.collection("subscriptions").doc("sub-1").set({ expiresAt: null }, { merge: true });
 
+  // Use a deterministic test-only number so the API contract test does not
+  // depend on private deployment configuration or a real support contact.
+  const originalSupportWhatsAppNumber = process.env.SUPPORT_WHATSAPP_NUMBER;
+  process.env.SUPPORT_WHATSAPP_NUMBER = "15555550123";
   try {
     for (const route of API) {
       const [method, rawEndpoint] = route.split(" ");
@@ -177,6 +181,8 @@ function queryFor(endpoint) {
     }
   } finally {
     await new Promise(resolve => server.close(resolve));
+    if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
+    else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
   console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
 })();
