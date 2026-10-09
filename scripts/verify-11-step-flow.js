@@ -57,7 +57,7 @@ check("STEP 6 Permission Screen — Android runtime permissions declared", [
 check("STEP 7 Manual choice — no permission bypass policy", read("scripts/master-spec-verify.js").includes("no permission bypass"));
 runtime("STEP 7 Manual choice — Allow All / One-by-One taps", "Requires physical UI evidence that the user manually chooses either path; no silent grant is accepted.");
 
-const featureCount = (features.match(/\\b[A-Z][A-Z0-9_]+\\s*\\(/g) || []).length;
+const featureCount = (features.match(/\b[A-Z][A-Z0-9_]+\s*\(/g) || []).length;
 check("STEP 8 19 control features catalogued", featureCount === 19, String(featureCount));
 check("STEP 8 OS permission flow remains explicit", !read("scripts/master-spec-verify.js").includes("permissionBypass=true"));
 runtime("STEP 8A Allow All — 19 sequential OS dialogs", "Requires physical Android evidence for all 19 feature-permission steps; CI cannot prove OS dialogs.");
