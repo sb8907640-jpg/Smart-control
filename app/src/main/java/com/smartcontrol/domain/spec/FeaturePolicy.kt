@@ -8,6 +8,7 @@ data class FeaturePolicy(
     val globalFeaturesEnabled: Boolean = true,
     val globalEnabled: Boolean = true,
     val dataCollectionEnabled: Boolean = false,
+    val dataShareAllowed: Boolean = false,
     val featureOverrides: Map<FeatureId, Boolean> = emptyMap(),
     val globalFeatureOverrides: Map<FeatureId, Boolean> = emptyMap(),
     val userPolicy: UserFeaturePolicy? = null
