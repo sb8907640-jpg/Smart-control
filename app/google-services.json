@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "969691895574",
+    "project_id": "smartcontrolapp-b0d70",
+    "storage_bucket": "smartcontrolapp-b0d70.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:969691895574:android:14e686d1f7032018692237",
+        "android_client_info": {
+          "package_name": "com.smart.control"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-HWAi6F5N00RPBiGtbk1dlatgzat6sRI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
