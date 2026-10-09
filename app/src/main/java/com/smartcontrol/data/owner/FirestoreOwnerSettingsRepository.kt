@@ -150,7 +150,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
     )
 
     private fun encodeUserFeaturePolicy(user: UserFeatureAccess): Map<String, Any> = mapOf(
-        "enabled" to user.enabled,
+        "ownerEnabled" to user.enabled,
         "featureOverrides" to user.featureOverrides.mapKeys { it.key.name }
             .mapValues { it.value.enabled }
     )
