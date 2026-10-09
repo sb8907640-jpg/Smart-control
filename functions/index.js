@@ -207,12 +207,21 @@ exports.updateOwnerUser = onCall(async (request) => {
       delete claims.admin;
     }
     await getAuth().setCustomUserClaims(uid, claims);
+    const updatedAtEpochMs = Date.now();
     await db.collection("userAccess").doc(uid).set({
       uid,
       accessGranted: access,
       accessExpiresAtEpochMs: expiresAtEpochMs > 0 ? expiresAtEpochMs : null,
       role,
-      updatedAtEpochMs: Date.now(),
+      updatedAtEpochMs,
+      updatedBy: request.auth.uid
+    }, { merge: true });
+    await db.collection("featurePolicyUsers").doc(uid).set({
+      enabled: access && (expiresAtEpochMs <= 0 || expiresAtEpochMs > updatedAtEpochMs),
+      expiresAtEpochMs: expiresAtEpochMs > 0 ? expiresAtEpochMs : null,
+      role,
+      blocked: false,
+      updatedAtEpochMs,
       updatedBy: request.auth.uid
     }, { merge: true });
     return { ok: true };
@@ -222,8 +231,30 @@ exports.updateOwnerUser = onCall(async (request) => {
     if (uid === request.auth.uid && action === "block") {
       throw new HttpsError("failed-precondition", "You cannot block your own admin account.");
     }
-    await getAuth().updateUser(uid, { disabled: action === "block" });
-    return { ok: true, disabled: action === "block" };
+    const disabled = action === "block";
+    await getAuth().updateUser(uid, { disabled });
+    const updatedAtEpochMs = Date.now();
+    if (disabled) {
+      await db.collection("featurePolicyUsers").doc(uid).set({
+        enabled: false,
+        blocked: true,
+        updatedAtEpochMs,
+        updatedBy: request.auth.uid
+      }, { merge: true });
+    } else {
+      const accessSnapshot = await db.collection("userAccess").doc(uid).get();
+      const accessData = accessSnapshot.exists ? accessSnapshot.data() : {};
+      const accessGranted = accessData.accessGranted === true;
+      const expiresAtEpochMs = Number(accessData.accessExpiresAtEpochMs || 0);
+      await db.collection("featurePolicyUsers").doc(uid).set({
+        enabled: accessGranted && (expiresAtEpochMs <= 0 || expiresAtEpochMs > updatedAtEpochMs),
+        expiresAtEpochMs: expiresAtEpochMs > 0 ? expiresAtEpochMs : null,
+        blocked: false,
+        updatedAtEpochMs,
+        updatedBy: request.auth.uid
+      }, { merge: true });
+    }
+    return { ok: true, disabled };
   }
 
   throw new HttpsError("invalid-argument", "Unsupported user-management action.");
