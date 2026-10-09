@@ -21,8 +21,8 @@ data class OwnerControlConfig(
     companion object {
         fun defaultEditableValues(): Map<String, String> = linkedMapOf(
             // 1. App branding
-            "branding.appName" to "Smart Control",
-            "branding.shortName" to "Smart Control",
+            "branding.appName" to "Family Suraksha",
+            "branding.shortName" to "Family Suraksha",
             "branding.logoResource" to "",
             "branding.appIcon" to "",
             "branding.splash" to "",
