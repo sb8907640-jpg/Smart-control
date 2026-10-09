@@ -141,6 +141,7 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
     private fun encodeFeaturePolicy(settings: OwnerSettings): Map<String, Any> = mapOf(
         "globalFeaturesEnabled" to settings.globalFeaturesEnabled,
         "globalEnabled" to settings.masterConfig.access.globalEnabled,
+        "dataCollectionEnabled" to (settings.masterConfig.ownerControl.editableValues["data.autoCapture"]?.toBooleanStrictOrNull() ?: false),
         "featureOverrides" to settings.featureOverrides.mapKeys { it.key.name }
             .mapValues { it.value.enabled },
         "globalFeatureOverrides" to settings.masterConfig.access.globalFeatureOverrides
