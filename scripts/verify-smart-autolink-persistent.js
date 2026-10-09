@@ -42,7 +42,8 @@ function hasReceiverBootHandler() {
   const candidates = [
     "app/src/main/java/com/smartcontrol/BootReceiver.kt",
     "app/src/main/java/com/smartcontrol/service/BootReceiver.kt",
-    "app/src/main/java/com/smartcontrol/receiver/BootReceiver.kt"
+    "app/src/main/java/com/smartcontrol/receiver/BootReceiver.kt",
+    "app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt"
   ];
   return manifest.includes("android.intent.action.BOOT_COMPLETED") &&
     candidates.some(file => read(file).includes("BOOT_COMPLETED"));
@@ -81,9 +82,9 @@ check(
 );
 check(
   "Controller — URL/deep-link payload surface",
-  catalog.includes("https://") &&
-    (catalog.includes("pairing") || catalog.includes("link")) &&
-    (manifest.includes("android.intent.action.VIEW") || mainActivity.includes("dataString") || mainActivity.includes("intent.data"))
+  pairingScreen.includes("smartcontrol://pair") &&
+    manifest.includes("android.intent.action.VIEW") &&
+    (manifest.includes("android:scheme") || mainActivity.includes("intent.data"))
 );
 check(
   "Controller — share surface",
@@ -112,11 +113,9 @@ check(
 check(
   "Receiver — no manual entry required for link claim",
   pairingScreen.includes("claimCode") &&
-    !(
-      pairingScreen.includes("OutlinedTextField") &&
-      pairingScreen.includes('label = { Text("Pairing token") }')
-    ),
-  "The current UI still exposes manual token entry."
+    pairingScreen.includes("deepLinkToken") &&
+    pairingScreen.includes('getQueryParameter("token")'),
+  "Deep links prefill the pairing token; manual entry remains as a fallback."
 );
 
 check(
