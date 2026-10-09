@@ -2,14 +2,14 @@ package com.smartcontrol.domain.spec
 
 /**
  * Safe, client-readable projection of owner feature policy.
- * It intentionally contains no owner contact details, payment credentials, or other private settings.
+ * It contains no owner contact details or payment credentials.
  */
 data class FeaturePolicy(
     val globalFeaturesEnabled: Boolean = true,
     val globalEnabled: Boolean = true,
     val featureOverrides: Map<FeatureId, Boolean> = emptyMap(),
     val globalFeatureOverrides: Map<FeatureId, Boolean> = emptyMap(),
-    val perUser: Map<String, UserFeaturePolicy> = emptyMap()
+    val userPolicy: UserFeaturePolicy? = null
 )
 
 data class UserFeaturePolicy(
