@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     "device_status" -> DeviceStatusScreen(onBack = backToHub)
                     "file_transfer" -> FileTransferScreen(onBack = backToHub)
                     "permissions" -> PermissionCenterScreen(onBack = backToHub)
-                    "media" -> MediaSessionPanel()
+                    "media" -> MediaSessionPanel(onBack = backToHub)
                     "safety" -> SafetyAlertsScreen(onBack = backToHub)
                     "billing" -> BillingScreen(onBack = backToHub)
                     "settings" -> SettingsScreen(
