@@ -50,6 +50,10 @@ jobs:
         if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
 
+      - name: Validate Firebase Android config
+        run: |
+          node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("app/google-services.json","utf8")); if (!c.project_info?.project_id) throw new Error("Firebase project_id is missing"); if (!c.client?.some(x => x.client_info?.android_client_info?.package_name === "com.smart.control")) throw new Error("google-services.json does not include Android package com.smart.control"); console.log("Firebase Android config OK for com.smart.control");'
+
       - name: Build debug and release APKs
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
