@@ -54,6 +54,7 @@ class FirestoreFeaturePolicyRepository @Inject constructor(
     private fun decodeGlobal(data: Map<String, Any>): FeaturePolicy = FeaturePolicy(
         globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: true,
         globalEnabled = data["globalEnabled"] as? Boolean ?: true,
+        dataCollectionEnabled = data["dataCollectionEnabled"] as? Boolean ?: false,
         featureOverrides = boolFeatureMap(data["featureOverrides"]),
         globalFeatureOverrides = boolFeatureMap(data["globalFeatureOverrides"])
     )
