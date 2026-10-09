@@ -26,6 +26,10 @@ class BillingViewModel @Inject constructor(
     val message: StateFlow<String?> = _message.asStateFlow()
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+    private val _pendingCheckout = MutableStateFlow<Payment?>(null)
+    val pendingCheckout: StateFlow<Payment?> = _pendingCheckout.asStateFlow()
+
+    fun clearPendingCheckout() { _pendingCheckout.value = null }
 
     fun load(userId: String) {
         viewModelScope.launch {
@@ -41,12 +45,19 @@ class BillingViewModel @Inject constructor(
     fun buy(plan: Plan, method: String, coupon: String) {
         viewModelScope.launch {
             _busy.value = true
-            repository.createPlanPayment(plan.id, "TEST", method, coupon)
+            repository.createPlanPayment(plan.id, "RAZORPAY", method, coupon)
                 .onSuccess { payment ->
-                    _message.value = if (payment.status == Payment.Status.SUCCESS) {
-                        "Payment completed and subscription is active."
+                    if (payment.gateway.equals("RAZORPAY", ignoreCase = true) &&
+                        !payment.gatewayOrderId.isNullOrBlank() &&
+                        !payment.gatewayKeyId.isNullOrBlank()
+                    ) {
+                        _pendingCheckout.value = payment
+                        _message.value = "Opening secure Razorpay checkout…"
+                    } else if (payment.status == Payment.Status.SUCCESS) {
+                        _message.value = "Payment completed and subscription is active."
                     } else {
-                        "Payment order created: " + payment.id + ". Complete the configured gateway payment; verification activates the subscription."
+                        _message.value = "Payment order created: " + payment.id +
+                            ". Configure Razorpay in Owner settings and add server secrets to enable checkout."
                     }
                 }
                 .onFailure { _message.value = it.message ?: "Payment could not be created." }
