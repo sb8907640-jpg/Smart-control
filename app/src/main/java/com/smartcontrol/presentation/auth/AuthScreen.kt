@@ -41,7 +41,7 @@ fun AuthScreen(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Smart Control")
+        Text("Family Suraksha")
         Text("Sign in to manage consent-based family safety sessions.")
         Button(
             onClick = { if (activity != null) launcher.launch(viewModel.googleIntent(activity)) },
