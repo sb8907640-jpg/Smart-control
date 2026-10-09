@@ -26,7 +26,11 @@ service cloud.firestore {
     // Per-user feature flags are private to that user and authenticated admins.
     match /featurePolicyUsers/{uid} {
       allow read: if request.auth != null
-        && (request.auth.uid == uid || request.auth.token.admin == true);
+        && (
+          request.auth.uid == uid
+          || request.auth.token.admin == true
+          || get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid == request.auth.uid
+        );
       allow create, update: if request.auth != null && request.auth.token.admin == true;
       allow delete: if false;
     }
