@@ -63,7 +63,7 @@ check("No background auto-allow marker", autoAllowMatches.length === 0, autoAllo
 check("No permission-bypass marker",
   !/(permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)/i.test(source));
 check("19 control features remain catalogued",
-  (features.match(/^[ ]+[A-Z0-9_]+\(/gm) || []).length === 19);
+  (features.match(/FeatureSpec\(FeatureId\./g) || []).length === 19);
 check("Sensitive Android permissions remain declared", [
   "android.permission.CAMERA",
   "android.permission.RECORD_AUDIO",
