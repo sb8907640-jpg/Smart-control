@@ -13,6 +13,7 @@ import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.consent.ConsentScreen
 import com.smartcontrol.presentation.onboarding.AgeVerificationScreen
 import com.smartcontrol.presentation.onboarding.ModeSelectScreen
+import com.smartcontrol.presentation.pairing.PairingScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.service.FamilySafetyService
 import dagger.hilt.android.AndroidEntryPoint
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             var running by remember { mutableStateOf(false) }
+            var showPairing by remember { mutableStateOf(intent?.data?.host == "pair") }
             var autoStart by remember {
                 mutableStateOf(
                     getSharedPreferences("smart_control_settings", MODE_PRIVATE)
@@ -95,9 +97,12 @@ class MainActivity : ComponentActivity() {
                 AgeVerificationScreen(this@MainActivity) { ageVerified = true }
             } else if (!modeSelected) {
                 ModeSelectScreen(this@MainActivity) { modeSelected = true }
+            } else if (showPairing) {
+                PairingScreen(onBack = { showPairing = false })
             } else {
                 SessionScreen(
                     running = running,
+                    onOpenPairing = { showPairing = true },
                     onStart = ::startServiceFromUserAction,
                     onStop = ::stopServiceFromUserAction,
                     autoStart = autoStart,
