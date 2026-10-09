@@ -13,10 +13,17 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSessionStatus
+import com.smartcontrol.domain.spec.FeatureId
+import com.smartcontrol.presentation.features.FeatureAccessViewModel
 
 @Composable
-fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
+fun MediaSessionPanel(
+    viewModel: MediaSessionViewModel = hiltViewModel(),
+    featureAccess: FeatureAccessViewModel = hiltViewModel()
+) {
     val device by viewModel.controlledDevice.collectAsState()
+    val ownerSettings by featureAccess.settings.collectAsState()
+    val settingsLoaded = ownerSettings != null
     val pending by viewModel.pending.collectAsState()
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
@@ -40,9 +47,18 @@ fun MediaSessionPanel(viewModel: MediaSessionViewModel = hiltViewModel()) {
         device?.let {
             Text("Paired client: " + it.deviceUid)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button({ viewModel.request(setOf(MediaCapability.CAMERA)) }) { Text("Request camera") }
-                Button({ viewModel.request(setOf(MediaCapability.MICROPHONE)) }) { Text("Request mic") }
-                Button({ viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) }) { Text("Request screen") }
+                Button(
+                    onClick = { viewModel.request(setOf(MediaCapability.CAMERA)) },
+                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CAMERA, it.deviceUid)
+                ) { Text("Request camera") }
+                Button(
+                    onClick = { viewModel.request(setOf(MediaCapability.MICROPHONE)) },
+                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.MICROPHONE, it.deviceUid)
+                ) { Text("Request mic") }
+                Button(
+                    onClick = { viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) },
+                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SCREEN_SHARE, it.deviceUid)
+                ) { Text("Request screen") }
             }
         } ?: Text("No controlled device is paired on this account.")
 
