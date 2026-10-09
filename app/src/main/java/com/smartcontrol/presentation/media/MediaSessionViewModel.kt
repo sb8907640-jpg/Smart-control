@@ -9,7 +9,7 @@ import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSession
 import com.smartcontrol.domain.media.MediaSignalingRepository
 import com.smartcontrol.domain.pairing.PairingRepository
-import com.smartcontrol.domain.owner.OwnerSettingsRepository
+import com.smartcontrol.data.owner.FirestoreFeaturePolicyRepository
 import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.service.FamilySafetyService
 import com.smartcontrol.service.MediaProjectionForegroundService
@@ -18,7 +18,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.*
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import org.webrtc.VideoSink
 
@@ -26,7 +25,7 @@ import org.webrtc.VideoSink
 class MediaSessionViewModel @Inject constructor(
     private val signaling: MediaSignalingRepository,
     pairingRepository: PairingRepository,
-    private val ownerSettingsRepository: OwnerSettingsRepository,
+    private val featurePolicyRepository: FirestoreFeaturePolicyRepository,
     private val engine: WebRtcMediaEngine,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -121,17 +120,13 @@ class MediaSessionViewModel @Inject constructor(
             MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
         }
         runCatching {
-            val settings = ownerSettingsRepository.observe().first()
-            if (!settings.globalFeaturesEnabled || !settings.masterConfig.access.globalEnabled) {
-                return@runCatching false
-            }
-            if (settings.featureOverrides[featureId]?.enabled == false) return@runCatching false
-            if (settings.masterConfig.access.globalFeatureOverrides[featureId]?.enabled == false) {
-                return@runCatching false
-            }
-            val perUser = settings.masterConfig.access.perUser[targetDeviceId]
+            val policy = featurePolicyRepository.observe().first()
+            if (!policy.globalFeaturesEnabled || !policy.globalEnabled) return@runCatching false
+            if (policy.featureOverrides[featureId] == false) return@runCatching false
+            if (policy.globalFeatureOverrides[featureId] == false) return@runCatching false
+            val perUser = policy.perUser[targetDeviceId]
             if (perUser != null &&
-                (!perUser.enabled || perUser.featureOverrides[featureId]?.enabled == false)
+                (!perUser.enabled || perUser.featureOverrides[featureId] == false)
             ) return@runCatching false
             true
         }.getOrDefault(false)
