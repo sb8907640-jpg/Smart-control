@@ -68,6 +68,13 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             encodeFeaturePolicy(settings),
             SetOptions.merge()
         )
+        settings.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
+            batch.set(
+                firestore.collection("featurePolicyUsers").document(userId),
+                encodeUserFeaturePolicy(userPolicy),
+                SetOptions.merge()
+            )
+        }
         batch.commit().await()
     }
 
@@ -118,6 +125,13 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             encodeFeaturePolicy(restored),
             SetOptions.merge()
         )
+        restored.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
+            batch.set(
+                firestore.collection("featurePolicyUsers").document(userId),
+                encodeUserFeaturePolicy(userPolicy),
+                SetOptions.merge()
+            )
+        }
         batch.commit().await()
     }
 
@@ -130,14 +144,13 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         "featureOverrides" to settings.featureOverrides.mapKeys { it.key.name }
             .mapValues { it.value.enabled },
         "globalFeatureOverrides" to settings.masterConfig.access.globalFeatureOverrides
-            .mapKeys { it.key.name }.mapValues { it.value.enabled },
-        "perUser" to settings.masterConfig.access.perUser.mapValues { (_, user) ->
-            mapOf(
-                "enabled" to user.enabled,
-                "featureOverrides" to user.featureOverrides.mapKeys { it.key.name }
-                    .mapValues { it.value.enabled }
-            )
-        }
+            .mapKeys { it.key.name }.mapValues { it.value.enabled }
+    )
+
+    private fun encodeUserFeaturePolicy(user: UserFeatureAccess): Map<String, Any> = mapOf(
+        "enabled" to user.enabled,
+        "featureOverrides" to user.featureOverrides.mapKeys { it.key.name }
+            .mapValues { it.value.enabled }
     )
 
     private fun encode(settings: OwnerSettings): Map<String, Any?> {
