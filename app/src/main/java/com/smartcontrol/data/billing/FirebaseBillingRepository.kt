@@ -153,7 +153,9 @@ class FirebaseBillingRepository @Inject constructor(
             paymentMethod = data["paymentMethod"]?.toString() ?: data["gateway"]?.toString() ?: "UPI",
             status = status,
             createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
-            planId = data["planId"]?.toString() ?: ""
+            planId = data["planId"]?.toString() ?: "",
+            gatewayOrderId = data["gatewayOrderId"]?.toString(),
+            gatewayKeyId = data["gatewayKeyId"]?.toString()
         )
     }
 }
