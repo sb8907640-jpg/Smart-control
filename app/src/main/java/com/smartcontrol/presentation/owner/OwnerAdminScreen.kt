@@ -511,7 +511,16 @@ private fun OwnerSettingsSection(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            values.filterKeys { it.startsWith("$prefix.") }.forEach { (key, value) ->
+            if (prefix == "data") {
+                PolicySwitch(
+                    "Allow device health / permission-status collection",
+                    values["data.autoCapture"]?.toBooleanStrictOrNull() ?: false
+                ) { onValueChange("data.autoCapture", it.toString()) }
+                Text("This owner switch is not sufficient by itself; each device user must also enable sharing in Privacy Controls.")
+            }
+            values.filterKeys {
+                it.startsWith("$prefix.") && !(prefix == "data" && it == "data.autoCapture")
+            }.forEach { (key, value) ->
                 OutlinedTextField(
                     value = value,
                     onValueChange = { onValueChange(key, it) },
