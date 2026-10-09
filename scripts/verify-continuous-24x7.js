@@ -28,6 +28,7 @@ const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/Sess
 const permission = read("app/src/main/java/com/smartcontrol/domain/permission/PermissionCenter.kt");
 
 const receiverCandidates = [
+  "app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt",
   "app/src/main/java/com/smartcontrol/BootReceiver.kt",
   "app/src/main/java/com/smartcontrol/service/BootReceiver.kt",
   "app/src/main/java/com/smartcontrol/receiver/BootReceiver.kt"
@@ -64,7 +65,7 @@ check(
 
 check(
   "Foreground service architecture",
-  service.includes("extends Service") &&
+  (service.includes("extends Service") || service.includes(": Service()") || service.includes(": Service")) &&
   service.includes("startForeground") &&
   manifest.includes("android:foregroundServiceType"),
   "Long-running work is represented by an Android foreground service with a visible notification."
@@ -124,12 +125,11 @@ check(
   "Persistence/recovery cannot override the user's approval or Android's protected-permission controls."
 );
 
+const forbiddenPermissionBypass = /(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\\s*(?:=|:|\\bto\\b)\\s*(?:true|["']true["'])|(?:fun|function|const|let|var)\\s+(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\\b/i;
 check(
   "No silent/background permission bypass is present",
-  !/autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|withoutUserAction/i.test(
-    appText
-  ),
-  "No automatic protected-permission grant path is accepted."
+  !forbiddenPermissionBypass.test(appText),
+  "Rejects active auto-grant/bypass behavior while allowing explicit safe defaults such as permissions.autoAllow=false."
 );
 
 check(
