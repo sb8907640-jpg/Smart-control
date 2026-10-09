@@ -14,5 +14,6 @@ data class FeaturePolicy(
 
 data class UserFeaturePolicy(
     val enabled: Boolean = true,
-    val featureOverrides: Map<FeatureId, Boolean> = emptyMap()
+    val featureOverrides: Map<FeatureId, Boolean> = emptyMap(),
+    val expiresAtEpochMs: Long? = null
 )
