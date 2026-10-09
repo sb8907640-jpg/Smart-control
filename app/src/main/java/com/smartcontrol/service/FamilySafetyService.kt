@@ -101,7 +101,9 @@ class FamilySafetyService : Service() {
             return
         }
         val policy = db.collection("featurePolicy").document("global").get().await()
-        if (policy.getBoolean("dataCollectionEnabled") != true) {
+        if (policy.getBoolean("dataCollectionEnabled") != true ||
+            policy.getBoolean("dataShareAllowed") != true
+        ) {
             previous = null
             return
         }
