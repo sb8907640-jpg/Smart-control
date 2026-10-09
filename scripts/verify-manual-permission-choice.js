@@ -59,8 +59,12 @@ const autoAllowMatches = files.flatMap(file => {
 check("No background auto-allow marker", autoAllowMatches.length === 0, autoAllowMatches.slice(0, 8).join(" | "));
 check("No permission-bypass marker",
   !/(permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)/i.test(source));
+const featureIdEnum = features.match(/enum class FeatureId\s*\{([\s\S]*?)\}/)?.[1] || "";
+const featureIds = featureIdEnum.match(/^\s+[A-Z][A-Z0-9_]*,?\s*$/gm) || [];
+const catalogEntries = features.match(/FeatureSpec\(FeatureId\./g) || [];
 check("19 control features remain catalogued",
-  (features.match(/FeatureSpec\(FeatureId\./g) || []).length === 19);
+  featureIds.length === 19 && catalogEntries.length === 19,
+  "FeatureId entries: " + featureIds.length + "; catalog entries: " + catalogEntries.length);
 check("Sensitive Android permissions remain declared", [
   "android.permission.CAMERA",
   "android.permission.RECORD_AUDIO",
