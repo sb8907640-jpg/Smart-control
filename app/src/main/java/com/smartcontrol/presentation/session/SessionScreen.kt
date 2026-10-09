@@ -13,6 +13,7 @@ fun SessionScreen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onOpenPairing: () -> Unit,
+    onOpenFeatures: () -> Unit,
     autoStart: Boolean,
     onAutoStartChanged: (Boolean) -> Unit
 ) {
@@ -49,6 +50,9 @@ fun SessionScreen(
 
         OutlinedButton(onClick = onOpenPairing, modifier = Modifier.fillMaxWidth()) {
             Text("Device Pairing")
+        }
+        OutlinedButton(onClick = onOpenFeatures, modifier = Modifier.fillMaxWidth()) {
+            Text("Family Suraksha - All Features")
         }
 
         Spacer(Modifier.height(16.dp))
