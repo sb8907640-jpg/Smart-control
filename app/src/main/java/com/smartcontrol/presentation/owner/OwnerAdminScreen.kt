@@ -98,6 +98,15 @@ class OwnerAdminViewModel @Inject constructor(
         )
     }
 
+    fun setGlobalFeaturesEnabled(enabled: Boolean) {
+        settings = settings.copy(
+            globalFeaturesEnabled = enabled,
+            masterConfig = settings.masterConfig.copy(
+                access = settings.masterConfig.access.copy(globalEnabled = enabled)
+            )
+        )
+    }
+
     fun setPermissionMode(mode: PermissionMode) {
         settings = settings.copy(
             masterConfig = settings.masterConfig.copy(
@@ -377,6 +386,18 @@ fun OwnerAdminScreen(
                 Spacer(Modifier.height(8.dp))
                 Text("19 Feature Controls", style = MaterialTheme.typography.titleLarge)
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(10.dp)) {
+                                PolicySwitch(
+                                    "Enable all features globally",
+                                    viewModel.settings.globalFeaturesEnabled,
+                                    viewModel::setGlobalFeaturesEnabled
+                                )
+                                Text("When disabled, feature screens are blocked for all users. Android permissions and receiver consent remain required when re-enabled.")
+                            }
+                        }
+                    }
                     items(FeatureCatalog.all) { spec ->
                         val enabled = viewModel.settings.featureOverrides[spec.id]?.enabled ?: true
                         Card(Modifier.fillMaxWidth()) {
