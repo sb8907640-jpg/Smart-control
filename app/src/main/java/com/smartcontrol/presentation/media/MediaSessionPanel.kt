@@ -18,6 +18,7 @@ import com.smartcontrol.presentation.features.FeatureAccessViewModel
 
 @Composable
 fun MediaSessionPanel(
+    onBack: () -> Unit,
     viewModel: MediaSessionViewModel = hiltViewModel(),
     featureAccess: FeatureAccessViewModel = hiltViewModel()
 ) {
@@ -99,5 +100,6 @@ fun MediaSessionPanel(
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to features") }
     }
 }
