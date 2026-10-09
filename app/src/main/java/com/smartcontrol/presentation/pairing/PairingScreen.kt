@@ -30,19 +30,22 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
 @Composable
 fun PairingScreen(
     onBack: () -> Unit,
+    initialToken: String? = null,
     viewModel: PairingViewModel = hiltViewModel()
 ) {
     val pairing by viewModel.pairing.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    val deepLinkToken = remember(context) {
-        (context as? Activity)?.intent?.data?.getQueryParameter("token")
+    val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    val deepLinkToken = remember(initialToken, context) {
+        (initialToken ?: (context as? Activity)?.intent?.data?.getQueryParameter("token"))
             ?.trim()
             .orEmpty()
     }
@@ -71,7 +74,10 @@ fun PairingScreen(
         Text("Generate a temporary pairing token or open a shared smartcontrol://pair link. Pairing still requires an explicit user action.")
 
         if (pairing != null) {
-            Text("Paired controller: " + pairing!!.controllerUid)
+            Text(
+                if (pairing!!.controllerUid == currentUid) "Paired device: " + pairing!!.uid
+                else "Paired controller: " + pairing!!.controllerUid
+            )
             OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
                 Text("Unpair device")
             }
