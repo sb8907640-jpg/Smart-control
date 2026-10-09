@@ -23,6 +23,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Per-user feature flags are private to that user and authenticated admins.
+    match /featurePolicyUsers/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || request.auth.token.admin == true);
+      allow create, update: if request.auth != null && request.auth.token.admin == true;
+      allow delete: if false;
+    }
+
     match /ownerSettingsHistory/{document} {
       allow read, create: if request.auth != null && request.auth.token.admin == true;
       allow update, delete: if false;
