@@ -62,7 +62,13 @@ function requireAdmin(request) {
 
 async function readPaymentConfig() {
   const snap = await db.doc(PAYMENT_CONFIG_DOC).get();
-  const values = snap.exists ? (snap.data()?.values || {}) : {};
+  const data = snap.exists ? (snap.data() || {}) : {};
+  // Current Android Owner Settings persist editable values under
+  // masterConfig.ownerControl.editableValues. Also accept the legacy top-level
+  // "values" map so existing deployments remain compatible.
+  const nestedValues = data.masterConfig?.ownerControl?.editableValues || {};
+  const legacyValues = data.values || {};
+  const values = { ...nestedValues, ...legacyValues };
   return Object.fromEntries(
     Object.entries(values).filter(([key]) => key.startsWith("payment."))
   );
