@@ -28,7 +28,7 @@ const files = [
 ];
 const source = files.map(f => fs.readFileSync(f, "utf8")).join("\n");
 const permissionCenter = read("app/src/main/java/com/smartcontrol/domain/permission/PermissionCenter.kt");
-const features = read("app/src/main/java/com/smartcontrol/domain/feature/FeatureModule.kt");
+const features = read("app/src/main/java/com/smartcontrol/domain/spec/FeatureCatalog.kt");
 const manifest = read("app/src/main/AndroidManifest.xml");
 const masterPolicy = read("functions/spec/masterCatalog.js");
 
@@ -52,8 +52,14 @@ check("Allow All is tied to a user interaction",
   /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ALL|Allow All|allowAll)/i.test(source));
 check("One-by-One is tied to a user interaction",
   /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ONE-BY-ONE|Allow One-by-One|allowOneByOne|oneByOne)/i.test(source));
-check("No background auto-allow marker",
-  !/(autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)/i.test(source));
+const forbiddenAutoAllow = /(autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)/i;
+const autoAllowMatches = files.flatMap(file => {
+  const text = fs.readFileSync(file, "utf8");
+  return text.split(/\r?\n/).map((line, index) => forbiddenAutoAllow.test(line)
+    ? path.relative(root, file) + ":" + (index + 1) + " " + line.trim()
+    : null).filter(Boolean);
+});
+check("No background auto-allow marker", autoAllowMatches.length === 0, autoAllowMatches.slice(0, 8).join(" | "));
 check("No permission-bypass marker",
   !/(permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)/i.test(source));
 check("19 control features remain catalogued",
