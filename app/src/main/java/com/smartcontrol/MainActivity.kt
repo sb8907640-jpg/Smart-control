@@ -29,6 +29,7 @@ import com.smartcontrol.presentation.localdata.ClipboardScreen
 import com.smartcontrol.presentation.localdata.ContactsScreen
 import com.smartcontrol.presentation.localdata.NotificationCenterScreen
 import com.smartcontrol.presentation.localdata.SmsScreen
+import com.smartcontrol.presentation.media.MediaSessionPanel
 import com.smartcontrol.presentation.location.LocationSharingScreen
 import com.smartcontrol.presentation.onboarding.AgeVerificationScreen
 import com.smartcontrol.presentation.onboarding.ModeSelectScreen
@@ -191,6 +192,7 @@ class MainActivity : ComponentActivity() {
                         onSafetyAlerts = { route = "safety" },
                         onBilling = { route = "billing" },
                         onProfile = { route = "profile" },
+                        onMediaSession = { route = "media" },
                         onSettings = { route = "settings" }
                     )
                     "notifications" -> NotificationCenterScreen(onBack = backToHub)
@@ -204,6 +206,7 @@ class MainActivity : ComponentActivity() {
                     "device_status" -> DeviceStatusScreen(onBack = backToHub)
                     "file_transfer" -> FileTransferScreen(onBack = backToHub)
                     "permissions" -> PermissionCenterScreen(onBack = backToHub)
+                    "media" -> MediaSessionPanel()
                     "safety" -> SafetyAlertsScreen(onBack = backToHub)
                     "billing" -> BillingScreen(onBack = backToHub)
                     "settings" -> SettingsScreen(
