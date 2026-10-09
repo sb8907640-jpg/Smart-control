@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             var running by remember { mutableStateOf(false) }
-            var showPairing by remember { mutableStateOf(intent?.data?.host == "pair") }
+            var showPairing by remember { mutableStateOf(intent.data?.host == "pair") }
             var autoStart by remember {
                 mutableStateOf(
                     getSharedPreferences("smart_control_settings", MODE_PRIVATE)
