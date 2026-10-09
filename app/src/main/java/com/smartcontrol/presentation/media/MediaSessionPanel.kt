@@ -50,15 +50,15 @@ fun MediaSessionPanel(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { viewModel.request(setOf(MediaCapability.CAMERA)) },
-                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CAMERA, it.deviceUid)
+                    enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.CAMERA)
                 ) { Text("Request camera") }
                 Button(
                     onClick = { viewModel.request(setOf(MediaCapability.MICROPHONE)) },
-                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.MICROPHONE, it.deviceUid)
+                    enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.MICROPHONE)
                 ) { Text("Request mic") }
                 Button(
                     onClick = { viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) },
-                    enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SCREEN_SHARE, it.deviceUid)
+                    enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.SCREEN_SHARE)
                 ) { Text("Request screen") }
             }
         } ?: Text("No controlled device is paired on this account.")
