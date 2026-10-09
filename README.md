@@ -1,4 +1,4 @@
-# Smart Control
+# family Suraksha
 
 Consent-based family safety and remote support Android application.
 
