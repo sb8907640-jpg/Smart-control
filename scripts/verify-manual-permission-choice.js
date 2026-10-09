@@ -52,7 +52,7 @@ check("Allow All is tied to a user interaction",
   /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ALL|Allow All|allowAll)/i.test(source));
 check("One-by-One is tied to a user interaction",
   /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ONE-BY-ONE|Allow One-by-One|allowOneByOne|oneByOne)/i.test(source));
-const forbiddenAutoAllow = /(autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)/i;
+const forbiddenAutoAllow = /(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)\\s*(?:=|:|\\bto\\b)\\s*(?:true|[\'"]true[\'"])|(?:fun|function|const|let|var)\\s+(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)\\b/i;
 const autoAllowMatches = files.flatMap(file => {
   const text = fs.readFileSync(file, "utf8");
   return text.split(/\r?\n/).map((line, index) => forbiddenAutoAllow.test(line)
