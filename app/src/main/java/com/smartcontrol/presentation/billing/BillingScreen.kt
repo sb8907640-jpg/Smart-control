@@ -8,22 +8,32 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.smartcontrol.domain.billing.Plan
+import com.smartcontrol.domain.billing.Payment
 import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun BillingScreen(
     onBack: () -> Unit,
+    onRazorpayCheckout: (Payment) -> Unit = {},
     viewModel: BillingViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val plans by viewModel.plans.collectAsState()
     val subscription by viewModel.subscription.collectAsState()
     val message by viewModel.message.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val pendingCheckout by viewModel.pendingCheckout.collectAsState()
     var method by remember { mutableStateOf("UPI") }
     var coupon by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.load(FirebaseAuth.getInstance().currentUser?.uid.orEmpty())
+    }
+
+    LaunchedEffect(pendingCheckout?.id) {
+        pendingCheckout?.let {
+            onRazorpayCheckout(it)
+            viewModel.clearPendingCheckout()
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -47,7 +57,7 @@ fun BillingScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Text("Use UPI, CARD, NET_BANKING, WALLET, EMI or BANK_TRANSFER.")
+        Text("Use UPI, CARD, NET_BANKING, WALLET, EMI or BANK_TRANSFER. The active gateway is controlled by Owner settings.")
         OutlinedTextField(
             value = coupon,
             onValueChange = { coupon = it.uppercase() },
