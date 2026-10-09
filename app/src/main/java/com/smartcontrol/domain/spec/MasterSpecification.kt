@@ -20,8 +20,8 @@ data class MasterControlConfig(
 )
 
 data class AppBrandingConfig(
-    val appName: String = "Smart Control",
-    val shortName: String = "Smart Control",
+    val appName: String = "Family Suraksha",
+    val shortName: String = "Family Suraksha",
     val logoResourceName: String? = null,
     val themeKey: String = "default",
     val primaryColor: String? = null,
