@@ -516,10 +516,14 @@ private fun OwnerSettingsSection(
                     "Allow device health / permission-status collection",
                     values["data.autoCapture"]?.toBooleanStrictOrNull() ?: false
                 ) { onValueChange("data.autoCapture", it.toString()) }
-                Text("This owner switch is not sufficient by itself; each device user must also enable sharing in Privacy Controls.")
+                PolicySwitch(
+                    "Allow device health data sharing to the linked account",
+                    values["data.shareAllowed"]?.toBooleanStrictOrNull() ?: false
+                ) { onValueChange("data.shareAllowed", it.toString()) }
+                Text("Collection requires both owner switches and each device user must also enable sharing in Privacy Controls.")
             }
             values.filterKeys {
-                it.startsWith("$prefix.") && !(prefix == "data" && it == "data.autoCapture")
+                it.startsWith("$prefix.") && !(prefix == "data" && it in setOf("data.autoCapture", "data.shareAllowed"))
             }.forEach { (key, value) ->
                 OutlinedTextField(
                     value = value,
