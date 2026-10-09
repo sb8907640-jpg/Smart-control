@@ -124,9 +124,32 @@ class FirestorePairingRepository @Inject constructor(
 
     override suspend fun unpair(): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
-        db.collection("devices").document(uid).set(
-            mapOf("controllerUid" to null, "pairingActive" to false), SetOptions.merge()
-        ).await()
+        val ownRef = db.collection("devices").document(uid)
+        val refs = linkedMapOf<String, com.google.firebase.firestore.DocumentReference>()
+
+        // If this account is the receiving device, unlink its controller.
+        val ownSnapshot = ownRef.get().await()
+        if (!ownSnapshot.getString("controllerUid").isNullOrBlank()) {
+            refs[ownRef.path] = ownRef
+        }
+
+        // If this account is the controller, unlink every device it controls too.
+        val controlled = db.collection("devices")
+            .whereEqualTo("controllerUid", uid)
+            .whereEqualTo("pairingActive", true)
+            .get()
+            .await()
+        controlled.documents.forEach { refs[it.reference.path] = it.reference }
+
+        val batch = db.batch()
+        refs.values.forEach { ref ->
+            batch.set(
+                ref,
+                mapOf("controllerUid" to null, "pairingActive" to false),
+                SetOptions.merge()
+            )
+        }
+        if (refs.isNotEmpty()) batch.commit().await()
     }
 
     private fun buildToken(): String {
