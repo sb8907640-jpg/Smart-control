@@ -16,6 +16,7 @@ fun PrivacyControlsScreen(onBack: () -> Unit, context: Context) {
     var locationSharing by remember { mutableStateOf(prefs.getBoolean("allow_location_sharing", true)) }
     var fileTransfers by remember { mutableStateOf(prefs.getBoolean("allow_file_transfers", true)) }
     var mediaSharing by remember { mutableStateOf(prefs.getBoolean("allow_media_sharing", true)) }
+    var deviceHealthSharing by remember { mutableStateOf(prefs.getBoolean("allow_device_health_sharing", false)) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleted by remember { mutableStateOf(false) }
 
@@ -48,6 +49,14 @@ fun PrivacyControlsScreen(onBack: () -> Unit, context: Context) {
                     Text("Camera / microphone / screen")
                     Switch(mediaSharing, { mediaSharing = it; save("allow_media_sharing", it) })
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Share device health & permission status")
+                    Switch(deviceHealthSharing, {
+                        deviceHealthSharing = it
+                        save("allow_device_health_sharing", it)
+                    })
+                }
+                Text("When enabled, only service heartbeat and permission-state changes are sent to the linked account. Contacts, SMS, call logs, and clipboard remain local-only.")
             }
         }
 
