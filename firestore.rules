@@ -15,6 +15,14 @@ service cloud.firestore {
       allow read, create, update, delete: if request.auth != null && request.auth.token.admin == true;
     }
 
+    // Client-readable feature policy contains only feature flags and per-user availability.
+    // Private owner settings and payment credentials remain restricted to admin claims.
+    match /featurePolicy/{document} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.token.admin == true;
+      allow delete: if false;
+    }
+
     match /ownerSettingsHistory/{document} {
       allow read, create: if request.auth != null && request.auth.token.admin == true;
       allow update, delete: if false;
