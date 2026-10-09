@@ -17,8 +17,8 @@ android {
     compileSdk=36
     flavorDimensions += "distribution"
     productFlavors {
-        create("owner") { dimension = "distribution"; applicationIdSuffix = ".owner"; versionNameSuffix = "-owner"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"OWNER\"") }
-        create("lite") { dimension = "distribution"; applicationIdSuffix = ".lite"; versionNameSuffix = "-lite"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"LITE\"") }
+        create("owner") { dimension = "distribution"; versionNameSuffix = "-owner"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"OWNER\"") }
+        create("lite") { dimension = "distribution"; versionNameSuffix = "-lite"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"LITE\"") }
         create("full") { dimension = "distribution"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"FULL\"") }
     }
     defaultConfig {
