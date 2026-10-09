@@ -12,6 +12,7 @@ fun SessionScreen(
     running: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onOpenPairing: () -> Unit,
     autoStart: Boolean,
     onAutoStartChanged: (Boolean) -> Unit
 ) {
@@ -42,6 +43,12 @@ fun SessionScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("STOP")
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedButton(onClick = onOpenPairing, modifier = Modifier.fillMaxWidth()) {
+            Text("Device Pairing")
         }
 
         Spacer(Modifier.height(16.dp))
