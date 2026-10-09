@@ -75,7 +75,7 @@ fun PairingScreen(
 
         if (pairing != null) {
             Text(
-                if (pairing!!.controllerUid == currentUid) "Paired device: " + pairing!!.uid
+                if (pairing!!.controllerUid == currentUid) "Paired device: " + pairing!!.deviceUid
                 else "Paired controller: " + pairing!!.controllerUid
             )
             OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
