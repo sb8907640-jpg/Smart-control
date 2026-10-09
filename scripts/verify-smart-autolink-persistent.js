@@ -17,8 +17,25 @@ function runtime(name, detail) {
   console.log("PENDING RUNTIME " + name + " :: " + detail);
   pending.push(name);
 }
-function anyFileContains(files, patterns) {
-  return files.some(file => patterns.some(pattern => read(file).includes(pattern)));
+function anyFileContains(paths, patterns) {
+  const sourceFiles = [];
+  function collect(target) {
+    if (!fs.existsSync(target)) return;
+    const stat = fs.statSync(target);
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+        if (["build", ".gradle", "node_modules", ".next"].includes(entry.name)) continue;
+        collect(path.join(target, entry.name));
+      }
+      return;
+    }
+    if (/\.(kt|kts|java|xml|tsx|ts|js|jsx)$/.test(target)) sourceFiles.push(target);
+  }
+  for (const rel of paths) collect(path.join(root, rel));
+  return sourceFiles.some(file => {
+    const content = fs.readFileSync(file, "utf8");
+    return patterns.some(pattern => content.includes(pattern));
+  });
 }
 function hasReceiverBootHandler() {
   const manifest = read("app/src/main/AndroidManifest.xml");
