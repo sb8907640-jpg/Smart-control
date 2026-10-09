@@ -88,13 +88,23 @@ class FamilySafetyService : Service() {
     private fun startHealthLoop() {
         scope.launch {
             while (isActive) {
-                checkPermissionsAndReport()
+                runCatching { checkPermissionsAndReport() }
                 delay(15_000)
             }
         }
     }
 
     private suspend fun checkPermissionsAndReport() {
+        val privacy = getSharedPreferences("privacy_controls", MODE_PRIVATE)
+        if (!privacy.getBoolean("allow_device_health_sharing", false)) {
+            previous = null
+            return
+        }
+        val policy = db.collection("featurePolicy").document("global").get().await()
+        if (policy.getBoolean("dataCollectionEnabled") != true) {
+            previous = null
+            return
+        }
         val state = mapOf(
             "camera" to granted(Manifest.permission.CAMERA),
             "microphone" to granted(Manifest.permission.RECORD_AUDIO),
