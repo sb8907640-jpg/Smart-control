@@ -125,7 +125,7 @@ check(
   "Persistence/recovery cannot override the user's approval or Android's protected-permission controls."
 );
 
-const forbiddenPermissionBypass = /(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\\s*(?:=|:|\\bto\\b)\\s*(?:true|["']true["'])|(?:fun|function|const|let|var)\\s+(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\\b/i;
+const forbiddenPermissionBypass = /(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\s*(?:=|:|\bto\b)\s*(?:true|["']true["'])|(?:fun|function|const|let|var)\s+(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|suppressPermissionDialog|withoutUserAction)\b/i;
 check(
   "No silent/background permission bypass is present",
   !forbiddenPermissionBypass.test(appText),
