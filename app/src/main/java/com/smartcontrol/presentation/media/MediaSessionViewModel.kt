@@ -9,6 +9,8 @@ import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSession
 import com.smartcontrol.domain.media.MediaSignalingRepository
 import com.smartcontrol.domain.pairing.PairingRepository
+import com.smartcontrol.domain.owner.OwnerSettingsRepository
+import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.service.FamilySafetyService
 import com.smartcontrol.service.MediaProjectionForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,6 +18,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.*
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import org.webrtc.VideoSink
 
@@ -23,6 +26,7 @@ import org.webrtc.VideoSink
 class MediaSessionViewModel @Inject constructor(
     private val signaling: MediaSignalingRepository,
     pairingRepository: PairingRepository,
+    private val ownerSettingsRepository: OwnerSettingsRepository,
     private val engine: WebRtcMediaEngine,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -51,6 +55,10 @@ class MediaSessionViewModel @Inject constructor(
             lastError.value = "Pair a client device first."
             return@launch
         }
+        if (!capabilitiesAllowed(capabilities, device.deviceUid)) {
+            lastError.value = "One or more requested capabilities are disabled by the owner for this device."
+            return@launch
+        }
         signaling.createSession(UUID.randomUUID().toString(), device.deviceUid, capabilities)
             .onSuccess { selectedId.value = it.sessionId }
             .onFailure { lastError.value = it.message }
@@ -59,6 +67,12 @@ class MediaSessionViewModel @Inject constructor(
     fun select(id: String) { selectedId.value = id }
 
     fun approve(id: String) = viewModelScope.launch {
+        val incoming = signaling.observeSession(id).first()
+        if (incoming != null && !capabilitiesAllowed(incoming.capabilities, incoming.targetDeviceId)) {
+            lastError.value = "This session includes a feature disabled by the owner."
+            signaling.denySession(id)
+            return@launch
+        }
         if (!privacyPrefs.getBoolean("allow_session_requests", true) ||
             !privacyPrefs.getBoolean("allow_media_sharing", true)) {
             lastError.value = "Privacy Controls are blocking remote media/session requests."
@@ -74,6 +88,11 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     fun startPublishing(session: MediaSession, projectionIntent: Intent?) = viewModelScope.launch {
+        if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId)) {
+            lastError.value = "This session includes a feature disabled by the owner."
+            signaling.stopSession(session.sessionId)
+            return@launch
+        }
         if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
             lastError.value = "Media sharing is disabled in Privacy Controls."
             signaling.stopSession(session.sessionId)
@@ -92,9 +111,39 @@ class MediaSessionViewModel @Inject constructor(
             }
     }
 
+    private suspend fun capabilitiesAllowed(
+        capabilities: Set<MediaCapability>,
+        targetDeviceId: String
+    ): Boolean = capabilities.all { capability ->
+        val featureId = when (capability) {
+            MediaCapability.CAMERA -> FeatureId.CAMERA
+            MediaCapability.MICROPHONE -> FeatureId.MICROPHONE
+            MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
+        }
+        runCatching {
+            val settings = ownerSettingsRepository.observe().first()
+            if (!settings.globalFeaturesEnabled || !settings.masterConfig.access.globalEnabled) {
+                return@runCatching false
+            }
+            if (settings.featureOverrides[featureId]?.enabled == false) return@runCatching false
+            if (settings.masterConfig.access.globalFeatureOverrides[featureId]?.enabled == false) {
+                return@runCatching false
+            }
+            val perUser = settings.masterConfig.access.perUser[targetDeviceId]
+            if (perUser != null &&
+                (!perUser.enabled || perUser.featureOverrides[featureId]?.enabled == false)
+            ) return@runCatching false
+            true
+        }.getOrDefault(false)
+    }
+
     fun eglBase() = engine.eglBase()
 
     fun connectViewer(session: MediaSession, sink: VideoSink?) = viewModelScope.launch {
+        if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId)) {
+            lastError.value = "This session includes a feature disabled by the owner."
+            return@launch
+        }
         if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
             lastError.value = "Media sharing is disabled in Privacy Controls."
             return@launch
