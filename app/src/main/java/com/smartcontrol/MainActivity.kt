@@ -16,7 +16,10 @@ import com.smartcontrol.presentation.audit.AuditLogScreen
 import com.smartcontrol.presentation.billing.BillingScreen
 import com.smartcontrol.presentation.consent.ConsentScreen
 import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
+import com.smartcontrol.presentation.features.FeatureAccessViewModel
 import com.smartcontrol.presentation.features.FeatureCenterScreen
+import com.smartcontrol.presentation.features.FeatureUnavailableScreen
+import com.smartcontrol.domain.spec.FeatureId
 import com.smartcontrol.presentation.filetransfer.FileTransferScreen
 import com.smartcontrol.presentation.health.DeviceStatusScreen
 import com.smartcontrol.presentation.localdata.AppInstallScreen
@@ -38,6 +41,7 @@ import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
+import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -63,6 +67,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            val featureAccessViewModel: FeatureAccessViewModel = hiltViewModel()
+            val featureSettings by featureAccessViewModel.settings.collectAsState()
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
             var consented by remember {
                 mutableStateOf(
@@ -141,7 +147,30 @@ class MainActivity : ComponentActivity() {
             } else if (!modeSelected) {
                 ModeSelectScreen(this@MainActivity) { modeSelected = true }
             } else {
-                when (route) {
+                val requestedFeature = when (route) {
+                    "notifications" -> FeatureId.NOTIFICATIONS
+                    "contacts" -> FeatureId.CONTACTS
+                    "sms" -> FeatureId.SMS
+                    "call_logs" -> FeatureId.CALL_LOGS
+                    "app_usage" -> FeatureId.APP_USAGE
+                    "clipboard" -> FeatureId.CLIPBOARD_SYNC
+                    "app_install" -> FeatureId.APP_INSTALL
+                    "location" -> FeatureId.LOCATION
+                    "device_status" -> FeatureId.BATTERY_NETWORK
+                    "file_transfer" -> FeatureId.FILE_TRANSFER
+                    "safety" -> FeatureId.SOS_ALERTS
+                    else -> null
+                }
+                if (requestedFeature != null &&
+                    (featureSettings == null || !featureAccessViewModel.isEnabled(requestedFeature, uid))
+                ) {
+                    FeatureUnavailableScreen(
+                        featureName = requestedFeature.name.replace('_', ' '),
+                        loading = featureSettings == null,
+                        onBack = backToHub
+                    )
+                } else {
+                    when (route) {
                     "pairing" -> PairingScreen(
                         onBack = { route = "session" },
                         initialToken = pairingLink?.getQueryParameter("token")
@@ -210,6 +239,7 @@ class MainActivity : ComponentActivity() {
                                 .edit().putBoolean("auto_start_service", enabled).apply()
                         }
                     )
+                    }
                 }
             }
         }
