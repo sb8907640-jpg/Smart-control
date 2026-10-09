@@ -126,7 +126,7 @@ class MediaSessionViewModel @Inject constructor(
             if (policy.globalFeatureOverrides[featureId] == false) return@runCatching false
             val perUser = policy.userPolicy
             if (perUser != null &&
-                (!perUser.enabled ||
+                (!perUser.enabled || !perUser.ownerEnabled ||
                     perUser.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true ||
                     perUser.featureOverrides[featureId] == false)
             ) return@runCatching false
