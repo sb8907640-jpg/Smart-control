@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 class FeatureAccessViewModel @Inject constructor(
     private val repository: FirestoreFeaturePolicyRepository
 ) : ViewModel() {
-    private val _settings = MutableStateFlow<OwnerSettings?>(null)
+    private val _settings = MutableStateFlow<FeaturePolicy?>(null)
     val settings = _settings.asStateFlow()
 
     init {
