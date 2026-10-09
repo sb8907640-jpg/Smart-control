@@ -43,6 +43,8 @@ jobs:
         run: node scripts/verify-smart-autolink-persistent.js
       - name: Verify Manual Permission Choice
         run: node scripts/verify-manual-permission-choice.js
+      - name: Verify Owner Payment Settings Integration
+        run: node scripts/verify-payment-owner-settings.js
       - name: Verify Start Stop background behavior
         run: node scripts/verify-start-stop-background.js
       - name: Verify Designed for Continuous 24x7 Operation
