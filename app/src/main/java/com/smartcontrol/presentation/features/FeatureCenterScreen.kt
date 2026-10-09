@@ -42,7 +42,24 @@ private val features = listOf(
 )
 
 @Composable
-fun FeatureCenterScreen(onBack: () -> Unit, onNotifications: () -> Unit, onContacts: () -> Unit, onSms: () -> Unit, onCallLogs: () -> Unit, onAppUsage: () -> Unit, onClipboard: () -> Unit, onAppInstall: () -> Unit) {
+fun FeatureCenterScreen(
+    onBack: () -> Unit,
+    onNotifications: () -> Unit,
+    onContacts: () -> Unit,
+    onSms: () -> Unit,
+    onCallLogs: () -> Unit,
+    onAppUsage: () -> Unit,
+    onClipboard: () -> Unit,
+    onAppInstall: () -> Unit,
+    onLocation: () -> Unit,
+    onDeviceStatus: () -> Unit,
+    onFileTransfer: () -> Unit,
+    onPermissions: () -> Unit,
+    onSafetyAlerts: () -> Unit,
+    onBilling: () -> Unit,
+    onProfile: () -> Unit,
+    onSettings: () -> Unit
+) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -59,8 +76,16 @@ fun FeatureCenterScreen(onBack: () -> Unit, onNotifications: () -> Unit, onConta
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Feature Center", style = MaterialTheme.typography.headlineSmall)
+        Text("Family Suraksha - Feature Center", style = MaterialTheme.typography.headlineSmall)
         Text("All 19 master features are listed here. Sensitive capabilities remain visible, consent-gated, and subject to Android OS security.")
+        OutlinedButton(onClick = onLocation, modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") }
+        OutlinedButton(onClick = onDeviceStatus, modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") }
+        OutlinedButton(onClick = onFileTransfer, modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") }
+        OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") }
+        OutlinedButton(onClick = onSafetyAlerts, modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") }
+        OutlinedButton(onClick = onBilling, modifier = Modifier.fillMaxWidth()) { Text("Plans & Billing") }
+        OutlinedButton(onClick = onProfile, modifier = Modifier.fillMaxWidth()) { Text("Profile & Privacy") }
+        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") }
         OutlinedButton(
             onClick = { picker.launch(arrayOf("image/*", "video/*")) },
             modifier = Modifier.fillMaxWidth()
