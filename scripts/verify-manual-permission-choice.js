@@ -20,12 +20,9 @@ function sourceFiles(dir) {
   }
   return out;
 }
-const files = [
-  ...sourceFiles(path.join(root, "app")),
-  ...sourceFiles(path.join(root, "web")),
-  ...sourceFiles(path.join(root, "backend")),
-  ...sourceFiles(path.join(root, "desktop"))
-];
+// Permission-grant safety is an Android runtime contract. Do not scan test fixtures
+// or unrelated web/backend/desktop code for marker words; they can contain examples.
+const files = sourceFiles(path.join(root, "app/src/main"));
 const source = files.map(f => fs.readFileSync(f, "utf8")).join("\n");
 const permissionCenter = read("app/src/main/java/com/smartcontrol/domain/permission/PermissionCenter.kt");
 const features = read("app/src/main/java/com/smartcontrol/domain/spec/FeatureCatalog.kt");
