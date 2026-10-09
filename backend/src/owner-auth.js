@@ -34,7 +34,7 @@ function getOwnerAllowlist(env = process.env) {
 function isOwnerIdentity(user, allowlist = getOwnerAllowlist()) {
   const email = normalizeEmail(user?.email);
   const phone = normalizePhone(user?.phone_number || user?.phoneNumber);
-  return (email && allowlist.emails.has(email)) || (phone && allowlist.phones.has(phone));
+  return Boolean((email && allowlist.emails.has(email)) || (phone && allowlist.phones.has(phone)));
 }
 
 function applyOwnerRole(user, allowlist = getOwnerAllowlist()) {
