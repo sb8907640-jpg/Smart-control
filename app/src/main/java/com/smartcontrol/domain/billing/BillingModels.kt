@@ -68,7 +68,9 @@ data class Payment(
     val paymentMethod: String = "UPI",
     val status: Status,
     val createdAtEpochMs: Long,
-    val planId: String = ""
+    val planId: String = "",
+    val gatewayOrderId: String? = null,
+    val gatewayKeyId: String? = null
 ) {
     enum class Status { CREATED, PENDING, SUCCESS, FAILED, REFUNDED }
 }
