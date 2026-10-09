@@ -55,6 +55,7 @@ class FirestoreFeaturePolicyRepository @Inject constructor(
         globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: true,
         globalEnabled = data["globalEnabled"] as? Boolean ?: true,
         dataCollectionEnabled = data["dataCollectionEnabled"] as? Boolean ?: false,
+        dataShareAllowed = data["dataShareAllowed"] as? Boolean ?: false,
         featureOverrides = boolFeatureMap(data["featureOverrides"]),
         globalFeatureOverrides = boolFeatureMap(data["globalFeatureOverrides"])
     )
