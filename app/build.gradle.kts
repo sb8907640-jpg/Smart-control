@@ -6,7 +6,7 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
-val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").get()
+val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").map { it.ifBlank { "969691895574-9f7jujuf7irm6hktusvdtp0uik96cqke.apps.googleusercontent.com" } }.get()
 val turnUrls = providers.gradleProperty("SMARTCONTROL_TURN_URLS").orElse("").get()
 val turnUsername = providers.gradleProperty("SMARTCONTROL_TURN_USERNAME").orElse("").get()
 val turnCredential = providers.gradleProperty("SMARTCONTROL_TURN_CREDENTIAL").orElse("").get()
@@ -22,7 +22,7 @@ android {
         create("full") { dimension = "distribution"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"FULL\"") }
     }
     defaultConfig {
-        applicationId="com.smartcontrol"
+        applicationId="com.smart.control"
         minSdk=26
         targetSdk=36
         versionCode=3
