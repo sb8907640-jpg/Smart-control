@@ -50,13 +50,17 @@ class FeatureAccessViewModel @Inject constructor(
         }
     }
 
-    fun isEnabled(featureId: FeatureId, userId: String): Boolean {
+    fun isGloballyEnabled(featureId: FeatureId): Boolean {
         val current = _settings.value ?: return false
-        if (!current.globalFeaturesEnabled || !current.globalEnabled) return false
-        if (current.featureOverrides[featureId] == false) return false
-        if (current.globalFeatureOverrides[featureId] == false) return false
+        return current.globalFeaturesEnabled &&
+            current.globalEnabled &&
+            current.featureOverrides[featureId] != false &&
+            current.globalFeatureOverrides[featureId] != false
+    }
 
-        val perUser = current.userPolicy ?: return true
+    fun isEnabled(featureId: FeatureId, userId: String): Boolean {
+        if (!isGloballyEnabled(featureId)) return false
+        val perUser = _settings.value?.userPolicy ?: return true
         if (!perUser.enabled) return false
         return perUser.featureOverrides[featureId] != false
     }
