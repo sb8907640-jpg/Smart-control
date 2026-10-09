@@ -10,6 +10,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -23,9 +24,12 @@ data class PairingUiState(
 class PairingViewModel @Inject constructor(
     private val repository: PairingRepository
 ) : ViewModel() {
-    val pairing = repository.observePairing().stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5_000), null
-    )
+    // Show the link from either side: this account as a receiver or as a controller.
+    val pairing = combine(
+        repository.observePairing(),
+        repository.observeControlledDevice()
+    ) { localPairing, controlledDevice -> localPairing ?: controlledDevice }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _state = MutableStateFlow(PairingUiState())
     val state = _state.asStateFlow()
 
