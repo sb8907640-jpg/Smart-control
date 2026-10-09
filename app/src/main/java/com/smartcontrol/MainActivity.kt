@@ -1,6 +1,7 @@
 package com.smartcontrol
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -42,6 +43,16 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    private val incomingPairLink = mutableStateOf<android.net.Uri?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.data?.scheme == "smartcontrol" && intent.data?.host == "pair") {
+            incomingPairLink.value = intent.data
+        }
+    }
+
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             FamilySafetyService.start(this)
@@ -73,6 +84,15 @@ class MainActivity : ComponentActivity() {
             }
             var running by remember { mutableStateOf(false) }
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
+            var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
+            val pendingPairLink by incomingPairLink
+            LaunchedEffect(pendingPairLink) {
+                pendingPairLink?.let { link ->
+                    pairingLink = link
+                    route = "pairing"
+                    incomingPairLink.value = null
+                }
+            }
             var autoStart by remember {
                 mutableStateOf(
                     getSharedPreferences("smart_control_settings", MODE_PRIVATE)
@@ -122,7 +142,10 @@ class MainActivity : ComponentActivity() {
                 ModeSelectScreen(this@MainActivity) { modeSelected = true }
             } else {
                 when (route) {
-                    "pairing" -> PairingScreen(onBack = { route = "session" })
+                    "pairing" -> PairingScreen(
+                        onBack = { route = "session" },
+                        initialToken = pairingLink?.getQueryParameter("token")
+                    )
                     "features" -> FeatureCenterScreen(
                         onBack = { route = "session" },
                         onNotifications = { route = "notifications" },
