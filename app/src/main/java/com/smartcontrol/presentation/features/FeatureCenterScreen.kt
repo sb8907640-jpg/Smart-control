@@ -64,6 +64,7 @@ fun FeatureCenterScreen(
     onSafetyAlerts: () -> Unit,
     onBilling: () -> Unit,
     onProfile: () -> Unit,
+    onMediaSession: () -> Unit,
     onSettings: () -> Unit,
     featureAccess: FeatureAccessViewModel = hiltViewModel()
 ) {
@@ -90,6 +91,7 @@ fun FeatureCenterScreen(
         Text("All 19 master features are listed here. Sensitive capabilities remain visible, consent-gated, and subject to Android OS security.")
         OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") }
         OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") }
+        OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded, modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") }
         OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") }
         OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") }
         OutlinedButton(onClick = onSafetyAlerts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SOS_ALERTS, userId), modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") }
