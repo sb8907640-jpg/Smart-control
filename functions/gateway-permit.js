@@ -89,12 +89,16 @@ exports.savePaymentGatewayPermit = onCall(
     const provider = String(request.data?.provider || "").trim().toUpperCase();
     const displayName = String(request.data?.displayName || "").trim();
     const enabled = request.data?.enabled !== false;
+    const mode = String(request.data?.mode || "LIVE").trim().toUpperCase();
     const keyId = String(request.data?.keyId || "").trim();
     const keySecret = String(request.data?.keySecret || "").trim();
     const webhookSecret = String(request.data?.webhookSecret || "").trim();
 
     if (!IMPLEMENTED_PROVIDERS.has(provider)) {
       throw new HttpsError("failed-precondition", "This gateway adapter is not implemented yet. Currently the working adapter is Razorpay; adding another name alone is not enough.");
+    }
+    if (!["TEST", "LIVE"].includes(mode)) {
+      throw new HttpsError("invalid-argument", "Gateway mode must be TEST or LIVE.");
     }
     if (displayName.length < 2 || displayName.length > 80) {
       throw new HttpsError("invalid-argument", "Gateway display name must be 2–80 characters.");
@@ -108,6 +112,7 @@ exports.savePaymentGatewayPermit = onCall(
     const previous = existing.exists ? existing.data()?.paymentGatewayPermit || {} : {};
     const permit = {
       enabled,
+      mode,
       provider,
       displayName,
       encryptedCredentials: encryptCredentials({ keyId, keySecret, webhookSecret }),
@@ -121,6 +126,7 @@ exports.savePaymentGatewayPermit = onCall(
     return {
       ok: true,
       enabled,
+      mode,
       provider,
       displayName,
       revision: permit.revision,
@@ -139,6 +145,7 @@ exports.getPaymentGatewayPermit = onCall(async (request) => {
   return {
     configured: true,
     enabled: permit.enabled === true,
+    mode: String(permit.mode || "LIVE"),
     provider: String(permit.provider || ""),
     displayName: String(permit.displayName || ""),
     credentialFieldsConfigured: permit.credentialFieldsConfigured || { keyId: false, keySecret: false, webhookSecret: false },
