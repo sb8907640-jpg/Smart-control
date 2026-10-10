@@ -34,8 +34,20 @@ check("Billing backend reads current nested owner settings",
 check("Billing backend keeps legacy payment-config compatibility",
   billingFunctions.includes("const legacyValues = data.values || {}") &&
   billingFunctions.includes("const values = { ...nestedValues, ...legacyValues }"));
-check("Payment creation selects gateway from server-side owner configuration",
-  /const config = await readPaymentConfig\(\);[\s\S]{0,160}const gateway = activeGateway\(config\);/.test(billingFunctions));
+check("Payment creation selects the active Owner permit before legacy configuration",
+  /const config = await readPaymentConfig\(\);[\s\S]{0,240}const permit = await getActiveGatewayPermit\(\);[\s\S]{0,160}const gateway = permit \? permit.provider : activeGateway\(config\);/.test(billingFunctions));
+check("Gateway credentials are AES-256-GCM encrypted server-side",
+  gatewayPermit.includes("aes-256-gcm") && gatewayPermit.includes("encryptedCredentials"));
+check("Gateway writes are restricted to configured Owner identities",
+  gatewayPermit.includes("async function requireOwner") && gatewayPermit.includes("Only a configured Family Suraksha Owner"));
+check("Owner panel exposes permanent permit and secret entry fields",
+  ownerPanel.includes("PaymentGatewayPermitPanel") && ownerPanel.includes("savePaymentGatewayPermit") &&
+  ownerPanel.includes("Razorpay Webhook Secret"));
+check("Gateway credential versions are retained for pending payment verification",
+  gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
+check("Android checkout submits success details for server verification",
+  mainActivity.includes("onRazorpayCheckout = ::startRazorpayCheckout") &&
+  mainActivity.includes('getHttpsCallable("verifyRazorpayPayment")'));
 check("Android billing screen loads plan catalog and invokes payment repository",
   billingScreen.includes("viewModel.load(") && billingScreen.includes("viewModel.buy(plan, method, coupon)"));
 check("Android repository calls the server-side createPayment function",
