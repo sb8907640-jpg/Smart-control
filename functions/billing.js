@@ -243,7 +243,7 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gat
   const permit = await getActiveGatewayPermit();
   const gateway = permit ? permit.provider : activeGateway(config);
   const method = String(request.data?.paymentMethod || "UPI").trim().toUpperCase();
-  const gatewayMode = String(config["payment.gatewayMode"] || "TEST").toUpperCase();
+  const gatewayMode = String(permit?.mode || config["payment.gatewayMode"] || "TEST").toUpperCase();
   if (!["TEST", "LIVE"].includes(gatewayMode)) {
     throw new HttpsError("failed-precondition", "Payment gateway mode must be TEST or LIVE.");
   }
@@ -821,7 +821,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName) {
+      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
