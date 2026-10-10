@@ -168,6 +168,112 @@ exports.getPaymentGatewayPermit = onCall(async (request) => {
   };
 });
 
+
+// Provider catalog and encrypted drafts let the Owner prepare gateway details before
+// an adapter is enabled. Drafts are never used by the payment flow.
+const GATEWAY_PROVIDER_CATALOG = [
+  { id: "RAZORPAY", name: "Razorpay", adapterImplemented: true },
+  { id: "CASHFREE", name: "Cashfree", adapterImplemented: false },
+  { id: "PHONEPE", name: "PhonePe", adapterImplemented: false },
+  { id: "PAYU", name: "PayU", adapterImplemented: false },
+  { id: "STRIPE", name: "Stripe", adapterImplemented: false },
+  { id: "PAYPAL", name: "PayPal", adapterImplemented: false },
+  { id: "CUSTOM", name: "Custom Gateway", adapterImplemented: false }
+];
+
+exports.getPaymentGatewayProviderCatalog = onCall(async (request) => {
+  await requireOwner(request);
+  const [drafts, active] = await Promise.all([
+    db.collection("paymentGatewayProviderDrafts").get(),
+    CONFIG_REF.get()
+  ]);
+  const draftByProvider = new Map(drafts.docs.map(doc => [doc.id, doc.data() || {}]));
+  const activePermit = active.exists ? active.data()?.paymentGatewayPermit : null;
+  return {
+    providers: GATEWAY_PROVIDER_CATALOG.map(provider => {
+      const draft = draftByProvider.get(provider.id) || {};
+      return {
+        ...provider,
+        draftSaved: draft.saved === true,
+        credentialsConfigured: draft.credentialConfigured === true,
+        draftDisplayName: String(draft.displayName || ""),
+        draftMode: String(draft.mode || "TEST"),
+        draftUpdatedAtEpochMs: Number(draft.updatedAtEpochMs || 0),
+        active: provider.id === String(activePermit?.provider || "") && activePermit?.enabled === true
+      };
+    })
+  };
+});
+
+exports.savePaymentGatewayProviderDraft = onCall(
+  { secrets: [gatewayEncryptionKey] },
+  async (request) => {
+    await requireOwner(request);
+    const provider = String(request.data?.provider || "").trim().toUpperCase();
+    const catalogEntry = GATEWAY_PROVIDER_CATALOG.find(item => item.id === provider);
+    if (!catalogEntry) {
+      throw new HttpsError("invalid-argument", "Choose a gateway from the supported provider list.");
+    }
+    const displayName = String(request.data?.displayName || catalogEntry.name).trim();
+    const mode = String(request.data?.mode || "TEST").trim().toUpperCase();
+    const rawCredentials = String(request.data?.credentialsJson || "").trim();
+    if (displayName.length < 2 || displayName.length > 80) {
+      throw new HttpsError("invalid-argument", "Gateway display name must be 2–80 characters.");
+    }
+    if (!["TEST", "LIVE"].includes(mode)) {
+      throw new HttpsError("invalid-argument", "Gateway mode must be TEST or LIVE.");
+    }
+    if (rawCredentials.length > 16000) {
+      throw new HttpsError("invalid-argument", "Gateway credentials JSON must be 16 KB or less.");
+    }
+    let credentials = null;
+    if (rawCredentials) {
+      try {
+        credentials = JSON.parse(rawCredentials);
+      } catch (_) {
+        throw new HttpsError("invalid-argument", "Credentials must be valid JSON with provider-specific key/value fields.");
+      }
+      if (!credentials || typeof credentials !== "object" || Array.isArray(credentials)) {
+        throw new HttpsError("invalid-argument", "Credentials must be a JSON object.");
+      }
+      if (Object.values(credentials).some(value => !["string", "number", "boolean"].includes(typeof value))) {
+        throw new HttpsError("invalid-argument", "Credential values must be strings, numbers, or booleans.");
+      }
+    }
+    const ref = db.collection("paymentGatewayProviderDrafts").doc(provider);
+    const snap = await ref.get();
+    const previous = snap.exists ? snap.data() || {} : {};
+    const encryptedCredentials = credentials
+      ? encryptCredentials(credentials)
+      : previous.encryptedCredentials || null;
+    const now = Date.now();
+    const draft = {
+      provider,
+      displayName,
+      mode,
+      saved: true,
+      credentialConfigured: Boolean(encryptedCredentials),
+      encryptedCredentials,
+      adapterImplemented: catalogEntry.adapterImplemented,
+      updatedAtEpochMs: now,
+      updatedBy: request.auth.uid,
+      revision: Number(previous.revision || 0) + 1
+    };
+    await ref.set(draft);
+    return {
+      ok: true,
+      provider,
+      displayName,
+      mode,
+      saved: true,
+      credentialConfigured: draft.credentialConfigured,
+      adapterImplemented: catalogEntry.adapterImplemented,
+      revision: draft.revision,
+      updatedAtEpochMs: now
+    };
+  }
+);
+
 // Server-only helper. Never expose its result from a callable endpoint or log it.
 exports.getActiveGatewayPermit = async function getActiveGatewayPermit(revision = null) {
   let permit = null;
