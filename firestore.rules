@@ -230,16 +230,7 @@ service cloud.firestore {
     }
 
     match /devices/{uid} {
-      allow create: if request.auth != null
-        && (
-          (
-            request.resource.data.controllerUid == request.auth.uid
-            && request.resource.data.pairingToken is string
-            && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-            && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
-          )
-          || validPairingClaim(uid)
-        );
+      allow create: if validPairingClaim(uid);
 
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
