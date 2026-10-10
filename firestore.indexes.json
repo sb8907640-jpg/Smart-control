@@ -55,6 +55,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "pairingInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "creatorUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAtEpochMs",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
