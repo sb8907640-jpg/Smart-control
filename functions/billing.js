@@ -8,6 +8,11 @@ const paymentWebhookSecret = defineSecret("SMARTCONTROL_PAYMENT_WEBHOOK_SECRET")
 const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
 const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 const razorpayWebhookSecret = defineSecret("RAZORPAY_WEBHOOK_SECRET");
+const gatewayPermit = require("./gateway-permit");
+const getActiveGatewayPermit = gatewayPermit.getActiveGatewayPermit;
+const gatewayEncryptionKey = gatewayPermit.gatewayEncryptionKey;
+exports.savePaymentGatewayPermit = gatewayPermit.savePaymentGatewayPermit;
+exports.getPaymentGatewayPermit = gatewayPermit.getPaymentGatewayPermit;
 
 const app = getApps().length ? getApp() : initializeApp();
 const db = getFirestore(app);
@@ -228,14 +233,15 @@ exports.getPaymentConfig = onCall(async (request) => {
   return { config: await readPaymentConfig() };
 });
 
-exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret] }, async (request) => {
+exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
   requireAuth(request);
   const planId = String(request.data?.planId || "").trim();
   if (!planId) throw new HttpsError("invalid-argument", "Plan ID is required.");
 
   const plan = await getPlan(planId);
   const config = await readPaymentConfig();
-  const gateway = activeGateway(config);
+  const permit = await getActiveGatewayPermit();
+  const gateway = permit ? permit.provider : activeGateway(config);
   const method = String(request.data?.paymentMethod || "UPI").trim().toUpperCase();
   const gatewayMode = String(config["payment.gatewayMode"] || "TEST").toUpperCase();
   if (!["TEST", "LIVE"].includes(gatewayMode)) {
@@ -294,6 +300,7 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret] }, 
     gatewayReference: null,
     gatewayMode,
     gatewayProvider: gateway,
+    ...(permit ? { gatewayPermitRevision: permit.revision, gatewayDisplayName: permit.displayName } : {}),
     couponCode: couponId,
     // Purchase-time snapshot for billing audit/history.
     planPriceMinor: Number(plan.priceMinor || 0),
@@ -311,8 +318,8 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret] }, 
   await ref.set(payment);
 
   if (payment.status === "PENDING" && gateway === "RAZORPAY") {
-    const keyId = String(razorpayKeyId.value() || "").trim();
-    const keySecret = String(razorpayKeySecret.value() || "").trim();
+    const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+    const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
     if (!keyId || !keySecret) {
       await ref.update({ status: "FAILED", gatewayError: "RAZORPAY_NOT_CONFIGURED", updatedAtEpochMs: Date.now() });
       throw new HttpsError("failed-precondition", "Razorpay server credentials are not configured.");
@@ -386,7 +393,7 @@ exports.verifyPayment = onCall(async (request) => {
   return { ok: true, paymentId, subscriptionId: activation.subscriptionId, expiresAtEpochMs: activation.expiresAtEpochMs };
 });
 
-exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret] }, async (request) => {
+exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
   requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const orderId = String(request.data?.razorpayOrderId || "").trim();
@@ -409,8 +416,9 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
   if (payment.status === "REFUNDED") {
     throw new HttpsError("failed-precondition", "Refunded payment cannot be verified.");
   }
-  const keyId = String(razorpayKeyId.value() || "").trim();
-  const keySecret = String(razorpayKeySecret.value() || "").trim();
+  const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
+  const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+  const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
   if (!keyId || !keySecret) throw new HttpsError("failed-precondition", "Razorpay server credentials are not configured.");
 
   const expected = crypto.createHmac("sha256", keySecret).update(orderId + "|" + razorpayPaymentId).digest("hex");
@@ -798,29 +806,22 @@ exports.expireSubscriptions = onSchedule("every 1 hours", async () => {
 
 
 exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
-  { secrets: [razorpayWebhookSecret] },
+  { secrets: [razorpayWebhookSecret, gatewayEncryptionKey] },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
       return;
     }
     try {
-      const webhookSecret = String(razorpayWebhookSecret.value() || "").trim();
-      const signature = String(req.get("x-razorpay-signature") || "").trim();
-      if (!webhookSecret || !signature || !Buffer.isBuffer(req.rawBody)) {
-        res.status(401).send("Webhook authentication is not configured.");
+      if (!Buffer.isBuffer(req.rawBody)) {
+        res.status(400).send("Raw webhook body is required.");
         return;
       }
-      const expected = crypto.createHmac("sha256", webhookSecret).update(req.rawBody).digest("hex");
-      const actualBuffer = Buffer.from(signature, "utf8");
-      const expectedBuffer = Buffer.from(expected, "utf8");
-      if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
-        res.status(401).send("Invalid signature.");
-        return;
-      }
+      // Parse only to locate the payment's credential revision; no state changes
+      // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "order.paid", "payment.failed", "payment.refunded"].includes(eventName)) {
+      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
@@ -838,8 +839,22 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       }
       const paymentDoc = matches.docs[0];
       const payment = paymentDoc.data() || {};
+      const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
+      const webhookSecret = String(permit?.credentials?.webhookSecret || razorpayWebhookSecret.value() || "").trim();
+      const signature = String(req.get("x-razorpay-signature") || "").trim();
+      if (!webhookSecret || !signature) {
+        res.status(401).send("Webhook authentication is not configured.");
+        return;
+      }
+      const expected = crypto.createHmac("sha256", webhookSecret).update(req.rawBody).digest("hex");
+      const actualBuffer = Buffer.from(signature, "utf8");
+      const expectedBuffer = Buffer.from(expected, "utf8");
+      if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
+        res.status(401).send("Invalid signature.");
+        return;
+      }
       const now = Date.now();
-      if (eventName === "payment.captured" || eventName === "order.paid") {
+      if (eventName === "payment.captured") {
         if (Number(entity.amount || payment.amountMinor) !== Number(payment.amountMinor) ||
             String(entity.currency || payment.currency).toUpperCase() !== String(payment.currency || "INR").toUpperCase()) {
           res.status(400).send("Razorpay amount/currency mismatch.");
