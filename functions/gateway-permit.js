@@ -107,6 +107,12 @@ exports.savePaymentGatewayPermit = onCall(
     const existing = await CONFIG_REF.get();
     const previous = existing.exists ? existing.data()?.paymentGatewayPermit || {} : {};
     const hasNewCredentials = Boolean(keyId && keySecret && webhookSecret);
+    if (hasNewCredentials && mode === "TEST" && !keyId.startsWith("rzp_test_")) {
+      throw new HttpsError("invalid-argument", "Test mode requires a Razorpay test Key ID (rzp_test_…).");
+    }
+    if (hasNewCredentials && mode === "LIVE" && !keyId.startsWith("rzp_live_")) {
+      throw new HttpsError("invalid-argument", "Live mode requires a Razorpay live Key ID (rzp_live_…).");
+    }
     if (enabled && !hasNewCredentials) {
       throw new HttpsError("invalid-argument", "To enable the gateway or replace its credentials, enter Key ID, Key Secret, and Webhook Secret.");
     }
