@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -202,6 +203,72 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
       const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
       return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+    } catch (error) { next(error); }
+  });
+
+
+  // Create a short-lived, consent-based pairing invitation. The raw token/code
+  // are returned only once; only their hashes are persisted.
+  app.post("/api/pairing/invites", authenticate, requireFirestore, async (req, res, next) => {
+    try {
+      const allowedRoles = new Set(["Father", "Mother", "Son", "Daughter", "Brother", "Sister", "Husband", "Wife", "Mechanic", "Engineer", "Other"]);
+      const senderRole = String(req.body?.senderRole || "");
+      const receiverRole = String(req.body?.receiverRole || "");
+      if (!allowedRoles.has(senderRole) || !allowedRoles.has(receiverRole)) {
+        return res.status(400).json({ error: "Choose valid sender and receiver relationships." });
+      }
+      if (senderRole === receiverRole && senderRole !== "Other") {
+        return res.status(400).json({ error: "Sender and receiver relationships must be different." });
+      }
+      const now = Date.now();
+      const recent = await firestore.collection("pairingInvites")
+        .where("creatorUid", "==", req.user.uid)
+        .where("createdAtEpochMs", ">=", now - 60_000)
+        .limit(5).get();
+      if (recent.size >= 5) return res.status(429).json({ error: "Too many invitations. Please wait a minute and try again." });
+
+      const token = crypto.randomBytes(32).toString("base64url");
+      const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+      const expiresAtEpochMs = now + 10 * 60_000;
+      await firestore.collection("pairingInvites").doc(tokenHash).create({
+        creatorUid: req.user.uid, senderRole, receiverRole, tokenHash, codeHash,
+        status: "pending", createdAtEpochMs: now, expiresAtEpochMs
+      });
+      const baseUrl = String(process.env.PUBLIC_APP_URL || req.get("origin") || "").replace(/\/$/, "");
+      if (!baseUrl || !/^https:\/\//i.test(baseUrl)) {
+        await firestore.collection("pairingInvites").doc(tokenHash).delete();
+        return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to an HTTPS app URL before generating links." });
+      }
+      return res.status(201).json({
+        link: baseUrl + "/link?token=" + encodeURIComponent(token),
+        code, senderRole, receiverRole, expiresAtEpochMs
+      });
+    } catch (error) { next(error); }
+  });
+
+  // Validate an invitation without completing pairing. The receiving device
+  // must still explicitly confirm before any device relationship is created.
+  app.post("/api/pairing/invites/verify", authenticate, requireFirestore, async (req, res, next) => {
+    try {
+      const token = String(req.body?.token || "");
+      const code = String(req.body?.code || "");
+      if (!/^[A-Za-z0-9_-]{40,60}$/.test(token) || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ error: "A valid invitation link and 6-digit code are required." });
+      }
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+      const ref = firestore.collection("pairingInvites").doc(tokenHash);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "Invitation not found or invalid." });
+      const invite = snap.data();
+      if (invite.status !== "pending" || invite.expiresAtEpochMs <= Date.now()) {
+        return res.status(410).json({ error: "Invitation has expired or has already been used." });
+      }
+      if (invite.codeHash !== codeHash) return res.status(401).json({ error: "Verification code is incorrect." });
+      if (invite.creatorUid === req.user.uid) return res.status(400).json({ error: "Open the invitation from the receiving account/device." });
+      return res.json({ verified: true, senderRole: invite.senderRole, receiverRole: invite.receiverRole, requiresReceiverConsent: true, pairingCompleted: false });
     } catch (error) { next(error); }
   });
 
