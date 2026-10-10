@@ -94,11 +94,36 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    function validPairingClaim(deviceUid) {
+      return request.auth != null
+        && request.resource.data.controllerUid == request.auth.uid
+        && request.resource.data.pairingToken is string
+        && request.resource.data.pairingActive == true
+        && request.resource.data.pairedAt is int
+        && getAfter(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == deviceUid
+        && getAfter(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.claimedBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+    }
+
     match /pairingCodes/{token} {
-      allow create: if request.auth != null && request.resource.data.deviceUid == request.auth.uid;
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow create: if request.auth != null
+        && request.resource.data.deviceUid == request.auth.uid
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && !request.resource.data.keys().hasAny(["claimedBy"]);
+      allow read: if request.auth != null
+        && resource.data.expiresAt > request.time.toMillis()
+        && (
+          !resource.data.keys().hasAny(["claimedBy"])
+          || resource.data.claimedBy == request.auth.uid
+          || resource.data.deviceUid == request.auth.uid
+        );
       allow delete: if request.auth != null && resource.data.deviceUid == request.auth.uid;
-      allow update: if false;
+      allow update: if request.auth != null
+        && !resource.data.keys().hasAny(["claimedBy"])
+        && resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.claimedBy == request.auth.uid
+        && request.resource.data.claimedAt is int
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["claimedBy", "claimedAt"]);
     }
 
     match /mediaSessions/{sessionId} {
@@ -206,16 +231,30 @@ service cloud.firestore {
 
     match /devices/{uid} {
       allow create: if request.auth != null
-        && request.resource.data.controllerUid == request.auth.uid
-        && request.resource.data.pairingToken is string
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+        && (
+          (
+            request.resource.data.controllerUid == request.auth.uid
+            && request.resource.data.pairingToken is string
+            && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
+            && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
+          )
+          || validPairingClaim(uid)
+        );
 
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
       allow update: if request.auth != null
-        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+        && (
+          request.auth.uid == uid
+          || request.auth.uid == resource.data.controllerUid
+          || (
+            validPairingClaim(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "controllerUid", "pairingToken", "pairedAt", "pairingActive"
+            ])
+          )
+        );
 
       match /sharedLocation/{locationId} {
         allow create, update: if request.auth != null && request.auth.uid == uid;
