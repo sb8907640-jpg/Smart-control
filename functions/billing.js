@@ -242,6 +242,9 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gat
   const config = await readPaymentConfig();
   const permit = await getActiveGatewayPermit();
   const gateway = permit ? permit.provider : activeGateway(config);
+  if (!permit && gateway !== "TEST") {
+    throw new HttpsError("failed-precondition", "Live gateways must be configured through the Owner-only Permanent Gateway Permit.");
+  }
   const method = String(request.data?.paymentMethod || "UPI").trim().toUpperCase();
   const gatewayMode = String(permit?.mode || config["payment.gatewayMode"] || "TEST").toUpperCase();
   if (!["TEST", "LIVE"].includes(gatewayMode)) {
