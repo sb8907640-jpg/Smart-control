@@ -11,6 +11,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.functions.FirebaseFunctions
+import com.razorpay.Checkout
+import com.razorpay.PaymentData
+import com.razorpay.PaymentResultWithDataListener
+import com.smartcontrol.domain.billing.Payment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import org.json.JSONObject
+import android.widget.Toast
 import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.audit.AuditLogScreen
 import com.smartcontrol.presentation.billing.BillingScreen
@@ -46,7 +56,73 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
+
+    private var pendingRazorpayPaymentId: String? = null
+
+    private fun startRazorpayCheckout(payment: Payment) {
+        val orderId = payment.gatewayOrderId?.takeIf { it.isNotBlank() }
+        val keyId = payment.gatewayKeyId?.takeIf { it.isNotBlank() }
+        if (orderId == null || keyId == null) {
+            Toast.makeText(this, "Payment order is missing Razorpay details.", Toast.LENGTH_LONG).show()
+            return
+        }
+        pendingRazorpayPaymentId = payment.id
+        try {
+            Checkout.preload(applicationContext)
+            val checkout = Checkout()
+            checkout.setKeyID(keyId)
+            val options = JSONObject().apply {
+                put("name", "Family Suraksha")
+                put("description", "Subscription: " + payment.planId)
+                put("order_id", orderId)
+                put("currency", payment.currency)
+                put("amount", payment.amountMinor)
+                put("prefill", JSONObject().apply {
+                    put("email", FirebaseAuth.getInstance().currentUser?.email.orEmpty())
+                })
+                put("notes", JSONObject().put("smartcontrolPaymentId", payment.id))
+            }
+            checkout.open(this, options)
+        } catch (error: Exception) {
+            pendingRazorpayPaymentId = null
+            Toast.makeText(this, error.message ?: "Could not open Razorpay checkout.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onPaymentSuccess(razorpayPaymentID: String?, paymentData: PaymentData?) {
+        val paymentId = pendingRazorpayPaymentId
+        val orderId = paymentData?.orderId
+        val paymentReference = paymentData?.paymentId ?: razorpayPaymentID
+        val signature = paymentData?.signature
+        if (paymentId.isNullOrBlank() || orderId.isNullOrBlank() || paymentReference.isNullOrBlank() || signature.isNullOrBlank()) {
+            pendingRazorpayPaymentId = null
+            Toast.makeText(this, "Checkout returned incomplete verification details. No subscription was activated.", Toast.LENGTH_LONG).show()
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                FirebaseFunctions.getInstance().getHttpsCallable("verifyRazorpayPayment").call(
+                    mapOf(
+                        "paymentId" to paymentId,
+                        "razorpayOrderId" to orderId,
+                        "razorpayPaymentId" to paymentReference,
+                        "razorpaySignature" to signature
+                    )
+                ).await()
+                Toast.makeText(this@MainActivity, "Payment verified by server. Subscription activated.", Toast.LENGTH_LONG).show()
+            } catch (error: Exception) {
+                Toast.makeText(this@MainActivity, error.message ?: "Server verification failed. Do not retry payment blindly; check billing status.", Toast.LENGTH_LONG).show()
+            } finally {
+                pendingRazorpayPaymentId = null
+            }
+        }
+    }
+
+    override fun onPaymentError(code: Int, response: String?, paymentData: PaymentData?) {
+        pendingRazorpayPaymentId = null
+        Toast.makeText(this, "Razorpay checkout failed ($code): " + (response ?: "No details"), Toast.LENGTH_LONG).show()
+    }
 
     private val incomingPairLink = mutableStateOf<android.net.Uri?>(null)
 
@@ -208,7 +284,7 @@ class MainActivity : ComponentActivity() {
                     "permissions" -> PermissionCenterScreen(onBack = backToHub)
                     "media" -> MediaSessionPanel(onBack = backToHub)
                     "safety" -> SafetyAlertsScreen(onBack = backToHub)
-                    "billing" -> BillingScreen(onBack = backToHub)
+                    "billing" -> BillingScreen(onBack = backToHub, onRazorpayCheckout = ::startRazorpayCheckout)
                     "settings" -> SettingsScreen(
                         onBack = backToHub,
                         onEndSession = {
