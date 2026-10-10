@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -1198,8 +1199,9 @@ private fun PaymentGatewayPermitPanel() {
         try {
             val result = functions.getHttpsCallable("getPaymentGatewayPermit").call().await().data as? Map<*, *>
             if (result != null) {
-                configured = result["configured"] == true
-                enabled = result["enabled"] == true
+                val hasConfig = result["configured"] == true
+                configured = hasConfig
+                enabled = if (hasConfig) result["enabled"] == true else true
                 displayName = (result["displayName"] as? String).orEmpty().ifBlank { "Razorpay" }
                 mode = (result["mode"] as? String).orEmpty().ifBlank { "LIVE" }
                 revision = (result["revision"] as? Number)?.toLong() ?: 0L
@@ -1253,14 +1255,16 @@ private fun PaymentGatewayPermitPanel() {
                 onValueChange = { keySecret = it },
                 label = { Text("Razorpay Key Secret") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation()
             )
             OutlinedTextField(
                 value = webhookSecret,
                 onValueChange = { webhookSecret = it },
                 label = { Text("Razorpay Webhook Secret") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation()
             )
             Row(
                 Modifier.fillMaxWidth(),
@@ -1300,7 +1304,7 @@ private fun PaymentGatewayPermitPanel() {
                     }
                 },
                 enabled = !busy && displayName.trim().length >= 2 &&
-                    keyId.isNotBlank() && keySecret.isNotBlank() && webhookSecret.isNotBlank(),
+                    (!enabled || (keyId.isNotBlank() && keySecret.isNotBlank() && webhookSecret.isNotBlank())),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (busy) "Please wait…" else "Save / Replace Gateway Credentials")
