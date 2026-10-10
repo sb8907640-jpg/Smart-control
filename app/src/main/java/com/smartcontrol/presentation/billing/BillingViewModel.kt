@@ -57,7 +57,7 @@ class BillingViewModel @Inject constructor(
                         _message.value = "Payment completed and subscription is active."
                     } else {
                         _message.value = "Payment order created: " + payment.id +
-                            ". Configure Razorpay in Owner settings and add server secrets to enable checkout."
+                            ". Open Owner / Admin Control Panel → Permanent Gateway Permit and complete secure server setup to enable checkout."
                     }
                 }
                 .onFailure { _message.value = it.message ?: "Payment could not be created." }
