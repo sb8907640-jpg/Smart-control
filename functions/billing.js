@@ -380,6 +380,9 @@ exports.verifyPayment = onCall(async (request) => {
   if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
   const payment = snap.data() || {};
   if (payment.status === "REFUNDED") throw new HttpsError("failed-precondition", "Refunded payment cannot be verified.");
+  if (normalizeGateway(payment.gatewayProvider || payment.gateway) !== "TEST") {
+    throw new HttpsError("failed-precondition", "Manual reference verification is disabled for real gateways. Use the provider's cryptographic/server verification flow.");
+  }
 
   const now = Date.now();
   const update = {
