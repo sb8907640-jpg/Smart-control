@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.functions.FirebaseFunctions
+import kotlinx.coroutines.tasks.await
 import com.smartcontrol.domain.owner.FeatureOverride
 import com.smartcontrol.data.billing.OwnerBillingRepository
 import com.smartcontrol.data.billing.OwnerProfile
@@ -437,6 +439,10 @@ fun OwnerAdminScreen(
                                 onValueChange = viewModel::editOwnerValue
                             )
                         }
+                    }
+
+                    item {
+                        PaymentGatewayPermitPanel()
                     }
 
                     item {
@@ -1169,3 +1175,145 @@ private fun parseIntMap(value: String): Map<String, Int> =
         }
     }.toMap()
 
+
+
+@Composable
+private fun PaymentGatewayPermitPanel() {
+    val functions = remember { FirebaseFunctions.getInstance() }
+    val scope = rememberCoroutineScope()
+    var displayName by remember { mutableStateOf("Razorpay") }
+    var keyId by remember { mutableStateOf("") }
+    var keySecret by remember { mutableStateOf("") }
+    var webhookSecret by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("LIVE") }
+    var enabled by remember { mutableStateOf(true) }
+    var configured by remember { mutableStateOf(false) }
+    var revision by remember { mutableStateOf(0L) }
+    var updatedAt by remember { mutableStateOf(0L) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("Loading secure gateway status…") }
+
+    suspend fun refreshStatus() {
+        busy = true
+        try {
+            val result = functions.getHttpsCallable("getPaymentGatewayPermit").call().await().data as? Map<*, *>
+            if (result != null) {
+                configured = result["configured"] == true
+                enabled = result["enabled"] == true
+                displayName = (result["displayName"] as? String).orEmpty().ifBlank { "Razorpay" }
+                mode = (result["mode"] as? String).orEmpty().ifBlank { "LIVE" }
+                revision = (result["revision"] as? Number)?.toLong() ?: 0L
+                updatedAt = (result["updatedAtEpochMs"] as? Number)?.toLong() ?: 0L
+                message = if (configured) "Saved securely • revision $revision" else "Not configured yet"
+            } else {
+                message = "Could not read gateway status."
+            }
+        } catch (error: Exception) {
+            message = error.message ?: "Unable to read gateway status. Check Owner access."
+        } finally {
+            busy = false
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshStatus() }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Permanent Gateway Permit", style = MaterialTheme.typography.titleLarge)
+            Text("Owner-only setting. Change the active Razorpay credentials at any time. Credentials are encrypted on the server and are never read back into the app.")
+            Text(message, style = MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(
+                value = displayName,
+                onValueChange = { displayName = it },
+                label = { Text("Gateway name / display label") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text("Provider adapter: Razorpay (the currently implemented server adapter)")
+            Text("Gateway mode")
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = mode == "TEST", onClick = { mode = "TEST" })
+                    Text("Test")
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = mode == "LIVE", onClick = { mode = "LIVE" })
+                    Text("Live")
+                }
+            }
+            OutlinedTextField(
+                value = keyId,
+                onValueChange = { keyId = it },
+                label = { Text("Razorpay Key ID") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = keySecret,
+                onValueChange = { keySecret = it },
+                label = { Text("Razorpay Key Secret") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = webhookSecret,
+                onValueChange = { webhookSecret = it },
+                label = { Text("Razorpay Webhook Secret") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(if (enabled) "Permit enabled" else "Permit disabled")
+                Switch(checked = enabled, onCheckedChange = { enabled = it })
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        message = "Saving encrypted gateway settings…"
+                        try {
+                            functions.getHttpsCallable("savePaymentGatewayPermit").call(
+                                mapOf(
+                                    "provider" to "RAZORPAY",
+                                    "displayName" to displayName.trim(),
+                                    "mode" to mode,
+                                    "enabled" to enabled,
+                                    "keyId" to keyId.trim(),
+                                    "keySecret" to keySecret,
+                                    "webhookSecret" to webhookSecret
+                                )
+                            ).await()
+                            keyId = ""
+                            keySecret = ""
+                            webhookSecret = ""
+                            message = "Gateway permit saved. Secrets cleared from the form."
+                            refreshStatus()
+                        } catch (error: Exception) {
+                            message = error.message ?: "Save failed. Check Owner access and server setup."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+                enabled = !busy && displayName.trim().length >= 2 &&
+                    keyId.isNotBlank() && keySecret.isNotBlank() && webhookSecret.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (busy) "Please wait…" else "Save / Replace Gateway Credentials")
+            }
+            OutlinedButton(
+                onClick = { scope.launch { refreshStatus() } },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Refresh Gateway Status") }
+            if (configured && updatedAt > 0L) {
+                Text("Last updated: $updatedAt")
+            }
+            Text("Security: never place gateway secrets in APK constants, GitHub source, logs, or chat. This form sends them only to the authenticated server function.")
+        }
+    }
+}
