@@ -103,20 +103,28 @@ exports.savePaymentGatewayPermit = onCall(
     if (displayName.length < 2 || displayName.length > 80) {
       throw new HttpsError("invalid-argument", "Gateway display name must be 2–80 characters.");
     }
-    if (!keyId || !keySecret || !webhookSecret) {
-      throw new HttpsError("invalid-argument", "Enter the gateway Key ID, Key Secret, and Webhook Secret. Secrets are sent only to this server function and are never returned to the app.");
-    }
-
     const now = Date.now();
     const existing = await CONFIG_REF.get();
     const previous = existing.exists ? existing.data()?.paymentGatewayPermit || {} : {};
+    const hasNewCredentials = Boolean(keyId && keySecret && webhookSecret);
+    if (enabled && !hasNewCredentials) {
+      throw new HttpsError("invalid-argument", "To enable the gateway or replace its credentials, enter Key ID, Key Secret, and Webhook Secret.");
+    }
+    const encryptedCredentials = hasNewCredentials
+      ? encryptCredentials({ keyId, keySecret, webhookSecret })
+      : previous.encryptedCredentials;
+    if (!encryptedCredentials) {
+      throw new HttpsError("invalid-argument", "Enter gateway credentials before saving the first permit.");
+    }
     const permit = {
       enabled,
       mode,
       provider,
       displayName,
-      encryptedCredentials: encryptCredentials({ keyId, keySecret, webhookSecret }),
-      credentialFieldsConfigured: { keyId: true, keySecret: true, webhookSecret: true },
+      encryptedCredentials,
+      credentialFieldsConfigured: hasNewCredentials
+        ? { keyId: true, keySecret: true, webhookSecret: true }
+        : (previous.credentialFieldsConfigured || { keyId: true, keySecret: true, webhookSecret: true }),
       updatedAtEpochMs: now,
       updatedBy: request.auth.uid,
       revision: Number(previous.revision || 0) + 1
