@@ -1110,9 +1110,11 @@ private fun OwnerPaymentPanel(
                         Text(payment.currency + " " + (payment.amountMinor / 100.0) + " • " + payment.status)
                         Text("Gateway: " + payment.gateway)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (payment.status == Payment.Status.PENDING || payment.status == Payment.Status.CREATED) {
+                            if ((payment.status == Payment.Status.PENDING || payment.status == Payment.Status.CREATED) &&
+                                payment.gateway.equals("TEST", ignoreCase = true)
+                            ) {
                                 OutlinedButton(onClick = { onVerify(payment.id, reference) }, enabled = reference.isNotBlank()) {
-                                    Text("Verify")
+                                    Text("Verify test payment")
                                 }
                             }
                             if (payment.status == Payment.Status.SUCCESS) {
