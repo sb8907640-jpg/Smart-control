@@ -81,3 +81,35 @@ test("health endpoint fails closed for production without residency configuratio
     if (previousRegion === undefined) delete process.env.SMARTCONTROL_DATA_REGION; else process.env.SMARTCONTROL_DATA_REGION = previousRegion;
   }
 });
+
+
+test("pairing invitation requires valid relationship selections", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "sender-1" }),
+    db: {}
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/pairing/invites", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ senderRole: "Unknown", receiverRole: "Son" })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /valid sender and receiver/i);
+  });
+});
+
+test("pairing invitation verification requires authentication", async () => {
+  const app = createApp({ verifyIdToken: async () => ({ uid: "receiver-1" }), db: {} });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/pairing/invites/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "some-token", code: "123456" })
+    });
+    assert.equal(response.status, 401);
+  });
+});
