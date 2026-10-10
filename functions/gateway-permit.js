@@ -5,6 +5,7 @@ const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 
 const gatewayEncryptionKey = defineSecret("SMARTCONTROL_GATEWAY_ENCRYPTION_KEY");
+exports.gatewayEncryptionKey = gatewayEncryptionKey;
 const app = getApps().length ? getApp() : initializeApp();
 const db = getFirestore(app);
 const CONFIG_REF = db.doc("ownerSettings/global");
@@ -115,6 +116,7 @@ exports.savePaymentGatewayPermit = onCall(
       updatedBy: request.auth.uid,
       revision: Number(previous.revision || 0) + 1
     };
+    await db.collection("paymentGatewayPermitVersions").doc(String(permit.revision)).set(permit);
     await CONFIG_REF.set({ paymentGatewayPermit: permit }, { merge: true });
     return {
       ok: true,
@@ -146,13 +148,19 @@ exports.getPaymentGatewayPermit = onCall(async (request) => {
 });
 
 // Server-only helper. Never expose its result from a callable endpoint or log it.
-exports.getActiveGatewayPermit = async function getActiveGatewayPermit() {
-  const snap = await CONFIG_REF.get();
-  const permit = snap.exists ? snap.data()?.paymentGatewayPermit : null;
-  if (!permit) return null; // Backward-compatible fallback to existing server secrets.
-  if (permit.enabled !== true) {
-    throw new HttpsError("failed-precondition", "The Owner has disabled the Payment Gateway Permit.");
+exports.getActiveGatewayPermit = async function getActiveGatewayPermit(revision = null) {
+  let permit = null;
+  if (revision !== null && revision !== undefined && Number(revision) > 0) {
+    const versionSnap = await db.collection("paymentGatewayPermitVersions").doc(String(Number(revision))).get();
+    permit = versionSnap.exists ? versionSnap.data() : null;
+  } else {
+    const snap = await CONFIG_REF.get();
+    permit = snap.exists ? snap.data()?.paymentGatewayPermit : null;
+    if (permit && permit.enabled !== true) {
+      throw new HttpsError("failed-precondition", "The Owner has disabled the Payment Gateway Permit.");
+    }
   }
+  if (!permit) return null; // Backward-compatible fallback to existing server secrets.
   const provider = String(permit.provider || "").toUpperCase();
   if (!IMPLEMENTED_PROVIDERS.has(provider)) {
     throw new HttpsError("failed-precondition", "The selected payment gateway does not have a server adapter.");
@@ -160,6 +168,7 @@ exports.getActiveGatewayPermit = async function getActiveGatewayPermit() {
   return {
     provider,
     displayName: String(permit.displayName || provider),
+    revision: Number(permit.revision || 0),
     credentials: decryptCredentials(permit.encryptedCredentials)
   };
 };
