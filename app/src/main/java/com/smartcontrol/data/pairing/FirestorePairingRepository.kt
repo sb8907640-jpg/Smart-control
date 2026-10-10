@@ -116,7 +116,10 @@ class FirestorePairingRepository @Inject constructor(
                 "pairedAt" to System.currentTimeMillis(),
                 "pairingActive" to true
             ), SetOptions.merge())
-            tx.delete(ref)
+            tx.update(ref, mapOf(
+                "claimedBy" to controllerUid,
+                "claimedAt" to System.currentTimeMillis()
+            ))
             deviceUid
         }.await()
         PairedDevice(deviceUid, controllerUid, System.currentTimeMillis(), true)
