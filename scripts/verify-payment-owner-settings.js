@@ -18,6 +18,8 @@ const ownerRepository = read("app/src/main/java/com/smartcontrol/data/owner/Fire
 const billingScreen = read("app/src/main/java/com/smartcontrol/presentation/billing/BillingScreen.kt");
 const billingRepository = read("app/src/main/java/com/smartcontrol/data/billing/FirebaseBillingRepository.kt");
 const billingFunctions = read("functions/billing.js");
+const gatewayPermit = read("functions/gateway-permit.js");
+const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
 const firestoreRules = read("firestore.rules");
 
 console.log("FAMILY SURAKSHA — OWNER PAYMENT / TARIFF INTEGRATION VERIFICATION");
