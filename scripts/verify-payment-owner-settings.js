@@ -40,6 +40,8 @@ check("Gateway credentials are AES-256-GCM encrypted server-side",
   gatewayPermit.includes("aes-256-gcm") && gatewayPermit.includes("encryptedCredentials"));
 check("Gateway writes are restricted to configured Owner identities",
   gatewayPermit.includes("async function requireOwner") && gatewayPermit.includes("Only a configured Family Suraksha Owner"));
+check("Legacy editable gateway fields cannot activate live gateways",
+  billingFunctions.includes("Live gateways must be configured through the Owner-only Permanent Gateway Permit."));
 check("Owner panel exposes permanent permit and secret entry fields",
   ownerPanel.includes("PaymentGatewayPermitPanel") && ownerPanel.includes("savePaymentGatewayPermit") &&
   ownerPanel.includes("Razorpay Webhook Secret"));
