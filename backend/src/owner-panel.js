@@ -194,7 +194,7 @@ function installOwnerPanelRoutes(app, { db }) {
     try {
       const values = req.body?.values;
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
-      await collection("systemConfig").doc("current").set({ values, updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
+      await collection("systemConfig").doc("current").set({ values, updatedAt: now(), updatedBy: req.user.uid });
       await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "systemConfig");
       res.json({ ok: true, status: "UPDATED" });
     } catch (e) { next(e); }
