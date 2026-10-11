@@ -171,7 +171,7 @@ function GatewayManager() {
       <label>Webhook Secret<input className="input" type="password" autoComplete="new-password" value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder={permit?.credentialFieldsConfigured?.webhookSecret ? "Configured — enter new value to rotate" : "Enter webhook secret securely"}/></label>
       <label style={{display:"flex",gap:10,alignItems:"center"}}><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}/> Enable Razorpay permit</label>
     </div>
-    <div className="row-actions"><button className="btn primary" disabled={busy || !displayName.trim() || !keyId.trim() || !keySecret.trim() || !webhookSecret.trim()} onClick={() => void savePermit()}>Save encrypted Razorpay permit</button></div>
+    <div className="row-actions"><button className="btn primary" disabled={busy || !displayName.trim() || ((!permit?.configured || enabled) && (!keyId.trim() || !keySecret.trim() || !webhookSecret.trim()))} onClick={() => void savePermit()}>Save encrypted Razorpay permit</button></div>
     <p className="muted small">To rotate or enable the permit, enter all three credential fields. Turning it off does not delete the encrypted credential history. Never paste credentials into the All settings JSON editor or public issues.</p>
     <hr style={{border:0,borderTop:"1px solid #e1e8f2",margin:"24px 0"}}/>
     <h3>Other gateway drafts</h3>
