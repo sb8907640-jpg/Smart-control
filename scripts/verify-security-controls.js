@@ -25,6 +25,49 @@ check("Boot/watchdog opt-in", /explicit user opt-in only/i.test(policy) && /boot
 check("Boot receiver is explicit opt-in", /RECEIVE_BOOT_COMPLETED/.test(manifest) && /SmartControlBootReceiver/.test(manifest) && /auto_start_service/.test(read("app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt")), "Boot persistence only starts when the saved user preference is enabled.");
 check("SOS approval boundary", /APPROVED/.test(session) && /approve/.test(sessionRepo) && /never silently grants/i.test(policy), "Emergency flow does not silently grant protected permissions.");
 check("No permission bypass", !/(auto.?grant|silentGrant|permissionBypass|skipPermissionDialog)/i.test(policy + service + manifest), "No silent permission bypass marker.");
+const pairingRepo = read("app/src/main/java/com/smartcontrol/data/pairing/FirestorePairingRepository.kt");
+const mediaViewModel = read("app/src/main/java/com/smartcontrol/presentation/media/MediaSessionViewModel.kt");
+const firestoreRules = read("firestore.rules");
+const storageRules = read("storage.rules");
+const iceServers = read("functions/ice-servers.js");
+const gradle = read("app/build.gradle.kts");
+
+check("Pairing lifetime does not read private Owner settings on client",
+  pairingRepo.includes('getHttpsCallable("getDevicePairingPolicy")') && !pairingRepo.includes("ownerSettingsRepository"),
+  "Regular family accounts obtain only the effective expiry policy from the authenticated callable.");
+check("Server computes the pairing policy",
+  read("functions/index.js").includes("exports.getDevicePairingPolicy") &&
+    read("functions/index.js").includes("PairingTokenExpiryMinutes"),
+  "Plan expiry is read server-side without exposing owner settings.");
+check("Pairing codes enforce Owner-only no-expiry",
+  firestoreRules.includes("request.resource.data.expiresAt <= request.time.toMillis() + 3600000") &&
+    firestoreRules.includes("request.auth.token.role == 'OWNER'") &&
+    firestoreRules.includes("request.resource.data.expiryMode == 'NO_EXPIRY'"),
+  "Non-owner pairing codes are limited to 60 minutes.");
+check("Pairing claim consumes code only with matching atomic device link",
+  firestoreRules.includes("getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid))") &&
+    firestoreRules.includes("pairingToken == token"),
+  "A controller cannot delete a pairing code without the matching linked-device write.");
+check("Media offer and answer SDP are participant-owned",
+  firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
+    firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
+  "Target publishes offer SDP; controller publishes answer SDP.");
+check("File transfer requests require an active paired receiver",
+  firestoreRules.includes("data.pairingActive == true") &&
+    firestoreRules.includes("request.resource.data.receiverDeviceId"),
+  "Transfers cannot be opened to arbitrary unrelated accounts.");
+check("Receiver cannot download a transfer before READY",
+  storageRules.includes("transferDoc().data.status == 'READY'"),
+  "Storage read is gated until upload completes.");
+check("TURN shared secret is not embedded in Android APK",
+  !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
+    iceServers.includes('createHmac("sha1", sharedSecret)'),
+  "Authenticated callable issues expiring TURN REST credentials server-side.");
+check("Media session requests server-issued ICE configuration",
+  mediaViewModel.includes('getHttpsCallable("getWebRtcIceServers")') &&
+    mediaViewModel.includes("resolveIceServers()"),
+  "Media sessions use TURN when configured and display a STUN-only warning otherwise.");
+
 
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
