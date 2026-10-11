@@ -144,8 +144,14 @@ export default function OwnerPanel() {
     if (!user) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      await apiRequest(path, user, method, payload);
-      setNotice(label);
+      const result = await apiRequest<Record<string, unknown>>(path, user, method, payload);
+      if (path === "/api/owner/device-links/generate" || path.startsWith("/api/owner/device-links/regenerate/")) {
+        const code = typeof result.code === "string" ? result.code : "";
+        const expiry = typeof result.expiresAt === "number" ? new Date(result.expiresAt).toLocaleString() : "not supplied";
+        setNotice(code ? `${label} One-time code: ${code} · Expires: ${expiry}. Copy it now; it is not written to the audit log.` : label);
+      } else {
+        setNotice(label);
+      }
       setEditorId(null); setShowCreate(false);
       if (refresh) await loadTab(active, user);
     } catch (e) {
@@ -207,7 +213,7 @@ export default function OwnerPanel() {
       <div className="owner-login"><p>SMART CONTROL · PRIVATE ADMINISTRATION</p><h1>🔒 OWNER Control Panel</h1><p className="muted">{status}</p>
       {error && <p className="error">{error}</p>}
       {!user ? <button className="primary" onClick={signIn}>Continue with Google</button> : <button className="primary" onClick={() => void signOut(authClient())}>Sign out</button>}
-      <p className="muted">Free to use in this app. Owner access still requires the backend OWNER allowlist and valid Firebase authentication. No client-side bypass is provided.</p></div>
+      <p className="muted">There is no separate fee for this panel; Firebase/backend hosting may have provider charges. Owner access still requires the backend OWNER allowlist and valid Firebase authentication. No client-side bypass is provided.</p></div>
     </main>;
   }
 
@@ -226,7 +232,7 @@ export default function OwnerPanel() {
         {notice && <p className="notice">{notice}</p>}{error && <p className="error">{error}</p>}{busy && <p className="muted">Working…</p>}
         {active === "overview" && <><div className="card"><span className="pill">SERVER AUTHORIZED</span><h2>Owner control center</h2><p className="muted">Signed in as an authenticated Firebase user. Privileged actions are checked again by the backend. Owner identity fields are intentionally not exposed by the panel API.</p><p><strong>Role:</strong> {panel.role} &nbsp; <strong>Visibility:</strong> {panel.publicVisibility} &nbsp; <strong>Identity:</strong> {panel.identityVisibility}</p><p className="muted small">{status}</p></div><div className="grid">{summary.map(item => <button key={item.value} className="stat" onClick={() => setActive(item.value as TabId)}><span>{item.label}</span><strong>Open →</strong></button>)}</div><div className="card"><h2>All owner capabilities</h2>{Object.entries(panel.capabilities).map(([area, actions]) => <p key={area}><strong>{area}</strong>: {actions.join(" · ")}</p>)}</div><div className="card"><h2>Safety and security</h2><p className="muted">This dashboard does not bypass user consent, Android operating-system permissions, or approved remote-control sessions. Keep production credentials in server-side environment/secret storage.</p></div></>}
         {active === "health" && <div className="card"><h2>Backend health response</h2><pre>{jsonText(health ?? { status: "Use Refresh to check health." })}</pre></div>}
-        {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated. Review the returned code in the API response or audit trail.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">For safety, the panel does not display a generated secret code in a toast. Check the API response in the deployment logs only if logging is configured securely.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
+        {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated. Review the returned code in the API response or audit trail.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">The one-time code is shown after generation so you can copy it. Treat it like a password and share it only with the intended recipient.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
         {active === "settings" && <div className="card"><h2>Global settings JSON</h2><p className="muted">Edit all global settings as a JSON object. Keep values compatible with the backend consumers. Changes are audited.</p>{rows[0] && <RecordCard row={rows[0]} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} hideSummary/>}</div>}
         {(active === "users" || active === "plans" || active === "features" || active === "free-access" || active === "subscriptions" || active === "payments" || active === "emi" || active === "legal-templates" || active === "support-tickets" || active === "audit") && <div className="card">
           <div className="heading"><div><h2>{currentTab.label} records</h2><p className="muted small">{rows.length} record(s) loaded. Use Edit JSON to change the complete record payload.</p></div><div className="toolbar">{(active === "plans" || active === "free-access") && <button className="btn primary" onClick={() => { setShowCreate(v => !v); setError(""); setEditorId(null); }}>＋ {active === "plans" ? "Create plan" : "Approve free access"}</button>}</div></div>
@@ -239,13 +245,13 @@ export default function OwnerPanel() {
   </main>;
 }
 
-function RecordCard({ row, editorId, editorText, setEditorId, setEditorText, onSave, onCancel, busy, extraActions, hideSummary = false }: {
+function RecordCard({ row, editorId, editorText, setEditorId, setEditorText, onSave, onCancel, busy, extraActions, hideSummary = false, readOnly = false }: {
   row: Row; editorId: string | null; editorText: string; setEditorId: (value: string | null) => void; setEditorText: (value: string) => void;
-  onSave: (row: Row) => void; onCancel: () => void; busy: boolean; extraActions?: React.ReactNode; hideSummary?: boolean;
+  onSave: (row: Row) => void; onCancel: () => void; busy: boolean; extraActions?: React.ReactNode; hideSummary?: boolean; readOnly?: boolean;
 }) {
   const editing = editorId === row.id;
   return <article className="record">
-    <div className="record-head"><div><div className="record-title">{recordLabel(row)}</div><div className="muted small">ID: {row.id} {row.status ? ` · Status: ${String(row.status)}` : ""}</div></div><div className="toolbar"><button className="btn" onClick={() => { setEditorId(editing ? null : row.id); setEditorText(jsonText(hideSummary ? cleanRecord(row) : cleanRecord(row))); }}>{editing ? "Close editor" : "Edit JSON"}</button>{extraActions}</div></div>
+    <div className="record-head"><div><div className="record-title">{recordLabel(row)}</div><div className="muted small">ID: {row.id} {row.status ? ` · Status: ${String(row.status)}` : ""}</div></div><div className="toolbar">{!readOnly && <button className="btn" onClick={() => { setEditorId(editing ? null : row.id); setEditorText(jsonText(cleanRecord(row))); }}>{editing ? "Close editor" : "Edit JSON"}</button>}{extraActions}</div></div>
     {!hideSummary && !editing && <pre>{jsonText(row)}</pre>}
     {editing && <><textarea className="json" value={editorText} onChange={e => setEditorText(e.target.value)} spellCheck={false}/><div className="row-actions"><button className="btn primary" disabled={busy} onClick={() => onSave(row)}>Save changes</button><button className="btn" onClick={onCancel}>Cancel</button></div></>}
   </article>;
