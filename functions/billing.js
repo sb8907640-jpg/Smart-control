@@ -946,6 +946,12 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       res.status(400).send("Payment ID and reference are required.");
       return;
     }
+    // The signed payload must refer to the exact payment record whose provider
+    // secret was used to validate this webhook.
+    if (webhookPaymentId !== paymentId) {
+      res.status(400).send("Webhook payment ID mismatch.");
+      return;
+    }
 
     const ref = db.collection("payments").doc(paymentId);
     const snap = await ref.get();
