@@ -5,55 +5,16 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-
-private fun networkLabel(capabilities: NetworkCapabilities?): String = when {
-    capabilities == null -> "Checking connection"
-    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> "Online"
-    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) -> "Limited"
-    else -> "Connected, no internet"
-}
-
-private fun readNetworkStatus(context: Context): String {
-    val manager = context.getSystemService(ConnectivityManager::class.java) ?: return "Offline"
-    val network = manager.activeNetwork ?: return "Offline"
-    return networkLabel(manager.getNetworkCapabilities(network))
-}
-
-@Composable
-private fun rememberNetworkStatus(): String {
-    val context = LocalContext.current
-    var status by remember(context) { mutableStateOf(readNetworkStatus(context)) }
-    DisposableEffect(context) {
-        val manager = context.getSystemService(ConnectivityManager::class.java)
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                status = networkLabel(manager?.getNetworkCapabilities(network))
-            }
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                status = networkLabel(networkCapabilities)
-            }
-            override fun onLost(network: Network) {
-                status = readNetworkStatus(context)
-            }
-        }
-        if (manager != null) {
-            runCatching { manager.registerDefaultNetworkCallback(callback) }
-            status = readNetworkStatus(context)
-        } else {
-            status = "Offline"
-        }
-        onDispose {
-            if (manager != null) runCatching { manager.unregisterNetworkCallback(callback) }
-        }
-    }
-    return status
-}
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
+import com.smartcontrol.presentation.pairing.PairingViewModel
 
 @Composable
 fun SessionScreen(
@@ -62,72 +23,121 @@ fun SessionScreen(
     onStop: () -> Unit,
     onOpenPairing: () -> Unit,
     onOpenFeatures: () -> Unit,
+    onOpenSettings: () -> Unit,
     autoStart: Boolean,
-    onAutoStartChanged: (Boolean) -> Unit
+    onAutoStartChanged: (Boolean) -> Unit,
+    pairingViewModel: PairingViewModel = hiltViewModel()
 ) {
-    val networkStatus = rememberNetworkStatus()
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+    val context = LocalContext.current
+    val user = FirebaseAuth.getInstance().currentUser
+    val currentUid = user?.uid.orEmpty()
+    val displayName = user?.displayName?.takeIf { it.isNotBlank() }
+        ?: user?.email?.substringBefore("@")?.takeIf { it.isNotBlank() }
+        ?: "Family member"
+    val devices by pairingViewModel.controlledDevices.collectAsState()
+    val pairedSide by pairingViewModel.pairing.collectAsState()
+    var networkLabel by remember { mutableStateOf(readNetworkLabel(context)) }
+
+    DisposableEffect(context) {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { networkLabel = readNetworkLabel(context) }
+            override fun onLost(network: Network) { networkLabel = readNetworkLabel(context) }
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                networkLabel = readNetworkLabel(context)
+            }
+        }
+        runCatching { manager?.registerDefaultNetworkCallback(callback) }
+        onDispose { runCatching { manager?.unregisterNetworkCallback(callback) } }
+    }
+
+    val isReceiverPaired = pairedSide != null && pairedSide?.controllerUid != currentUid
+    val linkedCount = devices.size + if (isReceiverPaired) 1 else 0
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            if (running) "RUNNING" else "STOPPED",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("Network: $networkStatus", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Online means Android validated internet access. Limited means a network is present but internet validation is unavailable.",
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(Modifier.height(16.dp))
-
-        Button(
-            onClick = onStart,
-            enabled = !running,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("START")
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Family Suraksha", style = MaterialTheme.typography.headlineMedium)
+                    Text("Welcome, $displayName", style = MaterialTheme.typography.titleMedium)
+                    Text("Linked devices: $linkedCount")
+                    Text("Network: $networkLabel")
+                    Text("Weak signal may slow transfers or live media; a working internet connection is required for remote linking.")
+                }
+            }
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onStop,
-            enabled = running,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("STOP")
+        item {
+            Button(onClick = onOpenPairing, modifier = Modifier.fillMaxWidth()) {
+                Text("GENERATE LINK / DEVICE LINK")
+            }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedButton(onClick = onOpenPairing, modifier = Modifier.fillMaxWidth()) {
-            Text("Device Pairing")
+        item {
+            Text("My Devices", style = MaterialTheme.typography.titleLarge)
+            if (devices.isEmpty() && !isReceiverPaired) {
+                Text("No devices linked yet. Generate a link on one device, then open it on the other device.")
+            }
         }
-        OutlinedButton(onClick = onOpenFeatures, modifier = Modifier.fillMaxWidth()) {
-            Text("Family Suraksha - All Features")
+        items(devices, key = { it.deviceUid }) { device ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Linked device", style = MaterialTheme.typography.titleMedium)
+                    Text("Device ID: " + device.deviceUid)
+                    Text(if (device.active) "Status: Paired" else "Status: Not connected")
+                }
+            }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Automatic Service Start", modifier = Modifier.weight(1f))
-            Switch(checked = autoStart, onCheckedChange = onAutoStartChanged)
+        if (isReceiverPaired) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("This device is linked", style = MaterialTheme.typography.titleMedium)
+                        Text("Controller ID: " + pairedSide!!.controllerUid)
+                    }
+                }
+            }
         }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(if (running) "SERVICE RUNNING" else "SERVICE STOPPED", style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = onStart, enabled = !running, modifier = Modifier.weight(1f)) { Text("START") }
+                        OutlinedButton(onClick = onStop, enabled = running, modifier = Modifier.weight(1f)) { Text("STOP") }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Text("Automatic Service Start", modifier = Modifier.weight(1f))
+                        Switch(checked = autoStart, onCheckedChange = onAutoStartChanged)
+                    }
+                    Text("Android permissions are never granted silently. Camera, microphone, and screen sharing require visible user consent.")
+                }
+            }
+        }
+        item { OutlinedButton(onClick = onOpenFeatures, modifier = Modifier.fillMaxWidth()) { Text("All Features") } }
+        item { OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") } }
+    }
+}
 
-        Spacer(Modifier.height(12.dp))
-
-        Text(
-            if (running)
-                "Approved permissions may continue while the service runs in the background."
-            else
-                "Automatic start is optional. Android permissions are never granted silently in the background.",
-            style = MaterialTheme.typography.bodyMedium
-        )
+private fun readNetworkLabel(context: Context): String {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return "Status unavailable"
+    val network = manager.activeNetwork ?: return "Offline"
+    val capabilities = manager.getNetworkCapabilities(network) ?: return "Offline"
+    val type = when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile data"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+        else -> "Internet"
+    }
+    return if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+        "Online • $type"
+    } else {
+        "Connected • no internet"
     }
 }

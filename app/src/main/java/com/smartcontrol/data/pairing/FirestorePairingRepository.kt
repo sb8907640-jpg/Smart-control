@@ -38,6 +38,23 @@ class FirestorePairingRepository @Inject constructor(
         awaitClose { registration.remove() }
     }
 
+    override fun observeControlledDevices(): Flow<List<PairedDevice>> = callbackFlow {
+        val uid = auth.currentUser?.uid ?: run { trySend(emptyList()); close(); return@callbackFlow }
+        val registration = db.collection("devices")
+            .whereEqualTo("controllerUid", uid)
+            .whereEqualTo("pairingActive", true)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
+                trySend(snapshot?.documents?.map { doc ->
+                    PairedDevice(
+                        doc.id, uid, doc.getLong("pairedAt") ?: 0L,
+                        doc.getBoolean("pairingActive") ?: true
+                    )
+                }.orEmpty())
+            }
+        awaitClose { registration.remove() }
+    }
+
     override fun observeControlledDevice(): Flow<PairedDevice?> = callbackFlow {
         val uid = auth.currentUser?.uid ?: run { trySend(null); close(); return@callbackFlow }
         val registration = db.collection("devices")

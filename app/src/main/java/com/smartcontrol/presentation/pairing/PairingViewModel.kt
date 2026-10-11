@@ -30,6 +30,9 @@ class PairingViewModel @Inject constructor(
         repository.observeControlledDevice()
     ) { localPairing, controlledDevice -> localPairing ?: controlledDevice }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val controlledDevices = repository.observeControlledDevices()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _state = MutableStateFlow(PairingUiState())
     val state = _state.asStateFlow()
 

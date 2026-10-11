@@ -309,6 +309,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         running = running,
                         onOpenPairing = { route = "pairing" },
                         onOpenFeatures = { route = "features" },
+                        onOpenSettings = { route = "settings" },
                         onStart = ::startServiceFromUserAction,
                         onStop = ::stopServiceFromUserAction,
                         autoStart = autoStart,
