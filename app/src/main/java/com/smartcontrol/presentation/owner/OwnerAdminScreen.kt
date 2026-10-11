@@ -128,6 +128,16 @@ class OwnerAdminViewModel @Inject constructor(
         )
     }
 
+    fun removeOwnerValue(key: String) {
+        val values = settings.masterConfig.ownerControl.editableValues.toMutableMap()
+        values.remove(key)
+        settings = settings.copy(
+            masterConfig = settings.masterConfig.copy(
+                ownerControl = settings.masterConfig.ownerControl.copy(editableValues = values)
+            )
+        )
+    }
+
     fun setOwnerFlag(
         hidden: Boolean = settings.masterConfig.ownerControl.ownerPanelHiddenFromNormalUsers,
         realtime: Boolean = settings.masterConfig.ownerControl.realtimeApply,
@@ -421,7 +431,8 @@ fun OwnerAdminScreen(
                                 title = title,
                                 prefix = prefix,
                                 values = viewModel.settings.masterConfig.ownerControl.editableValues,
-                                onValueChange = viewModel::editOwnerValue
+                                onValueChange = viewModel::editOwnerValue,
+                                onValueRemove = viewModel::removeOwnerValue
                             )
                         }
                     }
@@ -492,8 +503,12 @@ private fun OwnerSettingsSection(
     title: String,
     prefix: String,
     values: Map<String, String>,
-    onValueChange: (String, String) -> Unit
+    onValueChange: (String, String) -> Unit,
+    onValueRemove: (String) -> Unit
 ) {
+    var newKey by remember(prefix) { mutableStateOf("") }
+    var newValue by remember(prefix) { mutableStateOf("") }
+    var addError by remember(prefix) { mutableStateOf<String?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -519,19 +534,72 @@ private fun OwnerSettingsSection(
             if (prefix == "payment") {
                 Text("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above.")
             }
-            values.filterKeys {
+            val editable = values.filterKeys {
                 it.startsWith("$prefix.") &&
                     !(prefix == "data" && it in setOf("data.autoCapture", "data.shareAllowed")) &&
                     it !in legacyGatewaySecretKeys
-            }.forEach { (key, value) ->
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = { onValueChange(key, it) },
-                    label = { Text(key.removePrefix("$prefix.")) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
-                )
             }
+            if (editable.isEmpty()) {
+                Text("No custom values yet. Use Add setting below to create one.")
+            }
+            editable.forEach { (key, value) ->
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { onValueChange(key, it) },
+                        label = { Text(key.removePrefix("$prefix.")) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { onValueRemove(key) }) { Text("Remove") }
+                }
+            }
+            Divider(Modifier.padding(vertical = 10.dp))
+            Text("Add / edit setting", style = MaterialTheme.typography.labelLarge)
+            OutlinedTextField(
+                value = newKey,
+                onValueChange = { newKey = it },
+                label = { Text("Setting name for this section") },
+                placeholder = { Text("example: title") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = newValue,
+                onValueChange = { newValue = it },
+                label = { Text("Setting value") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            addError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(
+                onClick = {
+                    val entered = newKey.trim().removePrefix("$prefix.").trim()
+                    val keyIsSafe = entered.isNotEmpty() && entered.matches(Regex("[A-Za-z0-9_.-]+"))
+                    val fullKey = "$prefix.$entered"
+                    when {
+                        !keyIsSafe -> addError = "Use letters, numbers, dot, dash or underscore for the setting name."
+                        fullKey in legacyGatewaySecretKeys -> addError = "Payment secrets must be configured in Permanent Gateway Permit."
+                        prefix == "data" && fullKey in setOf("data.autoCapture", "data.shareAllowed") ->
+                            addError = "Use the switches above for this setting."
+                        else -> {
+                            onValueChange(fullKey, newValue)
+                            newKey = ""
+                            newValue = ""
+                            addError = null
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Add / Update Setting") }
+            Text(
+                "Changes remain pending until you press Save All Owner Settings. Only settings consumed by app/backend logic change runtime behavior.",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
