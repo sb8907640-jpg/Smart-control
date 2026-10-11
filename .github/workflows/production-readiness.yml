@@ -3,10 +3,10 @@ name: Production Readiness Gate
 on:
   push:
     branches: ["main"]
-    paths: ["app/**", "backend/**", "contracts/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", ".github/workflows/production-readiness.yml"]
+    paths: ["app/**", "backend/**", "contracts/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", "firestore.rules", "storage.rules", "firestore.indexes.json", "firebase.json", ".github/workflows/production-readiness.yml"]
   pull_request:
     branches: ["main"]
-    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", ".github/workflows/production-readiness.yml"]
+    paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", "firestore.rules", "storage.rules", "firestore.indexes.json", "firebase.json", ".github/workflows/production-readiness.yml"]
   workflow_dispatch:
 
 permissions:
