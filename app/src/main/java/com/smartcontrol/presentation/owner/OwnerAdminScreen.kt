@@ -1322,4 +1322,127 @@ private fun PaymentGatewayPermitPanel() {
             Text("Security: never place gateway secrets in APK constants, GitHub source, logs, or chat. This form sends them only to the authenticated server function.")
         }
     }
+
+    var draftProvider by remember { mutableStateOf("CASHFREE") }
+    var draftDisplayName by remember { mutableStateOf("Cashfree") }
+    var draftMode by remember { mutableStateOf("TEST") }
+    var credentialsJson by remember { mutableStateOf("") }
+    var providerMenuExpanded by remember { mutableStateOf(false) }
+    var draftBusy by remember { mutableStateOf(false) }
+    var draftMessage by remember { mutableStateOf("Choose a provider to save its future configuration.") }
+    val providerNames = listOf(
+        "RAZORPAY" to "Razorpay",
+        "CASHFREE" to "Cashfree",
+        "PHONEPE" to "PhonePe",
+        "PAYU" to "PayU",
+        "STRIPE" to "Stripe",
+        "PAYPAL" to "PayPal",
+        "CUSTOM" to "Custom Gateway"
+    )
+    val implementedProvider = draftProvider == "RAZORPAY"
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Additional Gateway Profiles", style = MaterialTheme.typography.titleLarge)
+            Text("Prepare gateway details now or after the app is complete. These profiles are encrypted server-side and saved as drafts; they do not switch the active payment gateway.")
+            Box {
+                OutlinedButton(
+                    onClick = { providerMenuExpanded = true },
+                    enabled = !draftBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Provider: " + (providerNames.firstOrNull { it.first == draftProvider }?.second ?: draftProvider)) }
+                DropdownMenu(
+                    expanded = providerMenuExpanded,
+                    onDismissRequest = { providerMenuExpanded = false }
+                ) {
+                    providerNames.forEach { (id, name) ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = {
+                                draftProvider = id
+                                draftDisplayName = name
+                                providerMenuExpanded = false
+                                draftMessage = if (id == "RAZORPAY") {
+                                    "Razorpay has a payment adapter. This draft does not replace the active permit."
+                                } else {
+                                    "$name profile can be prepared now; live payments stay disabled until its server adapter is implemented and tested."
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = draftDisplayName,
+                onValueChange = { draftDisplayName = it },
+                label = { Text("Gateway display name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text("Credentials mode")
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = draftMode == "TEST", onClick = { draftMode = "TEST" })
+                    Text("Test")
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = draftMode == "LIVE", onClick = { draftMode = "LIVE" })
+                    Text("Live")
+                }
+            }
+            OutlinedTextField(
+                value = credentialsJson,
+                onValueChange = { credentialsJson = it },
+                label = { Text("Provider credentials JSON (optional)") },
+                placeholder = { Text("{\"clientId\": \"...\", \"clientSecret\": \"...\", \"webhookSecret\": \"...\"}") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+                maxLines = 8
+            )
+            Text("Use the exact credential field names required by the provider. Leave blank to save a provider profile without credentials.")
+            Text(
+                if (implementedProvider) {
+                    "Adapter status: Razorpay adapter exists. Saving here only creates a separate profile draft."
+                } else {
+                    "Adapter status: setup-only draft. This provider cannot process real payments yet."
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(draftMessage, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = {
+                    scope.launch {
+                        draftBusy = true
+                        draftMessage = "Saving encrypted provider draft…"
+                        try {
+                            val result = functions.getHttpsCallable("savePaymentGatewayProviderDraft").call(
+                                mapOf(
+                                    "provider" to draftProvider,
+                                    "displayName" to draftDisplayName.trim(),
+                                    "mode" to draftMode,
+                                    "credentialsJson" to credentialsJson
+                                )
+                            ).await().data as? Map<*, *>
+                            credentialsJson = ""
+                            val adapterReady = result?.get("adapterImplemented") == true
+                            draftMessage = if (adapterReady) {
+                                "Profile draft saved securely. Active gateway was not changed."
+                            } else {
+                                "Profile draft saved securely. Real payments remain disabled until the server adapter is implemented and tested."
+                            }
+                        } catch (error: Exception) {
+                            draftMessage = error.message ?: "Could not save provider draft. Check Owner access and server setup."
+                        } finally {
+                            draftBusy = false
+                        }
+                    }
+                },
+                enabled = !draftBusy && draftDisplayName.trim().length >= 2,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (draftBusy) "Please wait…" else "Save Encrypted Provider Draft")
+            }
+            Text("Security: credentials are encrypted with the server key. Never store live secrets in the APK, GitHub, logs, or chat.")
+        }
+    }
 }
