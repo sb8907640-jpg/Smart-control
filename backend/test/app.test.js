@@ -113,3 +113,31 @@ test("pairing invitation verification requires authentication", async () => {
     assert.equal(response.status, 401);
   });
 });
+
+test("pairing acceptance requires authentication", async () => {
+  const app = createApp({ verifyIdToken: async () => ({ uid: "receiver-1" }), db: {} });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/pairing/invites/accept", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "a".repeat(43), code: "123456", consent: true })
+    });
+    assert.equal(response.status, 401);
+  });
+});
+
+test("pairing acceptance fails closed without explicit receiver consent", async () => {
+  const app = createApp({ verifyIdToken: async () => ({ uid: "receiver-1" }), db: {} });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/pairing/invites/accept", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ token: "a".repeat(43), code: "123456", consent: false })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /explicit receiver consent/i);
+  });
+});
