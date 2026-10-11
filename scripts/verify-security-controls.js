@@ -42,6 +42,7 @@ const storageRules = read("storage.rules");
 const iceServers = read("functions/ice-servers.js");
 const gradle = read("app/build.gradle.kts");
 const featureCenter = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureCenterScreen.kt");
+const ownerAdmin = read("app/src/main/java/com/smartcontrol/presentation/owner/OwnerAdminScreen.kt");
 const recordingScreen = read("app/src/main/java/com/smartcontrol/presentation/media/ScreenRecordingScreen.kt");
 const recordingService = read("app/src/main/java/com/smartcontrol/service/ScreenRecordingService.kt");
 
@@ -93,6 +94,21 @@ check("Gallery and Files Access persist the selected URI",
     featureCenter.includes("takePersistableUriPermission"),
   "System picker selections survive navigation and can be explicitly cleared.");
 
+
+check("Owner panel exposes controls for every canonical feature",
+  ownerAdmin.includes("items(FeatureCatalog.all)") &&
+    ownerAdmin.includes("viewModel.toggle(spec.id, it)") &&
+    ownerAdmin.includes("setFeatureDetails(spec.id, maxDurationText, priorityText)"),
+  "All 19 catalog features expose enable/disable, max duration and priority controls.");
+check("Owner settings supports adding, editing and removing per-section values",
+  ownerAdmin.includes("Add / Update Setting") &&
+    ownerAdmin.includes("onValueRemove = viewModel::removeOwnerValue") &&
+    ownerAdmin.includes("Save All Owner Settings"),
+  "Owner can add or edit configuration values in each section and remove values from the in-memory draft before saving.");
+check("Payment secrets remain outside generic owner settings editor",
+  ownerAdmin.includes("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above") &&
+    ownerAdmin.includes("legacyGatewaySecretKeys"),
+  "Generic configuration editor blocks legacy payment secret keys; gateway changes use the dedicated secure panel.");
 
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
