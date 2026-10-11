@@ -354,7 +354,11 @@ exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (r
 
 // Billing and payment lifecycle exports.
 Object.assign(exports, require("./billing"));
-Object.assign(exports, require("./gateway-permit"));
+const gatewayPermitFunctions = require("./gateway-permit");
+exports.savePaymentGatewayPermit = gatewayPermitFunctions.savePaymentGatewayPermit;
+exports.getPaymentGatewayPermit = gatewayPermitFunctions.getPaymentGatewayPermit;
+exports.getPaymentGatewayProviderCatalog = gatewayPermitFunctions.getPaymentGatewayProviderCatalog;
+exports.savePaymentGatewayProviderDraft = gatewayPermitFunctions.savePaymentGatewayProviderDraft;
 Object.assign(exports, require("./ice-servers"));
 
 
