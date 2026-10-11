@@ -603,7 +603,7 @@ private fun OwnerMasterConfigurationPanel(
                 onUpdate { it.copy(app = it.app.copy(themeKey = value)) }
             }
             MasterTextSetting("Logo resource name", master.app.logoResourceName.orEmpty()) { value ->
-                onUpdate { it.copy(app = it.app.copy(logoResourceName = value.ifBlank { null }) }
+                onUpdate { it.copy(app = it.app.copy(logoResourceName = value.ifBlank { null })) }
             }
             MasterTextSetting("Primary color", master.app.primaryColor.orEmpty()) { value ->
                 onUpdate { it.copy(app = it.app.copy(primaryColor = value.ifBlank { null })) }
@@ -723,7 +723,7 @@ private fun OwnerMasterConfigurationPanel(
                 onUpdate { it.copy(plans = it.plans.copy(freePlanVisibleInPublicMenu = enabled)) }
             }
             PolicySwitch("Free plan requires manual approval", master.plans.freePlan.manuallyApproved) { enabled ->
-                onUpdate { it.copy(plans = it.plans.copy(freePlan = it.plans.freePlan.copy(manuallyApproved = enabled)) }
+                onUpdate { it.copy(plans = it.plans.copy(freePlan = it.plans.freePlan.copy(manuallyApproved = enabled))) }
             }
             Text("All edits are drafts until Save All Owner Settings. OS permissions, receiver consent, server-side authorization and deployed payment/relay services remain mandatory.")
         }
