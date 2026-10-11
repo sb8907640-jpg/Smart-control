@@ -134,7 +134,7 @@ service cloud.firestore {
               && (
                 (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
                 || (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
+                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
               )
             )
             || (
@@ -157,7 +157,7 @@ service cloud.firestore {
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
               && (
                 (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
+                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
                 || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
               )
             )
