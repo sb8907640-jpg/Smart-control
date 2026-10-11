@@ -184,18 +184,58 @@ function installOwnerPanelRoutes(app, { db }) {
   });
   app.patch("/api/owner/feature-flags/:id", requireOwner, (req, res, next) => update(req, res, "featureFlags", req.params.id, "featureFlag", "OWNER_FEATURE_FLAG_EDITED").catch(next));
 
+  const sensitiveOwnerSettingKeys = new Set([
+    "payment.webhookSecret", "payment.gatewayProviderConfig", "payment.gatewayWebhookSecrets",
+    "payment.encryptionKey", "payment.razorpayKeyId", "payment.razorpayKeySecret"
+  ]);
+  const redactOwnerSettings = (source) => {
+    const result = JSON.parse(JSON.stringify(source || {}));
+    const editable = result.masterConfig?.ownerControl?.editableValues;
+    if (editable && typeof editable === "object") {
+      for (const key of sensitiveOwnerSettingKeys) {
+        if (Object.prototype.hasOwnProperty.call(editable, key) && editable[key]) editable[key] = "[REDACTED]";
+      }
+    }
+    return result;
+  };
+
+  // The Android app's canonical settings document is ownerSettings/global.
+  // Keep the existing schema intact so web edits apply to the same live config.
   app.get("/api/owner/settings", requireOwner, async (req, res, next) => {
     try {
-      const snap = await collection("systemConfig").doc("current").get();
-      res.json({ settings: snap.exists ? (snap.data()?.values || {}) : {} });
+      const snap = await collection("ownerSettings").doc("global").get();
+      res.json({ settings: redactOwnerSettings(snap.exists ? snap.data() : {}) });
     } catch (e) { next(e); }
   });
   app.patch("/api/owner/settings", requireOwner, async (req, res, next) => {
     try {
       const values = req.body?.values;
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
-      await collection("systemConfig").doc("current").set({ values, updatedAt: now(), updatedBy: req.user.uid });
-      await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "systemConfig");
+      const ref = collection("ownerSettings").doc("global");
+      const existingSnap = await ref.get();
+      const existing = existingSnap.exists ? existingSnap.data() || {} : {};
+      const nextValues = JSON.parse(JSON.stringify(values));
+      const submittedEditable = nextValues.masterConfig?.ownerControl?.editableValues;
+      const existingEditable = existing.masterConfig?.ownerControl?.editableValues || {};
+      if (submittedEditable && typeof submittedEditable === "object") {
+        for (const key of sensitiveOwnerSettingKeys) {
+          if (Object.prototype.hasOwnProperty.call(existingEditable, key)) {
+            // Redacted values are display-only; never replace the server secret with a marker.
+            submittedEditable[key] = existingEditable[key];
+          } else if (submittedEditable[key] === "[REDACTED]") {
+            delete submittedEditable[key];
+          }
+        }
+      }
+      await ref.set({ ...nextValues, updatedAtEpochMs: now(), updatedBy: req.user.uid }, { merge: true });
+      const master = nextValues.masterConfig || existing.masterConfig || {};
+      if (master.ownerControl?.changeLogEnabled === true) {
+        await collection("ownerSettingsHistory").add({
+          changedBy: req.user.uid, changedAtEpochMs: now(),
+          summary: "OWNER web settings update", settings: redactOwnerSettings(nextValues)
+        });
+      }
+      await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "ownerSettings/global", { topLevelFields: Object.keys(nextValues) });
       res.json({ ok: true, status: "UPDATED" });
     } catch (e) { next(e); }
   });
