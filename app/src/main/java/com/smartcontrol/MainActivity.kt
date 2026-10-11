@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
-    override fun onPaymentError(code: Int, response: String?) {
+    override fun onPaymentError(code: Int, response: String?, paymentData: PaymentData?) {
         pendingRazorpayPaymentId = null
         Toast.makeText(this, "Razorpay checkout failed ($code): " + (response ?: "No details"), Toast.LENGTH_LONG).show()
     }
