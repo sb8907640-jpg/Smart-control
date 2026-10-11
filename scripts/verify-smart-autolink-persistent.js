@@ -140,11 +140,11 @@ check(
   pairingRepo.includes("unpair") &&
     catalog.includes("/api/disconnect")
 );
+const pairedDeviceModel = pairingModels.split("data class PairedDevice")[1] || "";
 check(
   "Persistent link — no automatic TTL on paired-device state",
-  !pairingModels.includes("expiresAtEpochMs") ||
-    pairingModels.includes("PairingCode(val token") ,
-  "PairingCode expiry is for the temporary pairing credential; PairedDevice itself has no expiry field."
+  !pairedDeviceModel.includes("expiresAtEpochMs"),
+  "Expiry belongs to the temporary PairingCode; persisted PairedDevice state must not expire automatically."
 );
 runtime(
   "Persistent link — lifetime behavior",
