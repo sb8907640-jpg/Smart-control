@@ -1,6 +1,7 @@
 package com.smartcontrol.presentation.features
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -79,6 +80,28 @@ fun FeatureCenterScreen(
                     it,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
+            }.onSuccess {
+                Toast.makeText(context, "Selected media access saved.", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, "Media was selected, but persistent access could not be saved.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }.onSuccess {
+                Toast.makeText(context, "Folder access granted and saved.", Toast.LENGTH_SHORT).show()
+            }.onFailure { error ->
+                Toast.makeText(
+                    context,
+                    error.message ?: "Folder selected, but persistent access could not be saved.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -107,6 +130,13 @@ fun FeatureCenterScreen(
                 enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.GALLERY, userId),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open Gallery Picker") }
+        }
+        item {
+            OutlinedButton(
+                onClick = { folderPicker.launch(null) },
+                enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILES_ACCESS, userId),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Open Files / Folder Picker") }
         }
         item { OutlinedButton(onClick = onNotifications, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.NOTIFICATIONS, userId), modifier = Modifier.fillMaxWidth()) { Text("Notification Access") } }
         item {
