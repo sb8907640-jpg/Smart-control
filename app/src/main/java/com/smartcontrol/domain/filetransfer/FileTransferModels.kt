@@ -8,7 +8,8 @@ data class FileTransferRequest(
     val mimeType: String?,
     val sizeBytes: Long,
     val createdAtEpochMs: Long,
-    val status: Status
+    val status: Status,
+    val storagePath: String? = null
 ) {
     enum class Status { REQUESTED, APPROVED, UPLOADING, READY, REJECTED, CANCELLED }
 }
