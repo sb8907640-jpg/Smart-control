@@ -57,7 +57,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Compile Firestore rules in emulator
-        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node -e 'console.log("Firestore rules loaded")'"
+        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node -e 'console.log(1)'"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
