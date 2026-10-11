@@ -39,6 +39,8 @@ class FileTransferViewModel @Inject constructor(
     val status: StateFlow<String?> = _status
     private var pendingTransferId: String? = null
     private var pendingUri: Uri? = null
+    private val _hasPendingUpload = MutableStateFlow(false)
+    val hasPendingUpload: StateFlow<Boolean> = _hasPendingUpload
 
     fun uploadSelectedFile(uri: Uri) = viewModelScope.launch {
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
@@ -58,17 +60,45 @@ class FileTransferViewModel @Inject constructor(
         repository.request(FileTransferRequest(id, sender, receiver, fileName, mime, size, System.currentTimeMillis(), FileTransferRequest.Status.REQUESTED))
         pendingTransferId = id
         pendingUri = uri
+        _hasPendingUpload.value = true
         _status.value = "Transfer request created. Wait for receiver approval."
     }
 
     fun approve(transferId: String) = viewModelScope.launch {
+        val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
+        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.REQUESTED) {
+            _status.value = "Only the intended receiver can approve a pending transfer."
+            return@launch
+        }
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
             _status.value = "File transfers are disabled in Privacy Controls."
             repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED)
             return@launch
         }
         repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED)
-        _status.value = "Transfer approved."
+        _status.value = "Transfer approved. The sender can now upload the selected file."
+    }
+
+    fun download(transferId: String, targetUri: Uri) = viewModelScope.launch {
+        if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
+            _status.value = "File transfers are disabled in Privacy Controls."
+            return@launch
+        }
+        val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
+        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.READY) {
+            _status.value = "Only the intended receiver can download a ready transfer."
+            return@launch
+        }
+        val storagePath = request.storagePath ?: run { _status.value = "The uploaded file path is missing."; return@launch }
+        if (!storagePath.startsWith("fileTransfers/${request.senderDeviceId}/${request.transferId}/")) {
+            _status.value = "The transfer storage path failed validation."
+            return@launch
+        }
+        runCatching { uploader.downloadToUri(storagePath, targetUri) }
+            .onSuccess { _status.value = "File downloaded successfully." }
+            .onFailure { _status.value = it.message ?: "File download failed." }
     }
 
     fun uploadApproved() = viewModelScope.launch {
@@ -85,12 +115,15 @@ class FileTransferViewModel @Inject constructor(
         }
         runCatching {
             repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
-            uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
-            repository.updateStatus(id, FileTransferRequest.Status.READY)
+            val storagePath = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
+            repository.markReady(id, storagePath)
         }.onSuccess {
-            _status.value = "File uploaded and marked ready."
+            _status.value = "File uploaded. The receiver can now download it."
+            _hasPendingUpload.value = false
+            pendingTransferId = null
+            pendingUri = null
         }.onFailure {
-            repository.updateStatus(id, FileTransferRequest.Status.CANCELLED)
+            runCatching { repository.updateStatus(id, FileTransferRequest.Status.CANCELLED) }
             _status.value = it.message ?: "File upload failed."
         }
     }
