@@ -88,15 +88,15 @@ fun FeatureCenterScreen(
         mutableStateOf(selectionPreferences.getString("selected_folder_uri", null))
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
+        uri?.let { selectedUri ->
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    selectedUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }.onSuccess {
-                selectionPreferences.edit().putString("selected_media_uri", it.toString()).apply()
-                selectedMediaUri = it.toString()
+                selectionPreferences.edit().putString("selected_media_uri", selectedUri.toString()).apply()
+                selectedMediaUri = selectedUri.toString()
                 Toast.makeText(context, "Selected media access saved.", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 Toast.makeText(context, "Media was selected, but persistent access could not be saved.", Toast.LENGTH_LONG).show()
@@ -104,15 +104,15 @@ fun FeatureCenterScreen(
         }
     }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let {
+        uri?.let { selectedUri ->
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    selectedUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             }.onSuccess {
-                selectionPreferences.edit().putString("selected_folder_uri", it.toString()).apply()
-                selectedFolderUri = it.toString()
+                selectionPreferences.edit().putString("selected_folder_uri", selectedUri.toString()).apply()
+                selectedFolderUri = selectedUri.toString()
                 Toast.makeText(context, "Folder access granted and saved.", Toast.LENGTH_SHORT).show()
             }.onFailure { error ->
                 Toast.makeText(
