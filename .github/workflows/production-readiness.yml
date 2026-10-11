@@ -51,6 +51,13 @@ jobs:
         run: node scripts/verify-continuous-24x7.js
       - name: Verify Security, Encryption, Consent and Safety Controls
         run: node scripts/verify-security-controls.js
+      - name: Validate Firestore security rules with emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Compile Firestore rules in emulator
+        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node -e 'console.log("Firestore rules loaded")'"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
