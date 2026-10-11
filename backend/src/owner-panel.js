@@ -418,6 +418,38 @@ function installOwnerPanelRoutes(app, { db }) {
   });
   app.patch("/api/owner/support-tickets/:id", requireOwner, (req, res, next) => update(req, res, "supportTickets", req.params.id, "supportTicket", "OWNER_SUPPORT_TICKET_EDITED").catch(next));
 
+
+  app.get("/api/owner/profile", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("ownerSettings").doc("global").get();
+      const settings = snap.exists ? snap.data() || {} : {};
+      const profile = settings.ownerProfile && typeof settings.ownerProfile === "object" ? settings.ownerProfile : {};
+      res.json({
+        displayName: String(profile.displayName || ""),
+        contactEmail: String(profile.contactEmail || ""),
+        contactMobile: String(profile.contactMobile || ""),
+        updatedAtEpochMs: Number(profile.updatedAtEpochMs || 0)
+      });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/profile", requireOwner, async (req, res, next) => {
+    try {
+      const displayName = String(req.body?.displayName || "").trim();
+      const contactEmail = String(req.body?.contactEmail || "").trim().toLowerCase();
+      const rawMobile = String(req.body?.contactMobile || "").trim();
+      const contactMobile = rawMobile ? rawMobile.replace(/[^0-9+]/g, "") : "";
+      if (displayName.length < 2 || displayName.length > 80) return res.status(400).json({ error: "Display name must be 2–80 characters." });
+      if (contactEmail && (contactEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail))) return res.status(400).json({ error: "Enter a valid contact email address." });
+      if (contactMobile && !/^\+?[0-9]{10,15}$/.test(contactMobile)) return res.status(400).json({ error: "Enter a valid contact mobile number with country code." });
+      const updatedAtEpochMs = now();
+      await collection("ownerSettings").doc("global").set({
+        ownerProfile: { displayName, contactEmail, contactMobile, updatedAtEpochMs, updatedBy: req.user.uid }
+      }, { merge: true });
+      await audit(req, "OWNER_PROFILE_UPDATED", "ownerSettings/global", { fields: ["displayName", "contactEmail", "contactMobile"] });
+      res.json({ ok: true, displayName, contactEmail, contactMobile, updatedAtEpochMs });
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/owner/support-settings", requireOwner, async (req, res, next) => {
     try {
       const snap = await collection("ownerSettings").doc("global").get();

@@ -38,25 +38,30 @@ The OWNER panel exposes authenticated management surfaces for:
 - Support tickets
 - System health
 
-Owner name, email, mobile and owner identity details are never returned by the OWNER panel API. Owner actions are recorded in the private audit trail for authenticated OWNER access.
+Firebase sign-in identity and the server-side OWNER allowlist are not editable through the profile form. The separate Owner display name/contact email/contact mobile are editable profile fields stored in the private `ownerSettings/global` document. Owner actions are recorded in the private audit trail for authenticated OWNER access.
 
 The panel does **not** bypass user consent, Android/iOS OS permission dialogs, or approved remote-control sessions. Existing safety and consent gates remain authoritative.
 
 
 ## WhatsApp support
 
-The support WhatsApp destination is intentionally **not stored in public source code or public documentation**. Configure it only in the private deployment environment:
-
-`SUPPORT_WHATSAPP_NUMBER`
+The support WhatsApp destination is intentionally **not stored in public source code or public documentation**. Set a fallback value in the private deployment environment as `SUPPORT_WHATSAPP_NUMBER`; an authenticated Owner can override it in the **Support settings** tab. The Owner override is stored in the private `ownerSettings/global.support.whatsappNumber` field.
 
 The authenticated support button calls `POST /api/support/whatsapp/initiate`. The backend creates the support session/audit record and returns a WhatsApp deep link containing the configured private destination plus the pre-filled message:
 
 `Hello, I need support for Total Control System`
 
-The web UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render the direct number. The number is never returned as a standalone field.
+The customer-facing UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render a separate support-number field. The authenticated Owner settings screen can read/update the destination. Changes are recorded in the private audit trail.
 
 Run `npm run verify:support` in the backend deployment environment to verify that the private number is configured without printing the number. Do not place the real number in source code, README files, public issues, CI logs, or client bundles.
 
+
+
+## Payment gateway settings
+
+The Owner panel has a **Payment gateway** tab. The Razorpay permit supports test/live mode, enable/disable, and credential rotation. Credential values are encrypted server-side using AES-256-GCM and are never returned by the status function. Configure `SMARTCONTROL_GATEWAY_ENCRYPTION_KEY` in Firebase Functions Secret Manager as a 32-byte base64 key or 64-character hexadecimal key before saving a permit.
+
+Razorpay is the only provider adapter currently marked implemented. Other providers in the list (Cashfree, PhonePe, PayU, Stripe, PayPal, and Custom) can be saved as encrypted drafts, but are explicitly **not enabled for checkout** until a provider adapter, signature verification, idempotency handling, and provider-specific tests are implemented. Saving a draft is not the same as activating a payment gateway.
 
 ## Owner-controlled Free Plan
 
