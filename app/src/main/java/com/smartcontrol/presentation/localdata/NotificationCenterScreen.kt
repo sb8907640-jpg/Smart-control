@@ -31,9 +31,12 @@ fun NotificationCenterScreen(onBack: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (enabled.value) "Notification Access enabled" else "Open Notification Access settings")
+            Text(if (enabled.value) "Manage Notification Access settings" else "Open Notification Access settings")
         }
         Text("Status: " + if (enabled.value) "Enabled" else "Not enabled")
+        OutlinedButton(onClick = { enabled.value = isNotificationAccessEnabled(context) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Refresh permission status")
+        }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(notifications) { item ->
                 Card(Modifier.fillMaxWidth()) {
