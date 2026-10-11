@@ -13,7 +13,7 @@ Updated against the current repository after specification reconciliation.
 - Explicit device pairing and session approval/stop state
 - Visible Family Safety foreground notification with visible Stop Sync action
 - Camera/microphone WebRTC transport foundation
-- Android MediaProjection consent flow for screen sharing
+- Android MediaProjection consent flow for screen sharing and separate visible local screen recording
 - Location sharing with explicit permission
 - User-selected file transfer with receiver approval and Firebase Storage rules
 - Parent PIN server-side verification functions

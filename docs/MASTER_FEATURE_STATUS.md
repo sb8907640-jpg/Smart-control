@@ -15,7 +15,7 @@ For repository status, **Complete** means the master specification data/status h
 | 5 | Microphone | **COMPLETE** | Approved media session + microphone permission |
 | 6 | Gallery | **COMPLETE** | User-selected Android media/file access |
 | 7 | Screen Share | **COMPLETE** | MediaProjection system consent + visible foreground service |
-| 8 | Screen Recording | **COMPLETE** | MediaProjection consent-gated capture path |
+| 8 | Screen Recording | **COMPLETE** | Local MP4 recording requires fresh MediaProjection consent; ongoing foreground notification includes Stop; saved to Movies/Family Suraksha on Android 10+ |
 | 9 | Touch Control | **COMPLETE** | Session/expiry/accessibility gate; arbitrary remote injection remains OS/safety gated |
 | 10 | Keyboard Input | **COMPLETE** | Session/expiry/accessibility gate; arbitrary remote injection remains OS/safety gated |
 | 11 | App Install/Uninstall | **COMPLETE** | Android system confirmation UI is required |

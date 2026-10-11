@@ -39,6 +39,7 @@ import com.smartcontrol.presentation.localdata.ClipboardScreen
 import com.smartcontrol.presentation.localdata.ContactsScreen
 import com.smartcontrol.presentation.localdata.NotificationCenterScreen
 import com.smartcontrol.presentation.localdata.SmsScreen
+import com.smartcontrol.presentation.media.ScreenRecordingScreen
 import com.smartcontrol.presentation.media.MediaSessionPanel
 import com.smartcontrol.presentation.location.LocationSharingScreen
 import com.smartcontrol.presentation.onboarding.AgeVerificationScreen
@@ -234,6 +235,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     "app_install" -> FeatureId.APP_INSTALL
                     "location" -> FeatureId.LOCATION
                     "device_status" -> FeatureId.BATTERY_NETWORK
+                    "screen_recording" -> FeatureId.SCREEN_RECORDING
                     "file_transfer" -> FeatureId.FILE_TRANSFER
                     "safety" -> FeatureId.SOS_ALERTS
                     else -> null
@@ -269,6 +271,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         onBilling = { route = "billing" },
                         onProfile = { route = "profile" },
                         onMediaSession = { route = "media" },
+                        onScreenRecording = { route = "screen_recording" },
                         onSettings = { route = "settings" }
                     )
                     "notifications" -> NotificationCenterScreen(onBack = backToHub)
@@ -283,6 +286,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     "file_transfer" -> FileTransferScreen(onBack = backToHub)
                     "permissions" -> PermissionCenterScreen(onBack = backToHub)
                     "media" -> MediaSessionPanel(onBack = backToHub)
+                    "screen_recording" -> ScreenRecordingScreen(onBack = backToHub)
                     "safety" -> SafetyAlertsScreen(onBack = backToHub)
                     "billing" -> BillingScreen(onBack = backToHub, onRazorpayCheckout = ::startRazorpayCheckout)
                     "settings" -> SettingsScreen(

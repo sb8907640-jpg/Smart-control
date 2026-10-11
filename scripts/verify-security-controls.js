@@ -31,6 +31,9 @@ const firestoreRules = read("firestore.rules");
 const storageRules = read("storage.rules");
 const iceServers = read("functions/ice-servers.js");
 const gradle = read("app/build.gradle.kts");
+const featureCenter = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureCenterScreen.kt");
+const recordingScreen = read("app/src/main/java/com/smartcontrol/presentation/media/ScreenRecordingScreen.kt");
+const recordingService = read("app/src/main/java/com/smartcontrol/service/ScreenRecordingService.kt");
 
 check("Pairing lifetime does not read private Owner settings on client",
   pairingRepo.includes('getHttpsCallable("getDevicePairingPolicy")') && !pairingRepo.includes("ownerSettingsRepository"),
@@ -67,6 +70,13 @@ check("Media session requests server-issued ICE configuration",
   mediaViewModel.includes('getHttpsCallable("getWebRtcIceServers")') &&
     mediaViewModel.includes("resolveIceServers()"),
   "Media sessions use TURN when configured and display a STUN-only warning otherwise.");
+check("Screen recording is separate and visible",
+  manifest.includes('android:name=".service.ScreenRecordingService"') &&
+    featureCenter.includes("onScreenRecording") &&
+    recordingScreen.includes("createScreenCaptureIntent") &&
+    recordingService.includes("MediaRecorder") &&
+    recordingService.includes("ACTION_STOP"),
+  "Local recording requires fresh Android system consent and exposes an ongoing Stop action.");
 
 
 const failed = checks.filter(x => !x.ok);

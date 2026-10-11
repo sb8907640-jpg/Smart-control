@@ -34,7 +34,7 @@ private val features = listOf(
     FeatureRow(5, FeatureId.MICROPHONE, "Microphone", "READY", "Microphone publishing is available only in an approved visible media session."),
     FeatureRow(6, FeatureId.GALLERY, "Gallery", "USER-SELECTED", "Files/media can be selected through Android's system picker; no background gallery scan."),
     FeatureRow(7, FeatureId.SCREEN_SHARE, "Screen Share", "READY", "MediaProjection requires the Android system consent dialog and visible session state."),
-    FeatureRow(8, FeatureId.SCREEN_RECORDING, "Screen Recording", "CONSENT-GATED", "Screen capture transport uses MediaProjection; hidden/background recording is not used."),
+    FeatureRow(8, FeatureId.SCREEN_RECORDING, "Screen Recording", "CONSENT-GATED", "Local MP4 recording requires fresh Android MediaProjection consent and stays visible through a foreground notification with a Stop action."),
     FeatureRow(9, FeatureId.TOUCH_CONTROL, "Touch Control", "SAFETY-GATED", "Session command validation exists; arbitrary remote touch injection is not enabled."),
     FeatureRow(10, FeatureId.KEYBOARD_INPUT, "Keyboard Input", "SAFETY-GATED", "Session command validation exists; arbitrary remote keyboard injection is not enabled."),
     FeatureRow(11, FeatureId.APP_INSTALL, "App Install / Uninstall", "SYSTEM-CONFIRMED", "APK selection opens the Android installer; uninstall opens the Android system confirmation."),
@@ -66,6 +66,7 @@ fun FeatureCenterScreen(
     onBilling: () -> Unit,
     onProfile: () -> Unit,
     onMediaSession: () -> Unit,
+    onScreenRecording: () -> Unit,
     onSettings: () -> Unit,
     featureAccess: FeatureAccessViewModel = hiltViewModel()
 ) {
@@ -118,6 +119,7 @@ fun FeatureCenterScreen(
         item { OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") } }
         item { OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") } }
         item { OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded, modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") } }
+        item { OutlinedButton(onClick = onScreenRecording, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SCREEN_RECORDING, userId), modifier = Modifier.fillMaxWidth()) { Text("Record Screen (local, consent required)") } }
         item { OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") } }
         item { OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") } }
         item { OutlinedButton(onClick = onSafetyAlerts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SOS_ALERTS, userId), modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") } }
