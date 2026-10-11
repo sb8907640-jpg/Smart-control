@@ -104,7 +104,9 @@ service cloud.firestore {
         && request.resource.data.createdAt is int
         && request.resource.data.expiryMinutes is int
         && request.resource.data.expiryMode in ['PLAN', 'NO_EXPIRY']
-        && request.resource.data.keys().hasOnly(['deviceUid', 'expiresAt', 'createdAt', 'expiryMinutes', 'expiryMode'])
+        && request.resource.data.keys().hasOnly(['deviceUid', 'expiresAt', 'createdAt', 'expiryMinutes', 'expiryMode', 'senderRole', 'receiverRole'])
+        && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+        && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
         && request.resource.data.expiresAt > request.time.toMillis()
         && (
           (
@@ -276,7 +278,9 @@ service cloud.firestore {
         && request.resource.data.pairingToken is string
         && request.resource.data.pairedAt is int
         && request.resource.data.pairingActive == true
-        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive'])
+        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
+        && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+        && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
 
@@ -302,7 +306,9 @@ service cloud.firestore {
           && request.resource.data.pairedAt is int
           && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
           && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
+          && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+          && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
         )
       );
 

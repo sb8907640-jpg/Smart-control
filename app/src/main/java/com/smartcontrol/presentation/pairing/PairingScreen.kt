@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +52,11 @@ fun PairingScreen(
             .orEmpty()
     }
     var token by remember(deepLinkToken) { mutableStateOf(deepLinkToken) }
+    val relationshipTypes = listOf("Father", "Mother", "Son", "Daughter", "Brother", "Sister", "Husband", "Wife", "Mechanic", "Engineer", "Other")
+    var senderRole by remember { mutableStateOf("Other") }
+    var receiverRole by remember { mutableStateOf("Other") }
+    var senderMenu by remember { mutableStateOf(false) }
+    var receiverMenu by remember { mutableStateOf(false) }
     val pairingUrl = state.code?.let { "smartcontrol://pair?token=${Uri.encode(it.token)}" }
     val qrBitmap = remember(pairingUrl) {
         pairingUrl?.let { url ->
@@ -78,18 +85,42 @@ fun PairingScreen(
                 if (pairing!!.controllerUid == currentUid) "Paired device: " + pairing!!.deviceUid
                 else "Paired controller: " + pairing!!.controllerUid
             )
+            Text("Sender role: " + pairing!!.senderRole + " • Receiver role: " + pairing!!.receiverRole)
             OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
                 Text("Unpair device")
             }
         } else {
+            Text("Who are you? (Sender)")
+            androidx.compose.foundation.layout.Box {
+                OutlinedButton(onClick = { senderMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(senderRole)
+                }
+                DropdownMenu(expanded = senderMenu, onDismissRequest = { senderMenu = false }) {
+                    relationshipTypes.forEach { role ->
+                        DropdownMenuItem(text = { Text(role) }, onClick = { senderRole = role; senderMenu = false })
+                    }
+                }
+            }
+            Text("Who do you want to link? (Receiver)")
+            androidx.compose.foundation.layout.Box {
+                OutlinedButton(onClick = { receiverMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(receiverRole)
+                }
+                DropdownMenu(expanded = receiverMenu, onDismissRequest = { receiverMenu = false }) {
+                    relationshipTypes.forEach { role ->
+                        DropdownMenuItem(text = { Text(role) }, onClick = { receiverRole = role; receiverMenu = false })
+                    }
+                }
+            }
             Button(
-                onClick = viewModel::generateCode,
+                onClick = { viewModel.generateCode(senderRole, receiverRole) },
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Create pairing token") }
 
             state.code?.let { code ->
                 val shareText = pairingUrl.orEmpty()
+                Text("Sender: ${code.senderRole} • Receiver: ${code.receiverRole}")
                 Text("Scan the QR Code or share the pairing link with the intended device. Pairing codes expire according to the assigned plan.")
                 qrBitmap?.let { bitmap ->
                     Image(

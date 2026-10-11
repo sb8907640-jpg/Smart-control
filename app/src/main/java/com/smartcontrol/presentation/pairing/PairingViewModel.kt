@@ -36,9 +36,9 @@ class PairingViewModel @Inject constructor(
     private val _state = MutableStateFlow(PairingUiState())
     val state = _state.asStateFlow()
 
-    fun generateCode() = viewModelScope.launch {
+    fun generateCode(senderRole: String = "Other", receiverRole: String = "Other") = viewModelScope.launch {
         _state.value = _state.value.copy(busy = true, error = null)
-        repository.createPairingCode().onSuccess {
+        repository.createPairingCode(senderRole, receiverRole).onSuccess {
             _state.value = PairingUiState(code = it)
         }.onFailure {
             _state.value = PairingUiState(error = it.message ?: "Unable to create pairing code")

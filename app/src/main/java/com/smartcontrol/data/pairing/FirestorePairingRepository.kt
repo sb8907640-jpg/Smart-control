@@ -31,7 +31,9 @@ class FirestorePairingRepository @Inject constructor(
             trySend(
                 if (!controllerUid.isNullOrBlank()) PairedDevice(
                     uid, controllerUid, snapshot.getLong("pairedAt") ?: 0L,
-                    snapshot.getBoolean("pairingActive") ?: true
+                    snapshot.getBoolean("pairingActive") ?: true,
+                    snapshot.getString("senderRole") ?: "Other",
+                    snapshot.getString("receiverRole") ?: "Other"
                 ) else null
             )
         }
@@ -48,7 +50,9 @@ class FirestorePairingRepository @Inject constructor(
                 trySend(snapshot?.documents?.map { doc ->
                     PairedDevice(
                         doc.id, uid, doc.getLong("pairedAt") ?: 0L,
-                        doc.getBoolean("pairingActive") ?: true
+                        doc.getBoolean("pairingActive") ?: true,
+                        doc.getString("senderRole") ?: "Other",
+                        doc.getString("receiverRole") ?: "Other"
                     )
                 }.orEmpty())
             }
@@ -67,15 +71,19 @@ class FirestorePairingRepository @Inject constructor(
                 trySend(doc?.let {
                     PairedDevice(
                         it.id, uid, it.getLong("pairedAt") ?: 0L,
-                        it.getBoolean("pairingActive") ?: true
+                        it.getBoolean("pairingActive") ?: true,
+                        it.getString("senderRole") ?: "Other",
+                        it.getString("receiverRole") ?: "Other"
                     )
                 })
             }
         awaitClose { registration.remove() }
     }
 
-    override suspend fun createPairingCode(): Result<PairingCode> = runCatching {
+    override suspend fun createPairingCode(senderRole: String, receiverRole: String): Result<PairingCode> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
+        require(senderRole in ROLE_TYPES) { "Choose a valid sender relationship." }
+        require(receiverRole in ROLE_TYPES) { "Choose a valid receiver relationship." }
         val token = buildToken()
         val createdAt = System.currentTimeMillis()
 
@@ -109,10 +117,12 @@ class FirestorePairingRepository @Inject constructor(
                 "expiresAt" to expires,
                 "createdAt" to createdAt,
                 "expiryMinutes" to expiryMinutes,
-                "expiryMode" to if (expiryMinutes == NO_EXPIRY_MINUTES) "NO_EXPIRY" else "PLAN"
+                "expiryMode" to if (expiryMinutes == NO_EXPIRY_MINUTES) "NO_EXPIRY" else "PLAN",
+                "senderRole" to senderRole,
+                "receiverRole" to receiverRole
             )
         ).await()
-        PairingCode(token, uid, expires)
+        PairingCode(token, uid, expires, senderRole, receiverRole)
     }
 
     override suspend fun claimPairingCode(token: String): Result<PairedDevice> = runCatching {
@@ -124,16 +134,20 @@ class FirestorePairingRepository @Inject constructor(
             val deviceUid = snap.getString("deviceUid") ?: error("Invalid pairing token")
             val expires = snap.getLong("expiresAt") ?: 0L
             require(expires > System.currentTimeMillis()) { "Pairing token expired" }
+            val senderRole = snap.getString("senderRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
+            val receiverRole = snap.getString("receiverRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
             tx.set(db.collection("devices").document(deviceUid), mapOf(
                 "controllerUid" to controllerUid,
                 "pairingToken" to token,
                 "pairedAt" to System.currentTimeMillis(),
-                "pairingActive" to true
+                "pairingActive" to true,
+                "senderRole" to senderRole,
+                "receiverRole" to receiverRole
             ), SetOptions.merge())
             tx.delete(ref)
-            deviceUid
+            Triple(deviceUid, senderRole, receiverRole)
         }.await()
-        PairedDevice(deviceUid, controllerUid, System.currentTimeMillis(), true)
+        PairedDevice(deviceUid.first, controllerUid, System.currentTimeMillis(), true, deviceUid.second, deviceUid.third)
     }
 
     override suspend fun unpair(): Result<Unit> = runCatching {
@@ -173,6 +187,7 @@ class FirestorePairingRepository @Inject constructor(
     }
 
     private companion object {
+        val ROLE_TYPES = setOf("Father", "Mother", "Son", "Daughter", "Brother", "Sister", "Husband", "Wife", "Mechanic", "Engineer", "Other")
         const val DEFAULT_PUBLIC_EXPIRY_MINUTES = 10L
         const val NO_EXPIRY_MINUTES = 0L
     }
