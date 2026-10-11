@@ -60,41 +60,29 @@ function installOwnerPanelRoutes(app, { db }) {
     return res.json({ ok: true, id, status: "UPDATED" });
   };
 
-  app.get("/api/owner/panel", requireOwner, async (req, res, next) => {
-    try {
-      res.json({
-        authenticated: true,
-        owner: true,
-        role: "OWNER",
-        publicVisibility: "UNLISTED",
-        identityVisibility: "PRIVATE",
-        capabilities: {
-          users: ["VIEW", "EDIT", "DELETE", "BAN"],
-          features: ["ENABLE", "DISABLE", "CONFIGURE"],
-          plans: ["CREATE", "EDIT", "DELETE", "PRICE", "DURATION", "FEATURES", "LINK_VALIDITY", "ENABLE", "DISABLE", "UPGRADE", "DOWNGRADE", "SPECIAL_OFFERS", "EMI"],
-          settings: ["GLOBAL_CONFIGURE"],
-          audit: ["VIEW_FULL_AUDIT_TRAIL"],
-          freeAccess: ["GRANT", "CUSTOM_DURATION", "EDIT", "REVOKE"],
-          payments: ["VIEW", "EDIT"],
-          emi: ["VIEW", "EDIT"],
-          legalTemplates: ["VIEW", "EDIT"],
-          supportTickets: ["VIEW", "EDIT"],
-          systemHealth: ["VIEW"],
-           deviceLinks: ["GENERATE", "REGENERATE", "REVOKE"],
-          featureFlags: ["ENABLE", "DISABLE", "CONFIGURE"]
-        },
-        ownerIdentity: null,
-        note: "Owner identity is intentionally omitted from this panel response."
-      });
-    } catch (e) { next(e); }
+  app.get("/api/owner/panel", requireOwner, async (req, res) => {
+    res.json({
+      authenticated: true, owner: true, role: "OWNER",
+      publicVisibility: "UNLISTED", identityVisibility: "PRIVATE",
+      capabilities: {
+        users: ["VIEW", "EDIT", "DELETE", "BAN"],
+        features: ["ENABLE", "DISABLE", "CONFIGURE"],
+        plans: ["CREATE", "EDIT", "DELETE", "PRICE", "DURATION", "FEATURES", "LINK_VALIDITY", "ENABLE", "DISABLE", "UPGRADE", "DOWNGRADE", "SPECIAL_OFFERS", "EMI"],
+        settings: ["GLOBAL_CONFIGURE"], audit: ["VIEW_FULL_AUDIT_TRAIL"],
+        freeAccess: ["GRANT", "CUSTOM_DURATION", "EDIT", "REVOKE"],
+        payments: ["VIEW", "EDIT"], emi: ["VIEW", "EDIT"],
+        legalTemplates: ["VIEW", "EDIT"], supportTickets: ["VIEW", "EDIT"],
+        systemHealth: ["VIEW"], deviceLinks: ["GENERATE", "REGENERATE", "REVOKE"],
+        featureFlags: ["ENABLE", "DISABLE", "CONFIGURE"]
+      },
+      ownerIdentity: null,
+      note: "Owner identity is intentionally omitted from this panel response."
+    });
   });
 
   app.get("/api/owner/audit", requireOwner, async (req, res, next) => {
-    try {
-      res.json({ logs: await read("auditLogs", 1000) });
-    } catch (e) { next(e); }
+    try { res.json({ logs: await read("auditLogs", 1000) }); } catch (e) { next(e); }
   });
-
   app.get("/api/owner/users", requireOwner, async (req, res, next) => {
     try { res.json({ users: await read("users") }); } catch (e) { next(e); }
   });
@@ -135,32 +123,16 @@ function installOwnerPanelRoutes(app, { db }) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/owner/device-links", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("pairingCodes").where("ownerUid", "==", req.user.uid).limit(500).get();
+      const links = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      res.json({ links });
+    } catch (e) { next(e); }
+  });
   app.post("/api/owner/device-links/generate", requireOwner, async (req, res, next) => {
     try {
       const planId = String(req.body?.planId || "").trim();
-      if (!planId) return res.status(400).json({ error: "planId is required." });
-      const planSnap = await collection("plans").doc(planId).get();
-      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
-      const plan = { id: planSnap.id, ...planSnap.data() };
-      const validity = getLinkValidity(plan);
-      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
-      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
-      const createdAt = now();
-      const expiresAt = calculateExpiry(createdAt, validity);
-      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
-      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, code, expiresAt });
-      res.status(201).json({ ok: true, code, planId, expiresAt });
-    } catch (e) { next(e); }
-  });
-
-  app.post("/api/owner/device-links/regenerate/:code", requireOwner, async (req, res, next) => {
-    try {
-      const oldCode = String(req.params.code || "").trim().toUpperCase();
-      const oldRef = collection("pairingCodes").doc(oldCode);
-      const oldSnap = await oldRef.get();
-      if (!oldSnap.exists || oldSnap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
-      await oldRef.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
-      const planId = String(oldSnap.data()?.planId || req.body?.planId || "").trim();
       if (!planId) return res.status(400).json({ error: "planId is required." });
       const planSnap = await collection("plans").doc(planId).get();
       if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
@@ -170,11 +142,31 @@ function installOwnerPanelRoutes(app, { db }) {
       const createdAt = now();
       const expiresAt = calculateExpiry(createdAt, validity);
       await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
+      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, code, expiresAt });
+      res.status(201).json({ ok: true, code, planId, expiresAt });
+    } catch (e) { next(e); }
+  });
+  app.post("/api/owner/device-links/regenerate/:code", requireOwner, async (req, res, next) => {
+    try {
+      const oldCode = String(req.params.code || "").trim().toUpperCase();
+      const oldRef = collection("pairingCodes").doc(oldCode);
+      const oldSnap = await oldRef.get();
+      if (!oldSnap.exists || oldSnap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
+      const planId = String(oldSnap.data()?.planId || req.body?.planId || "").trim();
+      if (!planId) return res.status(400).json({ error: "planId is required." });
+      const planSnap = await collection("plans").doc(planId).get();
+      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
+      const validity = getLinkValidity({ id: planSnap.id, ...planSnap.data() });
+      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
+      await oldRef.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
+      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
+      const createdAt = now();
+      const expiresAt = calculateExpiry(createdAt, validity);
+      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
       await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, newCode: code, expiresAt });
       res.status(201).json({ ok: true, code, planId, expiresAt, previousCode: oldCode });
     } catch (e) { next(e); }
   });
-
   app.post("/api/owner/device-links/revoke/:code", requireOwner, async (req, res, next) => {
     try {
       const code = String(req.params.code || "").trim().toUpperCase();
@@ -192,6 +184,12 @@ function installOwnerPanelRoutes(app, { db }) {
   });
   app.patch("/api/owner/feature-flags/:id", requireOwner, (req, res, next) => update(req, res, "featureFlags", req.params.id, "featureFlag", "OWNER_FEATURE_FLAG_EDITED").catch(next));
 
+  app.get("/api/owner/settings", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("systemConfig").doc("current").get();
+      res.json({ settings: snap.exists ? (snap.data()?.values || {}) : {} });
+    } catch (e) { next(e); }
+  });
   app.patch("/api/owner/settings", requireOwner, async (req, res, next) => {
     try {
       const values = req.body?.values;
@@ -222,7 +220,6 @@ function installOwnerPanelRoutes(app, { db }) {
       res.json({ grants: normalized });
     } catch (e) { next(e); }
   });
-
   app.post("/api/owner/free-access", requireOwner, async (req, res, next) => {
     try {
       const userName = String(req.body?.userName || "").trim();
@@ -254,18 +251,16 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
       const nextValues = { ...values };
       if (Object.prototype.hasOwnProperty.call(values, "startsAt") || Object.prototype.hasOwnProperty.call(values, "endsAt")) {
-        const dates = normalizeFreeAccessDates(values);
+        const dates = normalizeFreeAccessDates({ startsAt: values.startsAt ?? current.data()?.startsAt, endsAt: Object.prototype.hasOwnProperty.call(values, "endsAt") ? values.endsAt : current.data()?.endsAt });
         if (dates.endsAt !== null && dates.endsAt <= now()) return res.status(400).json({ error: "endsAt must be in the future." });
         nextValues.startsAt = dates.startsAt;
         nextValues.endsAt = dates.endsAt;
       }
-      if (Object.prototype.hasOwnProperty.call(values, "all19") || Object.prototype.hasOwnProperty.call(values, "allPermissions") || Object.prototype.hasOwnProperty.call(values, "features")) {
-        Object.assign(nextValues, normalizeFeatures(values));
-      }
+      if (Object.prototype.hasOwnProperty.call(values, "all19") || Object.prototype.hasOwnProperty.call(values, "allPermissions") || Object.prototype.hasOwnProperty.call(values, "features")) Object.assign(nextValues, normalizeFeatures(values));
       await collection("freeAccessGrants").doc(req.params.id).set({ ...nextValues, status: "ACTIVE", updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
       await audit(req, "OWNER_FREE_ACCESS_EDITED", "freeAccessGrant", { id: req.params.id, changedFields: Object.keys(nextValues) });
-      res.json({ ok: true, id: req.params.id, status: "ACTIVE", startsAt: nextValues.startsAt, endsAt: nextValues.endsAt, all19: nextValues.all19, features: nextValues.features });
-    } catch (e) { next(e); }
+      res.json({ ok: true, id: req.params.id, status: "ACTIVE", ...nextValues });
+    } catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ error: e.message }); next(e); }
   });
   app.post("/api/owner/free-access/:id/revoke", requireOwner, async (req, res, next) => {
     try {
@@ -279,22 +274,18 @@ function installOwnerPanelRoutes(app, { db }) {
     try { res.json({ payments: await read("payments") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/payments/:id", requireOwner, (req, res, next) => update(req, res, "payments", req.params.id, "payment", "OWNER_PAYMENT_EDITED").catch(next));
-
   app.get("/api/owner/emi", requireOwner, async (req, res, next) => {
     try { res.json({ emi: await read("emiApplications") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/emi/:id", requireOwner, (req, res, next) => update(req, res, "emiApplications", req.params.id, "emi", "OWNER_EMI_EDITED").catch(next));
-
   app.get("/api/owner/legal-templates", requireOwner, async (req, res, next) => {
     try { res.json({ templates: await read("legalTemplates") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/legal-templates/:id", requireOwner, (req, res, next) => update(req, res, "legalTemplates", req.params.id, "legalTemplate", "OWNER_LEGAL_TEMPLATE_EDITED").catch(next));
-
   app.get("/api/owner/support-tickets", requireOwner, async (req, res, next) => {
     try { res.json({ tickets: await read("supportTickets") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/support-tickets/:id", requireOwner, (req, res, next) => update(req, res, "supportTickets", req.params.id, "supportTicket", "OWNER_SUPPORT_TICKET_EDITED").catch(next));
-
   app.get("/api/owner/health", requireOwner, async (req, res) => {
     res.json({ ok: true, service: "smart-control-backend", checkedAt: now() });
   });
