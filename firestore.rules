@@ -187,6 +187,11 @@ service cloud.firestore {
                     request.resource.data.status == 'READY'
                     && request.resource.data.storagePath is string
                     && request.resource.data.storagePath.matches('^fileTransfers/' + request.auth.uid + '/' + transferId + '/[^/]+')
+                  )
+                )
+              )
+            )
+          )
         );
 
       allow delete: if request.auth != null
