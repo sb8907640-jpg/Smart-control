@@ -1,6 +1,7 @@
 package com.smartcontrol.presentation.features
 
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -74,6 +78,15 @@ fun FeatureCenterScreen(
     val ownerSettings by featureAccess.settings.collectAsState()
     val settingsLoaded = ownerSettings != null
     val userId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    val selectionPreferences = remember(context) {
+        context.getSharedPreferences("family_suraksha_file_access", android.content.Context.MODE_PRIVATE)
+    }
+    var selectedMediaUri by remember(context) {
+        mutableStateOf(selectionPreferences.getString("selected_media_uri", null))
+    }
+    var selectedFolderUri by remember(context) {
+        mutableStateOf(selectionPreferences.getString("selected_folder_uri", null))
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             runCatching {
@@ -82,6 +95,8 @@ fun FeatureCenterScreen(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }.onSuccess {
+                selectionPreferences.edit().putString("selected_media_uri", it.toString()).apply()
+                selectedMediaUri = it.toString()
                 Toast.makeText(context, "Selected media access saved.", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 Toast.makeText(context, "Media was selected, but persistent access could not be saved.", Toast.LENGTH_LONG).show()
@@ -96,6 +111,8 @@ fun FeatureCenterScreen(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             }.onSuccess {
+                selectionPreferences.edit().putString("selected_folder_uri", it.toString()).apply()
+                selectedFolderUri = it.toString()
                 Toast.makeText(context, "Folder access granted and saved.", Toast.LENGTH_SHORT).show()
             }.onFailure { error ->
                 Toast.makeText(
@@ -134,11 +151,49 @@ fun FeatureCenterScreen(
             ) { Text("Open Gallery Picker") }
         }
         item {
+            selectedMediaUri?.let { uri ->
+                Text("Saved media selection", style = MaterialTheme.typography.labelMedium)
+                Text(uri, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.contentResolver.releasePersistableUriPermission(
+                                Uri.parse(uri),
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+                        selectionPreferences.edit().remove("selected_media_uri").apply()
+                        selectedMediaUri = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Clear media selection") }
+            }
+        }
+        item {
             OutlinedButton(
                 onClick = { folderPicker.launch(null) },
                 enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILES_ACCESS, userId),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open Files / Folder Picker") }
+        }
+        item {
+            selectedFolderUri?.let { uri ->
+                Text("Saved folder selection", style = MaterialTheme.typography.labelMedium)
+                Text(uri, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.contentResolver.releasePersistableUriPermission(
+                                Uri.parse(uri),
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            )
+                        }
+                        selectionPreferences.edit().remove("selected_folder_uri").apply()
+                        selectedFolderUri = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Clear folder selection") }
+            }
         }
         item { OutlinedButton(onClick = onNotifications, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.NOTIFICATIONS, userId), modifier = Modifier.fillMaxWidth()) { Text("Notification Access") } }
         item {

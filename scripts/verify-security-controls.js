@@ -77,6 +77,11 @@ check("Screen recording is separate and visible",
     recordingService.includes("MediaRecorder") &&
     recordingService.includes("ACTION_STOP"),
   "Local recording requires fresh Android system consent and exposes an ongoing Stop action.");
+check("Gallery and Files Access persist the selected URI",
+  featureCenter.includes("selected_media_uri") &&
+    featureCenter.includes("selected_folder_uri") &&
+    featureCenter.includes("takePersistableUriPermission"),
+  "System picker selections survive navigation and can be explicitly cleared.");
 
 
 const failed = checks.filter(x => !x.ok);
