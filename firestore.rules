@@ -119,6 +119,8 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
 
+      // The receiving device approves the request and publishes the offer SDP.
+      // The controller writes the answer SDP. Each side may only write its own signaling field.
       allow update: if request.auth != null && (
         (
           resource.data.targetDeviceId == request.auth.uid
@@ -126,10 +128,21 @@ service cloud.firestore {
           && resource.data.targetDeviceId == request.resource.data.targetDeviceId
           && resource.data.capabilities == request.resource.data.capabilities
           && resource.data.createdAt == request.resource.data.createdAt
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           && (
-            (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
-            || (resource.data.status == 'APPROVED' && request.resource.data.status == 'ACTIVE')
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+              && (
+                (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
+                || (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
+              )
+            )
+            || (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offerSdp'])
+              && resource.data.status == 'APPROVED'
+              && request.resource.data.status == resource.data.status
+              && request.resource.data.offerSdp is string
+            )
           )
         )
         ||
@@ -139,15 +152,24 @@ service cloud.firestore {
           && resource.data.targetDeviceId == request.resource.data.targetDeviceId
           && resource.data.capabilities == request.resource.data.capabilities
           && resource.data.createdAt == request.resource.data.createdAt
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'offerSdp', 'answerSdp'])
           && (
-            (resource.data.status == 'APPROVED' && request.resource.data.status in ['APPROVED', 'ACTIVE', 'STOPPED'])
-            || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
-            || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+              && (
+                (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                || (resource.data.status == 'ACTIVE' && request.resource.data.status == 'STOPPED')
+                || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
+              )
+            )
+            || (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answerSdp'])
+              && resource.data.status == 'APPROVED'
+              && request.resource.data.status == resource.data.status
+              && request.resource.data.answerSdp is string
+            )
           )
         )
       );
-
       allow delete: if request.auth != null && resource.data.controllerUid == request.auth.uid;
 
       match /iceCandidates/{candidateId} {
