@@ -98,6 +98,7 @@ service cloud.firestore {
       // Client-created codes cannot extend beyond the public maximum or bypass
       // the Owner-only no-expiry policy enforced by the pairing screen.
       allow create: if request.auth != null
+        && token.size() >= 32
         && request.resource.data.deviceUid == request.auth.uid
         && request.resource.data.expiresAt is int
         && request.resource.data.createdAt is int
