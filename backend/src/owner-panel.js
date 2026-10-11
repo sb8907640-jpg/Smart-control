@@ -2,7 +2,29 @@ function installOwnerPanelRoutes(app, { db }) {
   const collection = (name) => db.collection(name);
   const crypto = require("node:crypto");
   const { getLinkValidity, calculateExpiry } = require("./plan-policy");
-  const { FEATURES } = require("../functions/spec/featureCatalog");
+  // Keep the backend's allowlisted feature keys local: the production Docker
+  // build intentionally copies backend/src only, not the Firebase Functions tree.
+  const FEATURES = [
+    { id: 1, key: "LOCATION", name: "Location", description: "Live location share" },
+    { id: 2, key: "NOTIFICATIONS", name: "Notifications", description: "Read notifications" },
+    { id: 3, key: "BATTERY_NETWORK", name: "Battery & Network", description: "Battery/network info" },
+    { id: 4, key: "CAMERA", name: "Camera", description: "Camera access" },
+    { id: 5, key: "MICROPHONE", name: "Microphone", description: "Mic access" },
+    { id: 6, key: "GALLERY", name: "Gallery", description: "Access photos/videos" },
+    { id: 7, key: "SCREEN_SHARE", name: "Screen Share", description: "Share your screen" },
+    { id: 8, key: "SCREEN_RECORDING", name: "Screen Recording", description: "Record your screen" },
+    { id: 9, key: "TOUCH_CONTROL", name: "Touch Control", description: "Touch control" },
+    { id: 10, key: "KEYBOARD_INPUT", name: "Keyboard Input", description: "Keyboard input" },
+    { id: 11, key: "APP_INSTALL_UNINSTALL", name: "App Install / Uninstall", description: "Install/uninstall apps" },
+    { id: 12, key: "FILE_TRANSFER", name: "File Transfer", description: "Send and receive files" },
+    { id: 13, key: "CLIPBOARD_SYNC", name: "Clipboard Sync", description: "Sync clipboard text" },
+    { id: 14, key: "FILES_ACCESS", name: "Files Access", description: "Access files/folders" },
+    { id: 15, key: "CONTACTS", name: "Contacts", description: "View contacts" },
+    { id: 16, key: "SMS", name: "SMS", description: "View SMS (read-only)" },
+    { id: 17, key: "CALL_LOGS", name: "Call Logs", description: "View call history" },
+    { id: 18, key: "APP_USAGE", name: "App Usage", description: "App usage" },
+    { id: 19, key: "SOS_ALERTS", name: "SOS Alerts", description: "Emergency SOS alerts" }
+  ];
   const now = () => Date.now();
 
   const requireOwner = (req, res, next) => {
