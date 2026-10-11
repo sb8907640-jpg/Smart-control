@@ -13,6 +13,8 @@ const getActiveGatewayPermit = gatewayPermit.getActiveGatewayPermit;
 const gatewayEncryptionKey = gatewayPermit.gatewayEncryptionKey;
 exports.savePaymentGatewayPermit = gatewayPermit.savePaymentGatewayPermit;
 exports.getPaymentGatewayPermit = gatewayPermit.getPaymentGatewayPermit;
+exports.getPaymentGatewayProviderCatalog = gatewayPermit.getPaymentGatewayProviderCatalog;
+exports.savePaymentGatewayProviderDraft = gatewayPermit.savePaymentGatewayProviderDraft;
 
 const app = getApps().length ? getApp() : initializeApp();
 const db = getFirestore(app);
