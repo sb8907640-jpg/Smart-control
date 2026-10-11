@@ -179,7 +179,77 @@ service cloud.firestore {
             && (
               (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
               || (resource.data.status == 'APPROVED' && request.resource.data.status == 'UPLOADING')
-              || (resource.data.status == 'UPLOADING' && request.resource.data.status in ['READY', 'CANCELLED'])
+              || (
+                resource.data.status == 'UPLOADING'
+                && (
+                  request.resource.data.status == 'CANCELLED'
+                  || (
+                    request.resource.data.status == 'READY'
+                    && request.resource.data.storagePath is string
+                    && request.resource.data.storagePath.matches('^fileTransfers/' + request.auth.uid + '/' + transferId + '/[^/]+
+            )
+          )
+        );
+
+      allow delete: if request.auth != null
+        && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
+    }
+
+    match /auditLogs/{eventId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.deviceId is string
+        && request.resource.data.feature is string
+        && request.resource.data.action is string
+        && request.resource.data.createdAt is int;
+      allow read: if request.auth != null
+        && (
+          resource.data.userId == request.auth.uid
+          || get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.controllerUid == request.auth.uid
+          || resource.data.deviceId == request.auth.uid
+        );
+      allow update, delete: if false;
+    }
+
+    match /devices/{uid} {
+      allow create: if request.auth != null
+        && request.resource.data.controllerUid == request.auth.uid
+        && request.resource.data.pairingToken is string
+        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
+        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+
+      allow update: if request.auth != null
+        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
+
+      match /sharedLocation/{locationId} {
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /statusAlerts/{alertId} {
+        allow create: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+        allow update: if request.auth != null
+          && (request.auth.uid == uid
+              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedBy'])
+          && request.resource.data.acknowledged == true;
+      }
+    }
+  }
+}
+)
+                  )
+                )
+              )
             )
           )
         );
