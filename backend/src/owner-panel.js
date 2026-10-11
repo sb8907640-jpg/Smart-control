@@ -2,6 +2,7 @@ function installOwnerPanelRoutes(app, { db }) {
   const collection = (name) => db.collection(name);
   const crypto = require("node:crypto");
   const { getLinkValidity, calculateExpiry } = require("./plan-policy");
+  const { FEATURES } = require("../functions/spec/featureCatalog");
   const now = () => Date.now();
 
   const requireOwner = (req, res, next) => {
@@ -176,6 +177,46 @@ function installOwnerPanelRoutes(app, { db }) {
       await ref.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
       await audit(req, "OWNER_DEVICE_LINK_REVOKED", "pairingCode", { code });
       res.json({ ok: true, code, status: "REVOKED" });
+    } catch (e) { next(e); }
+  });
+
+  app.get("/api/owner/catalog-features", requireOwner, async (req, res, next) => {
+    try {
+      const [policySnap, settingsSnap] = await Promise.all([
+        collection("featurePolicy").doc("global").get(),
+        collection("ownerSettings").doc("global").get()
+      ]);
+      const policy = policySnap.exists ? policySnap.data() || {} : {};
+      const settings = settingsSnap.exists ? settingsSnap.data() || {} : {};
+      const globalOverrides = policy.globalFeatureOverrides || settings.masterConfig?.access?.globalFeatureOverrides || {};
+      const overrides = policy.featureOverrides || settings.featureOverrides || {};
+      res.json({ features: FEATURES.map(feature => ({
+        id: feature.key, key: feature.key, catalogId: feature.id,
+        name: feature.name, description: feature.description,
+        enabled: typeof overrides[feature.key] === "boolean" ? overrides[feature.key]
+          : typeof globalOverrides[feature.key] === "boolean" ? globalOverrides[feature.key]
+          : typeof globalOverrides[feature.key]?.enabled === "boolean" ? globalOverrides[feature.key].enabled
+          : true
+      })) });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/catalog-features/:key", requireOwner, async (req, res, next) => {
+    try {
+      const key = String(req.params.key || "").trim().toUpperCase();
+      if (!FEATURES.some(feature => feature.key === key)) return res.status(404).json({ error: "Feature not found in the canonical 19-feature catalog." });
+      if (typeof req.body?.values?.enabled !== "boolean") return res.status(400).json({ error: "values.enabled must be a boolean." });
+      const enabled = req.body.values.enabled;
+      const policyRef = collection("featurePolicy").doc("global");
+      const settingsRef = collection("ownerSettings").doc("global");
+      await Promise.all([
+        policyRef.set({ featureOverrides: { [key]: enabled }, globalFeatureOverrides: { [key]: enabled } }, { merge: true }),
+        settingsRef.set({
+          featureOverrides: { [key]: { enabled, maxDurationSeconds: null, priority: 0 } },
+          masterConfig: { access: { globalFeatureOverrides: { [key]: { enabled, maxDurationSeconds: null, priority: 0 } } } }
+        }, { merge: true })
+      ]);
+      await audit(req, "OWNER_CATALOG_FEATURE_TOGGLED", "feature", { key, enabled });
+      res.json({ ok: true, key, enabled });
     } catch (e) { next(e); }
   });
 
