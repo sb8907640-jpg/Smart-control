@@ -207,6 +207,41 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   });
 
 
+  // Support destination is owner-configurable in ownerSettings/global; the
+  // private deployment variable remains a backwards-compatible fallback.
+  app.post("/api/support/whatsapp/initiate", authenticate, requireFirestore, async (req, res, next) => {
+    try {
+      const settingsSnap = await firestore.collection("ownerSettings").doc("global").get();
+      const profile = settingsSnap.exists
+        ? settingsSnap.data()?.masterConfig?.ownerControl?.businessProfile || {}
+        : {};
+      const rawNumber = String(profile.supportWhatsAppNumber || process.env.SUPPORT_WHATSAPP_NUMBER || "");
+      const number = rawNumber.replace(/[^\\d]/g, "");
+      if (!/^\\d{8,15}$/.test(number)) {
+        return res.status(503).json({ error: "WhatsApp support is not configured. Ask the OWNER to set the support number." });
+      }
+      const now = Date.now();
+      const recent = await firestore.collection("supportTickets")
+        .where("userId", "==", req.user.uid)
+        .where("createdAtEpochMs", ">=", now - 60_000)
+        .limit(3).get();
+      if (recent.size >= 3) return res.status(429).json({ error: "Too many support requests. Please wait a minute." });
+      const brandName = String(profile.brandName || "Family Suraksha").slice(0, 100);
+      const message = String(profile.supportWhatsAppMessage || `Hello, I need support for ${brandName}`).trim().slice(0, 500);
+      const ref = await firestore.collection("supportTickets").add({
+        userId: req.user.uid,
+        category: "WHATSAPP_SUPPORT",
+        status: "OPEN",
+        brandName,
+        channel: "WHATSAPP",
+        createdAtEpochMs: now,
+        updatedAtEpochMs: now
+      });
+      const whatsappUrl = "https://wa.me/" + number + "?text=" + encodeURIComponent(message);
+      return res.status(201).json({ ok: true, ticketId: ref.id, channel: "WHATSAPP", whatsappUrl });
+    } catch (error) { next(error); }
+  });
+
   // Create a short-lived, consent-based pairing invitation. The raw token/code
   // are returned only once; only their hashes are persisted.
   app.post("/api/pairing/invites", authenticate, requireFirestore, async (req, res, next) => {
