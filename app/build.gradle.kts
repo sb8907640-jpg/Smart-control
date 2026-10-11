@@ -7,9 +7,6 @@ plugins {
 }
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
 val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").map { it.ifBlank { "969691895574-9f7jujuf7irm6hktusvdtp0uik96cqke.apps.googleusercontent.com" } }.get()
-val turnUrls = providers.gradleProperty("SMARTCONTROL_TURN_URLS").orElse("").get()
-val turnUsername = providers.gradleProperty("SMARTCONTROL_TURN_USERNAME").orElse("").get()
-val turnCredential = providers.gradleProperty("SMARTCONTROL_TURN_CREDENTIAL").orElse("").get()
 val apiBaseUrl = providers.gradleProperty("SMARTCONTROL_API_BASE_URL").orElse("").get()
 
 android {
@@ -29,9 +26,6 @@ android {
         versionName="0.3.0"
         testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String","GOOGLE_WEB_CLIENT_ID","\"$googleWebClientId\"")
-        buildConfigField("String","TURN_URLS","\"$turnUrls\"")
-        buildConfigField("String","TURN_USERNAME","\"$turnUsername\"")
-        buildConfigField("String","TURN_CREDENTIAL","\"$turnCredential\"")
         buildConfigField("String","SMARTCONTROL_API_BASE_URL","\"$apiBaseUrl\"")
     }
     buildFeatures { compose=true; buildConfig=true }
