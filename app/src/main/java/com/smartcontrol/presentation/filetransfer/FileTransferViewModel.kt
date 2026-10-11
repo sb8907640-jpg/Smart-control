@@ -51,12 +51,13 @@ class FileTransferViewModel @Inject constructor(
         val savedOwnerUid = pendingTransferPrefs.getString("owner_uid", null)
         val savedTransferId = pendingTransferPrefs.getString("transfer_id", null)
         val savedUri = pendingTransferPrefs.getString("content_uri", null)
+        val restoredUri = savedUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
         if (currentUid.isNotBlank() && currentUid == savedOwnerUid &&
-            !savedTransferId.isNullOrBlank() && !savedUri.isNullOrBlank()
+            !savedTransferId.isNullOrBlank() && restoredUri != null
         ) {
             pendingTransferId = savedTransferId
-            pendingUri = runCatching { Uri.parse(savedUri) }.getOrNull()
-            _hasPendingUpload.value = pendingUri != null
+            pendingUri = restoredUri
+            _hasPendingUpload.value = true
         } else {
             pendingTransferPrefs.edit().clear().apply()
         }
