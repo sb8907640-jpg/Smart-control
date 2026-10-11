@@ -13,8 +13,13 @@ service firebase.storage {
         && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
 
       allow read: if request.auth != null
-        && (request.auth.uid == senderUid
-            || transferDoc().data.receiverDeviceId == request.auth.uid);
+        && (
+          request.auth.uid == senderUid
+          || (
+            transferDoc().data.receiverDeviceId == request.auth.uid
+            && transferDoc().data.status == 'READY'
+          )
+        );
     }
   }
 }
