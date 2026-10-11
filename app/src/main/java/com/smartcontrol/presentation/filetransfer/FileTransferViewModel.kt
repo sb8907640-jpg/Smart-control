@@ -37,10 +37,30 @@ class FileTransferViewModel @Inject constructor(
 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
+    private val pendingTransferPrefs by lazy {
+        context.getSharedPreferences("file_transfer_pending", Context.MODE_PRIVATE)
+    }
     private var pendingTransferId: String? = null
     private var pendingUri: Uri? = null
     private val _hasPendingUpload = MutableStateFlow(false)
     val hasPendingUpload: StateFlow<Boolean> = _hasPendingUpload
+
+    init {
+        // Restore the user-selected URI after process death, but never reuse it across accounts.
+        val currentUid = auth.currentUser?.uid.orEmpty()
+        val savedOwnerUid = pendingTransferPrefs.getString("owner_uid", null)
+        val savedTransferId = pendingTransferPrefs.getString("transfer_id", null)
+        val savedUri = pendingTransferPrefs.getString("content_uri", null)
+        if (currentUid.isNotBlank() && currentUid == savedOwnerUid &&
+            !savedTransferId.isNullOrBlank() && !savedUri.isNullOrBlank()
+        ) {
+            pendingTransferId = savedTransferId
+            pendingUri = runCatching { Uri.parse(savedUri) }.getOrNull()
+            _hasPendingUpload.value = pendingUri != null
+        } else {
+            pendingTransferPrefs.edit().clear().apply()
+        }
+    }
 
     fun uploadSelectedFile(uri: Uri) = viewModelScope.launch {
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
@@ -65,6 +85,11 @@ class FileTransferViewModel @Inject constructor(
         }
         pendingTransferId = id
         pendingUri = uri
+        pendingTransferPrefs.edit()
+            .putString("owner_uid", sender)
+            .putString("transfer_id", id)
+            .putString("content_uri", uri.toString())
+            .apply()
         _hasPendingUpload.value = true
         _status.value = "Transfer request created. Wait for receiver approval."
     }
@@ -128,11 +153,13 @@ class FileTransferViewModel @Inject constructor(
             _hasPendingUpload.value = false
             pendingTransferId = null
             pendingUri = null
+            pendingTransferPrefs.edit().clear().apply()
         }.onFailure {
             runCatching { repository.updateStatus(id, FileTransferRequest.Status.CANCELLED) }
             _hasPendingUpload.value = false
             pendingTransferId = null
             pendingUri = null
+            pendingTransferPrefs.edit().clear().apply()
             _status.value = (it.message ?: "File upload failed.") + " Select the file again to start a new request."
         }
     }
