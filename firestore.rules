@@ -95,7 +95,26 @@ service cloud.firestore {
     }
 
     match /pairingCodes/{token} {
-      allow create: if request.auth != null && request.resource.data.deviceUid == request.auth.uid;
+      // Client-created codes cannot extend beyond the public maximum or bypass
+      // the Owner-only no-expiry policy enforced by the pairing screen.
+      allow create: if request.auth != null
+        && request.resource.data.deviceUid == request.auth.uid
+        && request.resource.data.expiresAt is int
+        && request.resource.data.createdAt is int
+        && request.resource.data.expiryMinutes is int
+        && request.resource.data.expiryMode in ['PLAN', 'NO_EXPIRY']
+        && request.resource.data.keys().hasOnly(['deviceUid', 'expiresAt', 'createdAt', 'expiryMinutes', 'expiryMode'])
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && (
+          (
+            request.resource.data.expiryMode == 'PLAN'
+            && request.resource.data.expiresAt <= request.time.toMillis() + 3600000
+          )
+          || (
+            request.resource.data.expiryMode == 'NO_EXPIRY'
+            && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
+          )
+        );
       allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
@@ -114,7 +133,8 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
-        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid;
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
       allow read: if request.auth != null
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
