@@ -54,11 +54,12 @@ fun SessionScreen(
     val isReceiverPaired = pairedSide != null && pairedSide?.controllerUid != currentUid
     val linkedCount = devices.size + if (isReceiverPaired) 1 else 0
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -119,8 +120,33 @@ fun SessionScreen(
                 }
             }
         }
-        item { OutlinedButton(onClick = onOpenFeatures, modifier = Modifier.fillMaxWidth()) { Text("All Features") } }
-        item { OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") } }
+        }
+        NavigationBar {
+            NavigationBarItem(
+                selected = true,
+                onClick = {},
+                icon = { Text("⌂") },
+                label = { Text("Home") }
+            )
+            NavigationBarItem(
+                selected = false,
+                onClick = onOpenPairing,
+                icon = { Text("↔") },
+                label = { Text("Devices") }
+            )
+            NavigationBarItem(
+                selected = false,
+                onClick = onOpenFeatures,
+                icon = { Text("▦") },
+                label = { Text("Features") }
+            )
+            NavigationBarItem(
+                selected = false,
+                onClick = onOpenSettings,
+                icon = { Text("⚙") },
+                label = { Text("Settings") }
+            )
+        }
     }
 }
 
