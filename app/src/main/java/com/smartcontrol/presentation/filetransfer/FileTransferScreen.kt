@@ -1,5 +1,6 @@
 package com.smartcontrol.presentation.filetransfer
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -33,10 +35,19 @@ fun FileTransferScreen(
     val incoming by viewModel.incoming.collectAsState()
     val status by viewModel.status.collectAsState()
     val hasPendingUpload by viewModel.hasPendingUpload.collectAsState()
+    val context = LocalContext.current
     var pendingDownloadId by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(viewModel::uploadSelectedFile)
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.uploadSelectedFile(it)
+        }
     }
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val transferId = pendingDownloadId
