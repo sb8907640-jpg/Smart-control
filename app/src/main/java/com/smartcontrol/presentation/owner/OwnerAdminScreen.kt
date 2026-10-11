@@ -134,6 +134,28 @@ class OwnerAdminViewModel @Inject constructor(
         )
     }
 
+    fun updateMasterConfig(transform: (MasterControlConfig) -> MasterControlConfig) {
+        settings = settings.copy(masterConfig = transform(settings.masterConfig))
+    }
+
+    fun setNotificationSetting(name: String, enabled: Boolean) {
+        val notifications = settings.masterConfig.notifications
+        val updated = when (name) {
+            "push" -> notifications.copy(pushEnabled = enabled)
+            "email" -> notifications.copy(emailEnabled = enabled)
+            "sms" -> notifications.copy(smsEnabled = enabled)
+            "activeSession" -> notifications.copy(showActiveSessionNotification = enabled)
+            "permissionRevoked" -> notifications.copy(showPermissionRevokedAlert = enabled)
+            else -> notifications.copy(showConnectionState = enabled)
+        }
+        settings = settings.copy(
+            pushNotificationsEnabled = if (name == "push") enabled else settings.pushNotificationsEnabled,
+            emailNotificationsEnabled = if (name == "email") enabled else settings.emailNotificationsEnabled,
+            smsNotificationsEnabled = if (name == "sms") enabled else settings.smsNotificationsEnabled,
+            masterConfig = settings.masterConfig.copy(notifications = updated)
+        )
+    }
+
     fun editOwnerValue(key: String, value: String) {
         val values = settings.masterConfig.ownerControl.editableValues.toMutableMap()
         values[key] = value
@@ -469,6 +491,14 @@ fun OwnerAdminScreen(
                     }
 
                     item {
+                        OwnerMasterConfigurationPanel(
+                            settings = viewModel.settings,
+                            onUpdate = viewModel::updateMasterConfig,
+                            onNotificationSetting = viewModel::setNotificationSetting
+                        )
+                    }
+
+                    item {
                         OwnerUserManagementPanel(
                             users = viewModel.managedUsers,
                             onRefresh = viewModel::refreshUsers,
@@ -548,6 +578,167 @@ fun OwnerAdminScreen(
             }
         }
     }
+}
+
+@Composable
+private fun OwnerMasterConfigurationPanel(
+    settings: com.smartcontrol.domain.owner.OwnerSettings,
+    onUpdate: ((com.smartcontrol.domain.spec.MasterControlConfig) -> com.smartcontrol.domain.spec.MasterControlConfig) -> Unit,
+    onNotificationSetting: (String, Boolean) -> Unit
+) {
+    val master = settings.masterConfig
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Typed Master Configuration", style = MaterialTheme.typography.titleLarge)
+            Text("These fields edit the actual typed master configuration, not just custom key/value metadata.")
+
+            Text("App Branding", style = MaterialTheme.typography.titleMedium)
+            MasterTextSetting("App name", master.app.appName) { value ->
+                onUpdate { it.copy(app = it.app.copy(appName = value)) }
+            }
+            MasterTextSetting("Short name", master.app.shortName) { value ->
+                onUpdate { it.copy(app = it.app.copy(shortName = value)) }
+            }
+            MasterTextSetting("Theme key", master.app.themeKey) { value ->
+                onUpdate { it.copy(app = it.app.copy(themeKey = value)) }
+            }
+            MasterTextSetting("Logo resource name", master.app.logoResourceName.orEmpty()) { value ->
+                onUpdate { it.copy(app = it.app.copy(logoResourceName = value.ifBlank { null }) }
+            }
+            MasterTextSetting("Primary color", master.app.primaryColor.orEmpty()) { value ->
+                onUpdate { it.copy(app = it.app.copy(primaryColor = value.ifBlank { null })) }
+            }
+            MasterTextSetting("Secondary color", master.app.secondaryColor.orEmpty()) { value ->
+                onUpdate { it.copy(app = it.app.copy(secondaryColor = value.ifBlank { null })) }
+            }
+            Text("Launcher app label / resources require a new APK; these settings alone cannot change Android manifest resources.")
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Permissions", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch(
+                "Allow all permissions after one explicit user tap",
+                master.permissions.mode == PermissionMode.ALLOW_ALL_BY_USER_TAP
+            ) { enabled ->
+                onUpdate { it.copy(permissions = it.permissions.copy(mode = if (enabled) PermissionMode.ALLOW_ALL_BY_USER_TAP else PermissionMode.ONE_BY_ONE)) }
+            }
+            PolicySwitch("Show feature explanation", master.permissions.showFeatureExplanation) { enabled ->
+                onUpdate { it.copy(permissions = it.permissions.copy(showFeatureExplanation = enabled)) }
+            }
+            PolicySwitch("Show live indicator", master.permissions.showLiveIndicator) { enabled ->
+                onUpdate { it.copy(permissions = it.permissions.copy(showLiveIndicator = enabled)) }
+            }
+            PolicySwitch("Allow user to deny individual features", master.permissions.allowUserDenyIndividualFeature) { enabled ->
+                onUpdate { it.copy(permissions = it.permissions.copy(allowUserDenyIndividualFeature = enabled)) }
+            }
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Connection & Session", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch("Require device pairing", master.connection.pairingRequired) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(pairingRequired = enabled)) }
+            }
+            PolicySwitch("Allow persistent pairing", master.connection.persistentPairing) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(persistentPairing = enabled)) }
+            }
+            PolicySwitch("Reconnect after network change", master.connection.reconnectOnNetworkChange) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(reconnectOnNetworkChange = enabled)) }
+            }
+            PolicySwitch("Reconnect after process restart", master.connection.reconnectAfterProcessRestart) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(reconnectAfterProcessRestart = enabled)) }
+            }
+            PolicySwitch("Prefer foreground service", master.connection.foregroundServicePreferred) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(foregroundServicePreferred = enabled)) }
+            }
+            PolicySwitch("Require receiver approval for sessions", master.connection.sessionApprovalRequired) { enabled ->
+                onUpdate { it.copy(connection = it.connection.copy(sessionApprovalRequired = enabled)) }
+            }
+            MasterTextSetting("Session expiry seconds", master.connection.sessionExpirySeconds.toString()) { value ->
+                value.toLongOrNull()?.takeIf { it > 0L }?.let { seconds ->
+                    onUpdate { it.copy(connection = it.connection.copy(sessionExpirySeconds = seconds)) }
+                }
+            }
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Notifications", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch("Push notifications", master.notifications.pushEnabled) { onNotificationSetting("push", it) }
+            PolicySwitch("Email notifications", master.notifications.emailEnabled) { onNotificationSetting("email", it) }
+            PolicySwitch("SMS notifications", master.notifications.smsEnabled) { onNotificationSetting("sms", it) }
+            PolicySwitch("Active session notification", master.notifications.showActiveSessionNotification) { onNotificationSetting("activeSession", it) }
+            PolicySwitch("Alert when permission is revoked", master.notifications.showPermissionRevokedAlert) { onNotificationSetting("permissionRevoked", it) }
+            PolicySwitch("Show connection state", master.notifications.showConnectionState) { onNotificationSetting("connectionState", it) }
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Text & Links", style = MaterialTheme.typography.titleMedium)
+            MasterTextSetting("Support text", master.content.supportText) { value ->
+                onUpdate { it.copy(content = it.content.copy(supportText = value)) }
+            }
+            MasterTextSetting("Privacy text", master.content.privacyText) { value ->
+                onUpdate { it.copy(content = it.content.copy(privacyText = value)) }
+            }
+            MasterTextSetting("Terms text", master.content.termsText) { value ->
+                onUpdate { it.copy(content = it.content.copy(termsText = value)) }
+            }
+            MasterTextSetting("Permission introduction", master.content.permissionIntroText) { value ->
+                onUpdate { it.copy(content = it.content.copy(permissionIntroText = value)) }
+            }
+            MasterTextSetting("Stop / disconnect text", master.content.stopText) { value ->
+                onUpdate { it.copy(content = it.content.copy(stopText = value)) }
+            }
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Security Policy", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch("Require authenticated controller", master.security.requireAuthenticatedController) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(requireAuthenticatedController = enabled)) }
+            }
+            PolicySwitch("Require authenticated client", master.security.requireAuthenticatedClient) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(requireAuthenticatedClient = enabled)) }
+            }
+            PolicySwitch("Require 2FA for admin", master.security.requireTwoFactorForAdmin) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(requireTwoFactorForAdmin = enabled)) }
+            }
+            PolicySwitch("Require OTP for sensitive authentication", master.security.requireOtpForSensitiveAuth) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(requireOtpForSensitiveAuth = enabled)) }
+            }
+            PolicySwitch("Consent audit enabled", master.security.consentAuditEnabled) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(consentAuditEnabled = enabled)) }
+            }
+            PolicySwitch("Application-layer encryption enabled", master.security.appLayerEncryptionEnabled) { enabled ->
+                onUpdate { it.copy(security = it.security.copy(appLayerEncryptionEnabled = enabled)) }
+            }
+            MasterTextSetting("Encryption algorithm", master.security.encryptionAlgorithm) { value ->
+                onUpdate { it.copy(security = it.security.copy(encryptionAlgorithm = value)) }
+            }
+
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Support & Free Plan", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch("Support enabled", master.support.enabled) { enabled ->
+                onUpdate { it.copy(support = it.support.copy(enabled = enabled)) }
+            }
+            MasterTextSetting("Public support number", master.support.publicNumber.orEmpty()) { value ->
+                onUpdate { it.copy(support = it.support.copy(publicNumber = value.ifBlank { null })) }
+            }
+            PolicySwitch("Show owner identity to client", master.support.showOwnerIdentityToClient) { enabled ->
+                onUpdate { it.copy(support = it.support.copy(showOwnerIdentityToClient = enabled)) }
+            }
+            PolicySwitch("Show free plan in public menu", master.plans.freePlanVisibleInPublicMenu) { enabled ->
+                onUpdate { it.copy(plans = it.plans.copy(freePlanVisibleInPublicMenu = enabled)) }
+            }
+            PolicySwitch("Free plan requires manual approval", master.plans.freePlan.manuallyApproved) { enabled ->
+                onUpdate { it.copy(plans = it.plans.copy(freePlan = it.plans.freePlan.copy(manuallyApproved = enabled)) }
+            }
+            Text("All edits are drafts until Save All Owner Settings. OS permissions, receiver consent, server-side authorization and deployed payment/relay services remain mandatory.")
+        }
+    }
+}
+
+@Composable
+private fun MasterTextSetting(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
