@@ -101,6 +101,22 @@ class OwnerAdminViewModel @Inject constructor(
         )
     }
 
+    fun setFeatureDetails(featureId: FeatureId, maxDurationText: String, priorityText: String) {
+        val maxDuration = if (maxDurationText.isBlank()) null else maxDurationText.trim().toLongOrNull()
+        val priority = priorityText.trim().toIntOrNull()
+        if ((!maxDurationText.isBlank() && (maxDuration == null || maxDuration < 0L)) || priority == null) {
+            message = "Use a non-negative duration in seconds and a valid integer priority."
+            return
+        }
+        val current = settings.featureOverrides[featureId]
+            ?: FeatureOverride(featureId, true, null, 0)
+        settings = settings.copy(
+            featureOverrides = settings.featureOverrides +
+                (featureId to current.copy(maxDurationSeconds = maxDuration, priority = priority))
+        )
+        message = "${featureId.name}: feature limits updated. Press Save All Owner Settings to persist."
+    }
+
     fun setGlobalFeaturesEnabled(enabled: Boolean) {
         settings = settings.copy(
             globalFeaturesEnabled = enabled,
@@ -396,24 +412,60 @@ fun OwnerAdminScreen(
                         }
                     }
                     items(FeatureCatalog.all) { spec ->
-                        val enabled = viewModel.settings.featureOverrides[spec.id]?.enabled ?: true
+                        val current = viewModel.settings.featureOverrides[spec.id]
+                            ?: FeatureOverride(spec.id, true, null, 0)
+                        var maxDurationText by remember(spec.id, current.maxDurationSeconds) {
+                            mutableStateOf(current.maxDurationSeconds?.toString().orEmpty())
+                        }
+                        var priorityText by remember(spec.id, current.priority) {
+                            mutableStateOf(current.priority.toString())
+                        }
                         Card(Modifier.fillMaxWidth()) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(spec.displayName)
-                                    Text("Consent: " + spec.consent.joinToString())
+                            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(spec.displayName)
+                                        Text("Consent: " + spec.consent.joinToString())
+                                    }
+                                    Switch(
+                                        checked = current.enabled,
+                                        onCheckedChange = { viewModel.toggle(spec.id, it) }
+                                    )
                                 }
-                                Switch(checked = enabled, onCheckedChange = { viewModel.toggle(spec.id, it) })
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = maxDurationText,
+                                        onValueChange = { maxDurationText = it },
+                                        label = { Text("Max seconds (blank = no limit)") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = priorityText,
+                                        onValueChange = { priorityText = it },
+                                        label = { Text("Priority") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        viewModel.setFeatureDetails(spec.id, maxDurationText, priorityText)
+                                    }
+                                ) { Text("Apply feature limits") }
                             }
                         }
                     }
 
                     item {
                         Spacer(Modifier.height(8.dp))
-                        Text("Complete Owner Settings — 15 sections", style = MaterialTheme.typography.titleLarge)
+                        Text("Complete Owner Settings — 20 setting groups / 16 categories", style = MaterialTheme.typography.titleLarge)
                     }
 
                     item {
