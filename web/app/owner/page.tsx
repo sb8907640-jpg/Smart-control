@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -86,6 +86,9 @@ export default function OwnerPanel() {
   const [editorText, setEditorText] = useState("");
   const [createText, setCreateText] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
   const [linkPlanId, setLinkPlanId] = useState("");
   const [freeGrantText, setFreeGrantText] = useState(jsonText({ userName: "", email: "", mobile: "", userId: "", durationPreset: "CUSTOM", startsAt: Date.now(), endsAt: Date.now() + 7 * 86400000, all19: true, features: [], reason: "" }));
   const currentTab = useMemo(() => TABS.find(tab => tab.id === active) ?? TABS[0], [active]);
@@ -194,6 +197,37 @@ export default function OwnerPanel() {
     try { await signInWithPopup(authClient(), new GoogleAuthProvider()); }
     catch (e) { setStatus("Sign-in did not complete."); setError(e instanceof Error ? e.message : "Google sign-in failed."); }
   };
+  const sendPhoneOtp = async () => {
+    const normalized = phone.trim();
+    if (!/^\+[1-9]\d{9,14}$/.test(normalized)) {
+      setError("Enter a valid phone number including country code, for example +91…");
+      return;
+    }
+    setError(""); setStatus("Sending verification code…");
+    try {
+      const verifier = new RecaptchaVerifier(authClient(), "owner-recaptcha-container", { size: "invisible" });
+      const result = await signInWithPhoneNumber(authClient(), normalized, verifier);
+      setConfirmation(result);
+      setStatus("Verification code sent. Enter the code to finish sign-in.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Phone verification could not start.");
+      setStatus("Phone sign-in did not complete.");
+    }
+  };
+  const verifyPhoneOtp = async () => {
+    if (!confirmation || !/^\d{6}$/.test(otp.trim())) {
+      setError("Enter the 6-digit verification code.");
+      return;
+    }
+    setError(""); setStatus("Verifying phone identity…");
+    try {
+      await confirmation.confirm(otp.trim());
+      setConfirmation(null); setOtp("");
+      setStatus("Phone verified. Checking OWNER permissions…");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The verification code was rejected.");
+    }
+  };
 
   const summary = [
     { label: "Managed users", value: "users" },
@@ -212,7 +246,18 @@ export default function OwnerPanel() {
       `}</style>
       <div className="owner-login"><p>SMART CONTROL · PRIVATE ADMINISTRATION</p><h1>🔒 OWNER Control Panel</h1><p className="muted">{status}</p>
       {error && <p className="error">{error}</p>}
-      {!user ? <button className="primary" onClick={signIn}>Continue with Google</button> : <button className="primary" onClick={() => void signOut(authClient())}>Sign out</button>}
+      {!user ? <>
+        <button className="primary" onClick={signIn}>Continue with Google</button>
+        <div style={{display:"grid",gap:10,marginTop:18}}>
+          <label htmlFor="owner-phone">Or sign in with owner phone</label>
+          <input id="owner-phone" className="input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" autoComplete="tel"/>
+          {!confirmation ? <button className="primary" onClick={() => void sendPhoneOtp()}>Send OTP</button> : <>
+            <input className="input" value={otp} onChange={e => setOtp(e.target.value)} placeholder="6-digit OTP" inputMode="numeric" autoComplete="one-time-code"/>
+            <button className="primary" onClick={() => void verifyPhoneOtp()}>Verify OTP</button>
+          </>}
+          <div id="owner-recaptcha-container"/>
+        </div>
+      </> : <button className="primary" onClick={() => void signOut(authClient())}>Sign out</button>}
       <p className="muted">There is no separate fee for this panel; Firebase/backend hosting may have provider charges. Owner access still requires the backend OWNER allowlist and valid Firebase authentication. No client-side bypass is provided.</p></div>
     </main>;
   }
