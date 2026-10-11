@@ -48,22 +48,19 @@ jobs:
       - name: Build APKs
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
-          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
-          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
-          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
           BUILD_TYPE: ${{ inputs.build_type || 'all' }}
         run: |
           set -euo pipefail
           case "$BUILD_TYPE" in
             debug)
-              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
               ;;
             release)
-              gradle assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              gradle assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
               ;;
             all)
-              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS"                 -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME"                 -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+              gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug                 assembleOwnerRelease assembleLiteRelease assembleFullRelease                 -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID"                 -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
               ;;
             *)
               echo "Unsupported BUILD_TYPE=$BUILD_TYPE" >&2
