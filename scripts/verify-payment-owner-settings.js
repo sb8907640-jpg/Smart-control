@@ -19,10 +19,19 @@ const billingScreen = read("app/src/main/java/com/smartcontrol/presentation/bill
 const billingRepository = read("app/src/main/java/com/smartcontrol/data/billing/FirebaseBillingRepository.kt");
 const billingFunctions = read("functions/billing.js");
 const gatewayPermit = read("functions/gateway-permit.js");
+const functionsIndex = read("functions/index.js");
 const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
 const firestoreRules = read("firestore.rules");
 
 console.log("FAMILY SURAKSHA — OWNER PAYMENT / TARIFF INTEGRATION VERIFICATION");
+
+check("Firebase Functions entry point exports all Owner gateway permit callables",
+  functionsIndex.includes('Object.assign(exports, require("./gateway-permit"));') &&
+    gatewayPermit.includes('exports.savePaymentGatewayPermit') &&
+    gatewayPermit.includes('exports.getPaymentGatewayPermit') &&
+    gatewayPermit.includes('exports.getPaymentGatewayProviderCatalog') &&
+    gatewayPermit.includes('exports.savePaymentGatewayProviderDraft'),
+  "Owner UI callables must be exported by functions/index.js so Firebase can deploy them.");
 
 check("Owner panel uses the secure gateway permit and encrypted future-provider drafts",
   ownerPanel.includes("PaymentGatewayPermitPanel") &&
