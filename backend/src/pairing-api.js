@@ -22,25 +22,30 @@ function installPairingApi(app, { db, authenticate }) {
       const result = await db.runTransaction(async transaction => {
         const inviteSnap = await transaction.get(inviteRef);
         if (!inviteSnap.exists) {
-          const error = new Error("Invitation not found or invalid.");
-          error.statusCode = 404;
-          throw error;
+          return { failure: { statusCode: 404, message: "Invitation not found or invalid." } };
         }
         const invite = inviteSnap.data();
+        if (Number(invite.lockedUntilEpochMs || 0) > now) {
+          return { failure: { statusCode: 429, message: "Too many incorrect codes. This invitation is temporarily locked." } };
+        }
         if (invite.status !== "pending" || invite.expiresAtEpochMs <= now) {
-          const error = new Error("Invitation has expired or has already been used.");
-          error.statusCode = 410;
-          throw error;
+          return { failure: { statusCode: 410, message: "Invitation has expired or has already been used." } };
         }
         if (invite.codeHash !== codeHash) {
-          const error = new Error("Verification code is incorrect.");
-          error.statusCode = 401;
-          throw error;
+          const failedAttempts = Number(invite.failedAttempts || 0) + 1;
+          const lockedUntilEpochMs = failedAttempts >= 5 ? now + 15 * 60_000 : 0;
+          transaction.update(inviteRef, { failedAttempts, lockedUntilEpochMs });
+          return {
+            failure: {
+              statusCode: lockedUntilEpochMs > now ? 429 : 401,
+              message: lockedUntilEpochMs > now
+                ? "Too many incorrect codes. This invitation is locked for 15 minutes."
+                : "Verification code is incorrect."
+            }
+          };
         }
         if (invite.creatorUid === req.user.uid) {
-          const error = new Error("The sender cannot accept their own invitation.");
-          error.statusCode = 400;
-          throw error;
+          return { failure: { statusCode: 400, message: "The sender cannot accept their own invitation." } };
         }
 
         const linkedAtEpochMs = Date.now();
@@ -66,6 +71,7 @@ function installPairingApi(app, { db, authenticate }) {
         };
       });
 
+      if (result.failure) return res.status(result.failure.statusCode).json({ error: result.failure.message });
       return res.status(201).json({ linked: true, ...result });
     } catch (error) {
       if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
