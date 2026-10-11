@@ -10,6 +10,34 @@ const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
 initializeApp();
 const db = getFirestore();
 
+exports.getDevicePairingPolicy = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in before generating a pairing code.");
+  }
+
+  const claims = request.auth.token || {};
+  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  if (isOwner) return { isOwner: true, expiryMinutes: 0 };
+
+  // Only expose the pairing-code lifetime, never the private owner settings document.
+  const snapshot = await db.collection("ownerSettings").doc("global").get();
+  const settings = snapshot.exists ? snapshot.data() || {} : {};
+  const config = settings.masterConfig || {};
+  const editable = config.ownerControl?.editableValues || {};
+  const perUser = config.access?.perUser || {};
+  const userPlan = perUser[request.auth.uid]?.planId;
+  const planId = String(userPlan || editable["plans.defaultPlan"] || "free")
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const planKey = `plans.${planId}PairingTokenExpiryMinutes`;
+  const configured = Number(
+    editable[planKey] ?? editable["plans.freePairingTokenExpiryMinutes"] ?? 10
+  );
+  const expiryMinutes = Number.isFinite(configured)
+    ? Math.max(1, Math.min(60, Math.floor(configured)))
+    : 10;
+  return { isOwner: false, expiryMinutes };
+});
+
 function validatePin(pin) {
   return typeof pin === "string" && /^\d{4}$/.test(pin);
 }
