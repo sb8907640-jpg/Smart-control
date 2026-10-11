@@ -162,9 +162,12 @@ service cloud.firestore {
     }
 
     match /fileTransfers/{transferId} {
+      // A sender may request a transfer only to its currently paired client device.
       allow create: if request.auth != null
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
         && request.resource.data.status == 'REQUESTED';
 
       allow read: if request.auth != null
