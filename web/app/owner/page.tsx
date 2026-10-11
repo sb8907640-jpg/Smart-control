@@ -23,7 +23,7 @@ type Panel = {
   note: string;
 };
 type Row = Record<string, unknown> & { id: string };
-type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "gateway" | "support-config" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
+type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "gateway" | "support-config" | "owner-profile" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
 type Tab = { id: TabId; label: string; path?: string; key?: string; description: string };
 
 const TABS: Tab[] = [
@@ -35,6 +35,7 @@ const TABS: Tab[] = [
   { id: "settings", label: "All settings", path: "/api/owner/settings", key: "settings", description: "Edit the complete global settings JSON stored by the backend." },
   { id: "gateway", label: "Payment gateway", description: "Configure the encrypted Razorpay permit and store encrypted drafts for other providers. Only implemented adapters can process payments." },
   { id: "support-config", label: "Support settings", description: "Update the WhatsApp support destination used by the customer support button." },
+  { id: "owner-profile", label: "Owner profile", description: "Edit the Owner display name and contact details without changing the secured sign-in identity." },
   { id: "free-access", label: "Free access", path: "/api/owner/free-access", key: "grants", description: "Approve, customize, extend, edit, or revoke time-limited free access." },
   { id: "device-links", label: "Device links", path: "/api/owner/device-links", key: "links", description: "Generate, regenerate, and revoke owner-issued device links." },
   { id: "subscriptions", label: "Subscriptions", path: "/api/owner/subscriptions", key: "subscriptions", description: "Inspect and update subscription records." },
@@ -189,6 +190,46 @@ function GatewayManager() {
   </div>;
 }
 
+
+
+function OwnerProfileManager({ user }: { user: User }) {
+  const [displayName, setDisplayName] = useState(user.displayName || "");
+  const [contactEmail, setContactEmail] = useState(user.email || "");
+  const [contactMobile, setContactMobile] = useState(user.phoneNumber || "");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const refresh = useCallback(async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const profile = await apiRequest<{displayName:string;contactEmail:string;contactMobile:string}>("/api/owner/profile", user);
+      setDisplayName(profile.displayName || user.displayName || "");
+      setContactEmail(profile.contactEmail || user.email || "");
+      setContactMobile(profile.contactMobile || user.phoneNumber || "");
+    } catch (e) { setError(e instanceof Error ? e.message : "Owner profile could not be loaded."); }
+    finally { setBusy(false); }
+  }, [user]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const save = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/api/owner/profile", user, "PATCH", { displayName, contactEmail, contactMobile });
+      setMessage("Owner profile saved and audited.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Owner profile could not be saved."); }
+    finally { setBusy(false); }
+  };
+  return <div className="card">
+    <div className="toolbar" style={{justifyContent:"space-between",alignItems:"center"}}><h2>Owner profile and contact details</h2><button className="btn" disabled={busy} onClick={() => void refresh()}>Refresh</button></div>
+    <p className="muted">These are editable display/contact details used for Owner profile settings. They do not change the Firebase sign-in email, phone verification, or server-side OWNER allowlist.</p>
+    <div className="grid">
+      <label>Display name<input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={80} autoComplete="name" /></label>
+      <label>Contact email<input className="input" type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} maxLength={254} autoComplete="email" /></label>
+      <label>Contact mobile (country code)<input className="input" type="tel" value={contactMobile} onChange={e => setContactMobile(e.target.value)} placeholder="+91XXXXXXXXXX" maxLength={16} autoComplete="tel" /></label>
+    </div>
+    <div className="row-actions"><button className="btn primary" disabled={busy || displayName.trim().length < 2} onClick={() => void save()}>Save Owner profile</button></div>
+    {message && <p className="notice">{message}</p>}{error && <p className="error">{error}</p>}
+  </div>;
+}
 
 function SupportSettingsManager({ user }: { user: User }) {
   const [number, setNumber] = useState("");
@@ -434,6 +475,7 @@ export default function OwnerPanel() {
         {active === "overview" && <><div className="card"><span className="pill">SERVER AUTHORIZED</span><h2>Owner control center</h2><p className="muted">Signed in as an authenticated Firebase user. Privileged actions are checked again by the backend. Owner identity fields are intentionally not exposed by the panel API.</p><p><strong>Role:</strong> {panel.role} &nbsp; <strong>Visibility:</strong> {panel.publicVisibility} &nbsp; <strong>Identity:</strong> {panel.identityVisibility}</p><p className="muted small">{status}</p></div><div className="grid">{summary.map(item => <button key={item.value} className="stat" onClick={() => setActive(item.value as TabId)}><span>{item.label}</span><strong>Open →</strong></button>)}</div><div className="card"><h2>All owner capabilities</h2>{Object.entries(panel.capabilities).map(([area, actions]) => <p key={area}><strong>{area}</strong>: {actions.join(" · ")}</p>)}</div><div className="card"><h2>Safety and security</h2><p className="muted">This dashboard does not bypass user consent, Android operating-system permissions, or approved remote-control sessions. Keep production credentials in server-side environment/secret storage.</p></div></>}
         {active === "gateway" && <GatewayManager/>}
         {active === "support-config" && user && <SupportSettingsManager user={user}/>}
+        {active === "owner-profile" && user && <OwnerProfileManager user={user}/>}
         {active === "health" && <div className="card"><h2>Backend health response</h2><pre>{jsonText(health ?? { status: "Use Refresh to check health." })}</pre></div>}
         {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">The one-time code is shown after generation so you can copy it. Treat it like a password and share it only with the intended recipient.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
         {active === "settings" && <div className="card"><h2>Global settings JSON</h2><p className="muted">Edit all global settings as a JSON object. Keep values compatible with the backend consumers. Changes are audited.</p>{rows[0] && <RecordCard row={rows[0]} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} hideSummary/>}</div>}
