@@ -34,7 +34,19 @@ async function main() {
       expiresAt: now + 10 * 60 * 1000,
       createdAt: now,
       expiryMinutes: 10,
-      expiryMode: "PLAN"
+      expiryMode: "PLAN",
+      senderRole: "Father",
+      receiverRole: "Son"
+    }));
+
+    await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "f".repeat(48)), {
+      deviceUid: "normal-user",
+      expiresAt: now + 10 * 60 * 1000,
+      createdAt: now,
+      expiryMinutes: 10,
+      expiryMode: "PLAN",
+      senderRole: "NotARealRole",
+      receiverRole: "Son"
     }));
 
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "b".repeat(48)), {
@@ -60,7 +72,9 @@ async function main() {
         expiresAt: Date.now() + 10 * 60 * 1000,
         createdAt: Date.now(),
         expiryMinutes: 10,
-        expiryMode: "PLAN"
+        expiryMode: "PLAN",
+        senderRole: "Mother",
+        receiverRole: "Daughter"
       });
     });
     await assertSucceeds(runTransaction(controller.firestore(), async (tx) => {
@@ -71,7 +85,9 @@ async function main() {
         controllerUid: "controller-user",
         pairingToken: claimToken,
         pairedAt: Date.now(),
-        pairingActive: true
+        pairingActive: true,
+        senderRole: "Mother",
+        receiverRole: "Daughter"
       });
       tx.delete(codeRef);
     }));
