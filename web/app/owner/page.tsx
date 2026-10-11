@@ -168,7 +168,9 @@ export default function OwnerPanel() {
     let values: Record<string, unknown>;
     try { values = JSON.parse(editorText); }
     catch { setError("Editor content must be valid JSON."); return; }
-    if (active === "settings") {
+    if (active === "business-settings") {
+      await runAction("Business profile and support settings saved.", "/api/owner/business-settings", "PATCH", { values });
+    } else if (active === "settings") {
       await runAction("Global settings saved.", "/api/owner/settings", "PATCH", { values });
     } else if (active === "free-access") {
       await runAction("Free-access grant updated.", `/api/owner/free-access/${encodeURIComponent(row.id)}`, "PATCH", { values });
