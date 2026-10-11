@@ -100,6 +100,12 @@ check("Owner panel exposes controls for every canonical feature",
     ownerAdmin.includes("viewModel.toggle(spec.id, it)") &&
     ownerAdmin.includes("setFeatureDetails(spec.id, maxDurationText, priorityText)"),
   "All 19 catalog features expose enable/disable, max duration and priority controls.");
+check("Owner can override each feature per user",
+  ownerAdmin.includes("Manage this user's 19 feature controls") &&
+    ownerAdmin.includes("setPerUserFeature") &&
+    read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("encodeUserFeaturePolicy(userPolicy)"),
+  "Owner can enable or disable catalog features for an individual account and persist the user policy.");
+
 check("Owner settings supports adding, editing and removing per-section values",
   ownerAdmin.includes("Add / Update Setting") &&
     ownerAdmin.includes("onValueRemove = viewModel::removeOwnerValue") &&
