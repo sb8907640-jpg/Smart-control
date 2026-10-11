@@ -105,6 +105,19 @@ check("Owner settings supports adding, editing and removing per-section values",
     ownerAdmin.includes("onValueRemove = viewModel::removeOwnerValue") &&
     ownerAdmin.includes("Save All Owner Settings"),
   "Owner can add or edit configuration values in each section and remove values from the in-memory draft before saving.");
+check("Owner panel edits typed master configuration groups",
+  ownerAdmin.includes("OwnerMasterConfigurationPanel") &&
+    ownerAdmin.includes("App Branding") &&
+    ownerAdmin.includes("Connection & Session") &&
+    ownerAdmin.includes("Security Policy") &&
+    ownerAdmin.includes("Support & Free Plan") &&
+    ownerAdmin.includes("setNotificationSetting"),
+  "Owner UI exposes typed branding, permission, connection, notification, content, security, support and free-plan controls.");
+check("Typed master configuration is persisted by the Firestore codec",
+  read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("encodeMasterConfig(config)") &&
+    read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("decodeMasterConfig(data[\"masterConfig\"] as? Map<*, *>)"),
+  "Typed master configuration is encoded and decoded for Owner Settings persistence.");
+
 check("Payment secrets remain outside generic owner settings editor",
   ownerAdmin.includes("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above") &&
     ownerAdmin.includes("legacyGatewaySecretKeys"),
