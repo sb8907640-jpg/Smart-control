@@ -2,6 +2,8 @@ package com.smartcontrol.data.owner
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.SetOptions
 import com.smartcontrol.domain.owner.FeatureOverride
 import com.smartcontrol.domain.owner.OwnerSettings
@@ -65,6 +67,13 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             )
         )
         val encoded = encode(safeSettings)
+        val ownerSettingsRef = firestore.collection("ownerSettings").document("global")
+        val previousSettings = ownerSettingsRef.get().await().data.orEmpty()
+        val previousMaster = previousSettings["masterConfig"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val previousOwnerControl = previousMaster["ownerControl"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val previousEditable = previousOwnerControl["editableValues"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val removedEditableKeys = previousEditable.keys.map { it.toString() }.toSet() -
+            sanitizedEditableValues.keys
         if (safeSettings.masterConfig.ownerControl.changeLogEnabled) {
             firestore.collection("ownerSettingsHistory").document().set(
                 mapOf(
@@ -77,10 +86,17 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         }
         val batch = firestore.batch()
         batch.set(
-            firestore.collection("ownerSettings").document("global"),
+            ownerSettingsRef,
             stripNulls(encoded),
             SetOptions.merge()
         )
+        removedEditableKeys.forEach { key ->
+            batch.update(
+                ownerSettingsRef,
+                FieldPath.of("masterConfig", "ownerControl", "editableValues", key),
+                FieldValue.delete()
+            )
+        }
         batch.set(
             firestore.collection("featurePolicy").document("global"),
             encodeFeaturePolicy(settings),
