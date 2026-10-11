@@ -26,11 +26,15 @@ const firestoreRules = read("firestore.rules");
 console.log("FAMILY SURAKSHA — OWNER PAYMENT / TARIFF INTEGRATION VERIFICATION");
 
 check("Firebase Functions entry point exports all Owner gateway permit callables",
-  functionsIndex.includes('Object.assign(exports, require("./gateway-permit"));') &&
-    gatewayPermit.includes('exports.savePaymentGatewayPermit') &&
-    gatewayPermit.includes('exports.getPaymentGatewayPermit') &&
-    gatewayPermit.includes('exports.getPaymentGatewayProviderCatalog') &&
-    gatewayPermit.includes('exports.savePaymentGatewayProviderDraft'),
+  functionsIndex.includes("exports.savePaymentGatewayPermit = gatewayPermitFunctions.savePaymentGatewayPermit;") &&
+    functionsIndex.includes("exports.getPaymentGatewayPermit = gatewayPermitFunctions.getPaymentGatewayPermit;") &&
+    functionsIndex.includes("exports.getPaymentGatewayProviderCatalog = gatewayPermitFunctions.getPaymentGatewayProviderCatalog;") &&
+    functionsIndex.includes("exports.savePaymentGatewayProviderDraft = gatewayPermitFunctions.savePaymentGatewayProviderDraft;") &&
+    !functionsIndex.includes("exports.getActiveGatewayPermit = gatewayPermitFunctions.getActiveGatewayPermit;") &&
+    gatewayPermit.includes("exports.savePaymentGatewayPermit") &&
+    gatewayPermit.includes("exports.getPaymentGatewayPermit") &&
+    gatewayPermit.includes("exports.getPaymentGatewayProviderCatalog") &&
+    gatewayPermit.includes("exports.savePaymentGatewayProviderDraft"),
   "Owner UI callables must be exported by functions/index.js so Firebase can deploy them.");
 
 check("Owner panel uses the secure gateway permit and encrypted future-provider drafts",
