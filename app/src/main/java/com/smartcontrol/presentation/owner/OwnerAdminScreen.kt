@@ -29,6 +29,7 @@ import com.smartcontrol.domain.owner.OwnerManagedUser
 import com.smartcontrol.domain.owner.OwnerUserManagementRepository
 import com.smartcontrol.domain.spec.FeatureCatalog
 import com.smartcontrol.domain.spec.FeatureId
+import com.smartcontrol.domain.spec.MasterControlConfig
 import com.smartcontrol.domain.spec.MasterSpecification
 import com.smartcontrol.domain.spec.PermissionMode
 import dagger.hilt.android.lifecycle.HiltViewModel
