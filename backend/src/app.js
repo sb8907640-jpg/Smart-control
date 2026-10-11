@@ -280,6 +280,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     } catch (error) { next(error); }
   });
 
+  require("./pairing-api").installPairingApi(app, { db: firestore, authenticate });
   installCatalogRoutes(app, { db: firestore, requireAuth: authenticate });
   installOwnerPanelRoutes(app, { db: firestore });
 
