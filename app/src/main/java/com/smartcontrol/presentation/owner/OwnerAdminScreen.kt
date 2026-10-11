@@ -346,6 +346,24 @@ class OwnerAdminViewModel @Inject constructor(
         }
     }
 
+    fun setPerUserFeature(userId: String, featureId: FeatureId, enabled: Boolean) {
+        val access = settings.masterConfig.access
+        val userPolicy = access.perUser[userId]
+            ?: com.smartcontrol.domain.spec.UserFeatureAccess()
+        val current = userPolicy.featureOverrides[featureId]
+            ?: com.smartcontrol.domain.spec.FeatureAccess()
+        val updatedUser = userPolicy.copy(
+            featureOverrides = userPolicy.featureOverrides +
+                (featureId to current.copy(enabled = enabled))
+        )
+        settings = settings.copy(
+            masterConfig = settings.masterConfig.copy(
+                access = access.copy(perUser = access.perUser + (userId to updatedUser))
+            )
+        )
+        message = "Per-user feature policy updated. Press Save All Owner Settings to persist."
+    }
+
     fun rollback(historyId: String) {
         viewModelScope.launch {
             message = repository.rollback(historyId)
@@ -511,9 +529,11 @@ fun OwnerAdminScreen(
                     item {
                         OwnerUserManagementPanel(
                             users = viewModel.managedUsers,
+                            perUserPolicies = viewModel.settings.masterConfig.access.perUser,
                             onRefresh = viewModel::refreshUsers,
                             onAccessSave = viewModel::setUserAccess,
-                            onBlockToggle = viewModel::setUserBlocked
+                            onBlockToggle = viewModel::setUserBlocked,
+                            onFeatureOverride = viewModel::setPerUserFeature
                         )
                     }
 
@@ -1233,9 +1253,11 @@ private fun OwnerBillingPanel(
 @Composable
 private fun OwnerUserManagementPanel(
     users: List<OwnerManagedUser>,
+    perUserPolicies: Map<String, com.smartcontrol.domain.spec.UserFeatureAccess>,
     onRefresh: () -> Unit,
     onAccessSave: (OwnerManagedUser, String, Boolean, Long) -> Unit,
-    onBlockToggle: (OwnerManagedUser, Boolean) -> Unit
+    onBlockToggle: (OwnerManagedUser, Boolean) -> Unit,
+    onFeatureOverride: (String, FeatureId, Boolean) -> Unit
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -1258,6 +1280,7 @@ private fun OwnerUserManagementPanel(
                     var access by remember(user.uid, user.accessGranted) {
                         mutableStateOf(user.accessGranted)
                     }
+                    var showFeatureOverrides by remember(user.uid) { mutableStateOf(false) }
                     Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                         Column(Modifier.padding(10.dp)) {
                             Text(user.displayName.ifBlank { user.email.ifBlank { user.uid } })
@@ -1302,6 +1325,22 @@ private fun OwnerUserManagementPanel(
                             }
                             Text("Status: " + if (user.disabled) "BLOCKED" else "ACTIVE")
                             Text("Admin claim: " + if (user.admin) "YES" else "NO")
+                            OutlinedButton(
+                                onClick = { showFeatureOverrides = !showFeatureOverrides },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (showFeatureOverrides) "Hide per-user feature controls" else "Manage this user's 19 feature controls")
+                            }
+                            if (showFeatureOverrides) {
+                                FeatureCatalog.all.forEach { spec ->
+                                    val featureEnabled = perUserPolicies[user.uid]
+                                        ?.featureOverrides?.get(spec.id)?.enabled ?: true
+                                    PolicySwitch(spec.displayName, featureEnabled) { enabled ->
+                                        onFeatureOverride(user.uid, spec.id, enabled)
+                                    }
+                                }
+                                Text("Per-user changes remain drafts until Save All Owner Settings.")
+                            }
                         }
                     }
                 }
