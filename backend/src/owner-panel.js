@@ -2,6 +2,29 @@ function installOwnerPanelRoutes(app, { db }) {
   const collection = (name) => db.collection(name);
   const crypto = require("node:crypto");
   const { getLinkValidity, calculateExpiry } = require("./plan-policy");
+  // Keep the backend's allowlisted feature keys local: the production Docker
+  // build intentionally copies backend/src only, not the Firebase Functions tree.
+  const FEATURES = [
+    { id: 1, key: "LOCATION", name: "Location", description: "Live location share" },
+    { id: 2, key: "NOTIFICATIONS", name: "Notifications", description: "Read notifications" },
+    { id: 3, key: "BATTERY_NETWORK", name: "Battery & Network", description: "Battery/network info" },
+    { id: 4, key: "CAMERA", name: "Camera", description: "Camera access" },
+    { id: 5, key: "MICROPHONE", name: "Microphone", description: "Mic access" },
+    { id: 6, key: "GALLERY", name: "Gallery", description: "Access photos/videos" },
+    { id: 7, key: "SCREEN_SHARE", name: "Screen Share", description: "Share your screen" },
+    { id: 8, key: "SCREEN_RECORDING", name: "Screen Recording", description: "Record your screen" },
+    { id: 9, key: "TOUCH_CONTROL", name: "Touch Control", description: "Touch control" },
+    { id: 10, key: "KEYBOARD_INPUT", name: "Keyboard Input", description: "Keyboard input" },
+    { id: 11, key: "APP_INSTALL_UNINSTALL", name: "App Install / Uninstall", description: "Install/uninstall apps" },
+    { id: 12, key: "FILE_TRANSFER", name: "File Transfer", description: "Send and receive files" },
+    { id: 13, key: "CLIPBOARD_SYNC", name: "Clipboard Sync", description: "Sync clipboard text" },
+    { id: 14, key: "FILES_ACCESS", name: "Files Access", description: "Access files/folders" },
+    { id: 15, key: "CONTACTS", name: "Contacts", description: "View contacts" },
+    { id: 16, key: "SMS", name: "SMS", description: "View SMS (read-only)" },
+    { id: 17, key: "CALL_LOGS", name: "Call Logs", description: "View call history" },
+    { id: 18, key: "APP_USAGE", name: "App Usage", description: "App usage" },
+    { id: 19, key: "SOS_ALERTS", name: "SOS Alerts", description: "Emergency SOS alerts" }
+  ];
   const now = () => Date.now();
 
   const requireOwner = (req, res, next) => {
@@ -60,41 +83,29 @@ function installOwnerPanelRoutes(app, { db }) {
     return res.json({ ok: true, id, status: "UPDATED" });
   };
 
-  app.get("/api/owner/panel", requireOwner, async (req, res, next) => {
-    try {
-      res.json({
-        authenticated: true,
-        owner: true,
-        role: "OWNER",
-        publicVisibility: "UNLISTED",
-        identityVisibility: "PRIVATE",
-        capabilities: {
-          users: ["VIEW", "EDIT", "DELETE", "BAN"],
-          features: ["ENABLE", "DISABLE", "CONFIGURE"],
-          plans: ["CREATE", "EDIT", "DELETE", "PRICE", "DURATION", "FEATURES", "LINK_VALIDITY", "ENABLE", "DISABLE", "UPGRADE", "DOWNGRADE", "SPECIAL_OFFERS", "EMI"],
-          settings: ["GLOBAL_CONFIGURE"],
-          audit: ["VIEW_FULL_AUDIT_TRAIL"],
-          freeAccess: ["GRANT", "CUSTOM_DURATION", "EDIT", "REVOKE"],
-          payments: ["VIEW", "EDIT"],
-          emi: ["VIEW", "EDIT"],
-          legalTemplates: ["VIEW", "EDIT"],
-          supportTickets: ["VIEW", "EDIT"],
-          systemHealth: ["VIEW"],
-           deviceLinks: ["GENERATE", "REGENERATE", "REVOKE"],
-          featureFlags: ["ENABLE", "DISABLE", "CONFIGURE"]
-        },
-        ownerIdentity: null,
-        note: "Owner identity is intentionally omitted from this panel response."
-      });
-    } catch (e) { next(e); }
+  app.get("/api/owner/panel", requireOwner, async (req, res) => {
+    res.json({
+      authenticated: true, owner: true, role: "OWNER",
+      publicVisibility: "UNLISTED", identityVisibility: "PRIVATE",
+      capabilities: {
+        users: ["VIEW", "EDIT", "DELETE", "BAN"],
+        features: ["ENABLE", "DISABLE", "CONFIGURE"],
+        plans: ["CREATE", "EDIT", "DELETE", "PRICE", "DURATION", "FEATURES", "LINK_VALIDITY", "ENABLE", "DISABLE", "UPGRADE", "DOWNGRADE", "SPECIAL_OFFERS", "EMI"],
+        settings: ["GLOBAL_CONFIGURE"], audit: ["VIEW_FULL_AUDIT_TRAIL"],
+        freeAccess: ["GRANT", "CUSTOM_DURATION", "EDIT", "REVOKE"],
+        payments: ["VIEW", "EDIT"], emi: ["VIEW", "EDIT"],
+        legalTemplates: ["VIEW", "EDIT"], supportTickets: ["VIEW", "EDIT"],
+        systemHealth: ["VIEW"], deviceLinks: ["GENERATE", "REGENERATE", "REVOKE"],
+        featureFlags: ["ENABLE", "DISABLE", "CONFIGURE"]
+      },
+      ownerIdentity: null,
+      note: "Owner identity is intentionally omitted from this panel response."
+    });
   });
 
   app.get("/api/owner/audit", requireOwner, async (req, res, next) => {
-    try {
-      res.json({ logs: await read("auditLogs", 1000) });
-    } catch (e) { next(e); }
+    try { res.json({ logs: await read("auditLogs", 1000) }); } catch (e) { next(e); }
   });
-
   app.get("/api/owner/users", requireOwner, async (req, res, next) => {
     try { res.json({ users: await read("users") }); } catch (e) { next(e); }
   });
@@ -135,32 +146,16 @@ function installOwnerPanelRoutes(app, { db }) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/owner/device-links", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("pairingCodes").where("ownerUid", "==", req.user.uid).limit(500).get();
+      const links = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      res.json({ links });
+    } catch (e) { next(e); }
+  });
   app.post("/api/owner/device-links/generate", requireOwner, async (req, res, next) => {
     try {
       const planId = String(req.body?.planId || "").trim();
-      if (!planId) return res.status(400).json({ error: "planId is required." });
-      const planSnap = await collection("plans").doc(planId).get();
-      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
-      const plan = { id: planSnap.id, ...planSnap.data() };
-      const validity = getLinkValidity(plan);
-      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
-      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
-      const createdAt = now();
-      const expiresAt = calculateExpiry(createdAt, validity);
-      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
-      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, code, expiresAt });
-      res.status(201).json({ ok: true, code, planId, expiresAt });
-    } catch (e) { next(e); }
-  });
-
-  app.post("/api/owner/device-links/regenerate/:code", requireOwner, async (req, res, next) => {
-    try {
-      const oldCode = String(req.params.code || "").trim().toUpperCase();
-      const oldRef = collection("pairingCodes").doc(oldCode);
-      const oldSnap = await oldRef.get();
-      if (!oldSnap.exists || oldSnap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
-      await oldRef.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
-      const planId = String(oldSnap.data()?.planId || req.body?.planId || "").trim();
       if (!planId) return res.status(400).json({ error: "planId is required." });
       const planSnap = await collection("plans").doc(planId).get();
       if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
@@ -170,11 +165,31 @@ function installOwnerPanelRoutes(app, { db }) {
       const createdAt = now();
       const expiresAt = calculateExpiry(createdAt, validity);
       await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
-      await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, newCode: code, expiresAt });
+      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, expiresAt });
+      res.status(201).json({ ok: true, code, planId, expiresAt });
+    } catch (e) { next(e); }
+  });
+  app.post("/api/owner/device-links/regenerate/:code", requireOwner, async (req, res, next) => {
+    try {
+      const oldCode = String(req.params.code || "").trim().toUpperCase();
+      const oldRef = collection("pairingCodes").doc(oldCode);
+      const oldSnap = await oldRef.get();
+      if (!oldSnap.exists || oldSnap.data()?.ownerUid !== req.user.uid) return res.status(404).json({ error: "Device link not found." });
+      const planId = String(oldSnap.data()?.planId || req.body?.planId || "").trim();
+      if (!planId) return res.status(400).json({ error: "planId is required." });
+      const planSnap = await collection("plans").doc(planId).get();
+      if (!planSnap.exists || planSnap.data()?.enabled !== true) return res.status(404).json({ error: "Plan not found." });
+      const validity = getLinkValidity({ id: planSnap.id, ...planSnap.data() });
+      if (!validity) return res.status(400).json({ error: "Plan device-link validity is not configured." });
+      await oldRef.set({ status: "REVOKED", revokedAt: now(), updatedAt: now() }, { merge: true });
+      const code = crypto.randomBytes(8).toString("base64url").slice(0, 11).toUpperCase();
+      const createdAt = now();
+      const expiresAt = calculateExpiry(createdAt, validity);
+      await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
+      await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, expiresAt });
       res.status(201).json({ ok: true, code, planId, expiresAt, previousCode: oldCode });
     } catch (e) { next(e); }
   });
-
   app.post("/api/owner/device-links/revoke/:code", requireOwner, async (req, res, next) => {
     try {
       const code = String(req.params.code || "").trim().toUpperCase();
@@ -187,17 +202,131 @@ function installOwnerPanelRoutes(app, { db }) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/owner/catalog-features", requireOwner, async (req, res, next) => {
+    try {
+      const [policySnap, settingsSnap] = await Promise.all([
+        collection("featurePolicy").doc("global").get(),
+        collection("ownerSettings").doc("global").get()
+      ]);
+      const policy = policySnap.exists ? policySnap.data() || {} : {};
+      const settings = settingsSnap.exists ? settingsSnap.data() || {} : {};
+      const globalOverrides = policy.globalFeatureOverrides || settings.masterConfig?.access?.globalFeatureOverrides || {};
+      const overrides = policy.featureOverrides || settings.featureOverrides || {};
+      res.json({ features: FEATURES.map(feature => ({
+        id: feature.key, key: feature.key, catalogId: feature.id,
+        name: feature.name, description: feature.description,
+        enabled: typeof overrides[feature.key] === "boolean" ? overrides[feature.key]
+          : typeof globalOverrides[feature.key] === "boolean" ? globalOverrides[feature.key]
+          : typeof globalOverrides[feature.key]?.enabled === "boolean" ? globalOverrides[feature.key].enabled
+          : true
+      })) });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/catalog-features/:key", requireOwner, async (req, res, next) => {
+    try {
+      const key = String(req.params.key || "").trim().toUpperCase();
+      if (!FEATURES.some(feature => feature.key === key)) return res.status(404).json({ error: "Feature not found in the canonical 19-feature catalog." });
+      if (typeof req.body?.values?.enabled !== "boolean") return res.status(400).json({ error: "values.enabled must be a boolean." });
+      const enabled = req.body.values.enabled;
+      const policyRef = collection("featurePolicy").doc("global");
+      const settingsRef = collection("ownerSettings").doc("global");
+      await Promise.all([
+        policyRef.set({ featureOverrides: { [key]: enabled }, globalFeatureOverrides: { [key]: enabled } }, { merge: true }),
+        settingsRef.set({
+          featureOverrides: { [key]: { enabled, maxDurationSeconds: null, priority: 0 } },
+          masterConfig: { access: { globalFeatureOverrides: { [key]: { enabled, maxDurationSeconds: null, priority: 0 } } } }
+        }, { merge: true })
+      ]);
+      await audit(req, "OWNER_CATALOG_FEATURE_TOGGLED", "feature", { key, enabled });
+      res.json({ ok: true, key, enabled });
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/owner/feature-flags", requireOwner, async (req, res, next) => {
     try { res.json({ featureFlags: await read("featureFlags") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/feature-flags/:id", requireOwner, (req, res, next) => update(req, res, "featureFlags", req.params.id, "featureFlag", "OWNER_FEATURE_FLAG_EDITED").catch(next));
 
+  const sensitiveOwnerSettingKeys = new Set([
+    "payment.webhookSecret", "payment.gatewayProviderConfig", "payment.gatewayWebhookSecrets",
+    "payment.encryptionKey", "payment.razorpayKeyId", "payment.razorpayKeySecret"
+  ]);
+  const redactOwnerSettings = (source) => {
+    const result = JSON.parse(JSON.stringify(source || {}));
+    const editable = result.masterConfig?.ownerControl?.editableValues;
+    if (editable && typeof editable === "object") {
+      for (const key of sensitiveOwnerSettingKeys) {
+        if (Object.prototype.hasOwnProperty.call(editable, key) && editable[key]) editable[key] = "[REDACTED]";
+      }
+    }
+    return result;
+  };
+
+  // The Android app's canonical settings document is ownerSettings/global.
+  // Keep the existing schema intact so web edits apply to the same live config.
+  app.get("/api/owner/settings", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("ownerSettings").doc("global").get();
+      res.json({ settings: redactOwnerSettings(snap.exists ? snap.data() : {}) });
+    } catch (e) { next(e); }
+  });
   app.patch("/api/owner/settings", requireOwner, async (req, res, next) => {
     try {
       const values = req.body?.values;
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
-      await collection("systemConfig").doc("current").set({ values, updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
-      await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "systemConfig");
+      const ref = collection("ownerSettings").doc("global");
+      const existingSnap = await ref.get();
+      const existing = existingSnap.exists ? existingSnap.data() || {} : {};
+      const nextValues = JSON.parse(JSON.stringify(values));
+      const submittedEditable = nextValues.masterConfig?.ownerControl?.editableValues;
+      const existingEditable = existing.masterConfig?.ownerControl?.editableValues || {};
+      if (submittedEditable && typeof submittedEditable === "object") {
+        for (const key of sensitiveOwnerSettingKeys) {
+          if (Object.prototype.hasOwnProperty.call(existingEditable, key)) {
+            // Redacted values are display-only; never replace the server secret with a marker.
+            submittedEditable[key] = existingEditable[key];
+          } else if (submittedEditable[key] === "[REDACTED]") {
+            delete submittedEditable[key];
+          }
+        }
+      }
+      await ref.set({ ...nextValues, updatedAtEpochMs: now(), updatedBy: req.user.uid }, { merge: true });
+      const master = nextValues.masterConfig || existing.masterConfig || {};
+      const effective = { ...existing, ...nextValues, masterConfig: master };
+      const editable = master.ownerControl?.editableValues || {};
+      const access = master.access || {};
+      const boolValue = (value, fallback = false) => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return value.toLowerCase() === "true";
+        return fallback;
+      };
+      const flagMap = (value) => Object.fromEntries(Object.entries(value || {}).map(([key, item]) => [
+        key, typeof item === "boolean" ? item : Boolean(item && typeof item === "object" ? item.enabled : false)
+      ]));
+      // Keep the client-readable feature policy in sync with the canonical owner config,
+      // just as the Android OwnerSettingsRepository does.
+      await collection("featurePolicy").doc("global").set({
+        globalFeaturesEnabled: boolValue(effective.globalFeaturesEnabled, true),
+        globalEnabled: boolValue(access.globalEnabled, true),
+        dataCollectionEnabled: boolValue(editable["data.autoCapture"], false),
+        dataShareAllowed: boolValue(editable["data.shareAllowed"], false),
+        featureOverrides: flagMap(effective.featureOverrides),
+        globalFeatureOverrides: flagMap(access.globalFeatureOverrides)
+      }, { merge: true });
+      const perUser = access.perUser || {};
+      for (const [userId, policy] of Object.entries(perUser)) {
+        await collection("featurePolicyUsers").doc(userId).set({
+          ownerEnabled: policy?.enabled !== false,
+          featureOverrides: flagMap(policy?.featureOverrides)
+        }, { merge: true });
+      }
+      if (master.ownerControl?.changeLogEnabled === true) {
+        await collection("ownerSettingsHistory").add({
+          changedBy: req.user.uid, changedAtEpochMs: now(),
+          summary: "OWNER web settings update", settings: redactOwnerSettings(effective)
+        });
+      }
+      await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "ownerSettings/global", { topLevelFields: Object.keys(nextValues) });
       res.json({ ok: true, status: "UPDATED" });
     } catch (e) { next(e); }
   });
@@ -222,7 +351,6 @@ function installOwnerPanelRoutes(app, { db }) {
       res.json({ grants: normalized });
     } catch (e) { next(e); }
   });
-
   app.post("/api/owner/free-access", requireOwner, async (req, res, next) => {
     try {
       const userName = String(req.body?.userName || "").trim();
@@ -254,18 +382,16 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
       const nextValues = { ...values };
       if (Object.prototype.hasOwnProperty.call(values, "startsAt") || Object.prototype.hasOwnProperty.call(values, "endsAt")) {
-        const dates = normalizeFreeAccessDates(values);
+        const dates = normalizeFreeAccessDates({ startsAt: values.startsAt ?? current.data()?.startsAt, endsAt: Object.prototype.hasOwnProperty.call(values, "endsAt") ? values.endsAt : current.data()?.endsAt });
         if (dates.endsAt !== null && dates.endsAt <= now()) return res.status(400).json({ error: "endsAt must be in the future." });
         nextValues.startsAt = dates.startsAt;
         nextValues.endsAt = dates.endsAt;
       }
-      if (Object.prototype.hasOwnProperty.call(values, "all19") || Object.prototype.hasOwnProperty.call(values, "allPermissions") || Object.prototype.hasOwnProperty.call(values, "features")) {
-        Object.assign(nextValues, normalizeFeatures(values));
-      }
+      if (Object.prototype.hasOwnProperty.call(values, "all19") || Object.prototype.hasOwnProperty.call(values, "allPermissions") || Object.prototype.hasOwnProperty.call(values, "features")) Object.assign(nextValues, normalizeFeatures(values));
       await collection("freeAccessGrants").doc(req.params.id).set({ ...nextValues, status: "ACTIVE", updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
       await audit(req, "OWNER_FREE_ACCESS_EDITED", "freeAccessGrant", { id: req.params.id, changedFields: Object.keys(nextValues) });
-      res.json({ ok: true, id: req.params.id, status: "ACTIVE", startsAt: nextValues.startsAt, endsAt: nextValues.endsAt, all19: nextValues.all19, features: nextValues.features });
-    } catch (e) { next(e); }
+      res.json({ ok: true, id: req.params.id, status: "ACTIVE", ...nextValues });
+    } catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ error: e.message }); next(e); }
   });
   app.post("/api/owner/free-access/:id/revoke", requireOwner, async (req, res, next) => {
     try {
@@ -279,22 +405,18 @@ function installOwnerPanelRoutes(app, { db }) {
     try { res.json({ payments: await read("payments") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/payments/:id", requireOwner, (req, res, next) => update(req, res, "payments", req.params.id, "payment", "OWNER_PAYMENT_EDITED").catch(next));
-
   app.get("/api/owner/emi", requireOwner, async (req, res, next) => {
     try { res.json({ emi: await read("emiApplications") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/emi/:id", requireOwner, (req, res, next) => update(req, res, "emiApplications", req.params.id, "emi", "OWNER_EMI_EDITED").catch(next));
-
   app.get("/api/owner/legal-templates", requireOwner, async (req, res, next) => {
     try { res.json({ templates: await read("legalTemplates") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/legal-templates/:id", requireOwner, (req, res, next) => update(req, res, "legalTemplates", req.params.id, "legalTemplate", "OWNER_LEGAL_TEMPLATE_EDITED").catch(next));
-
   app.get("/api/owner/support-tickets", requireOwner, async (req, res, next) => {
     try { res.json({ tickets: await read("supportTickets") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/support-tickets/:id", requireOwner, (req, res, next) => update(req, res, "supportTickets", req.params.id, "supportTicket", "OWNER_SUPPORT_TICKET_EDITED").catch(next));
-
   app.get("/api/owner/health", requireOwner, async (req, res) => {
     res.json({ ok: true, service: "smart-control-backend", checkedAt: now() });
   });

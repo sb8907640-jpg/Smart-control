@@ -11,6 +11,7 @@ const manifest = read("app/src/main/AndroidManifest.xml");
 const session = read("app/src/main/java/com/smartcontrol/domain/session/SessionModels.kt");
 const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/SessionRepository.kt");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
+const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
@@ -35,7 +36,6 @@ check("Boot receiver is explicit opt-in", /RECEIVE_BOOT_COMPLETED/.test(manifest
 check("SOS approval boundary", /APPROVED/.test(session) && /approve/.test(sessionRepo) && /never silently grants/i.test(policy), "Emergency flow does not silently grant protected permissions.");
 check("No permission bypass", !/(auto.?grant|silentGrant|permissionBypass|skipPermissionDialog)/i.test(policy + service + manifest), "No silent permission bypass marker.");
 const pairingRepo = read("app/src/main/java/com/smartcontrol/data/pairing/FirestorePairingRepository.kt");
-const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt");
 const mediaViewModel = read("app/src/main/java/com/smartcontrol/presentation/media/MediaSessionViewModel.kt");
 const firestoreRules = read("firestore.rules");
 const storageRules = read("storage.rules");
