@@ -46,8 +46,26 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         check(isAdmin()) { "Admin role required." }
         // Merge prevents older/unknown ownerSettings fields from being deleted while
         // the master-spec fields are added or changed.
-        val encoded = encode(settings)
-        if (settings.masterConfig.ownerControl.changeLogEnabled) {
+        val sensitiveLegacyPaymentKeys = setOf(
+            "payment.webhookSecret",
+            "payment.gatewayProviderConfig",
+            "payment.gatewayWebhookSecrets",
+            "payment.encryptionKey",
+            "payment.razorpayKeyId",
+            "payment.razorpayKeySecret"
+        )
+        val sanitizedEditableValues = settings.masterConfig.ownerControl.editableValues.toMutableMap().apply {
+            sensitiveLegacyPaymentKeys.forEach { this[it] = "" }
+        }
+        val safeSettings = settings.copy(
+            masterConfig = settings.masterConfig.copy(
+                ownerControl = settings.masterConfig.ownerControl.copy(
+                    editableValues = sanitizedEditableValues
+                )
+            )
+        )
+        val encoded = encode(safeSettings)
+        if (safeSettings.masterConfig.ownerControl.changeLogEnabled) {
             firestore.collection("ownerSettingsHistory").document().set(
                 mapOf(
                     "changedBy" to auth.currentUser?.uid.orEmpty(),
