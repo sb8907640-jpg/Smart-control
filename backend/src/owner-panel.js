@@ -417,6 +417,33 @@ function installOwnerPanelRoutes(app, { db }) {
     try { res.json({ tickets: await read("supportTickets") }); } catch (e) { next(e); }
   });
   app.patch("/api/owner/support-tickets/:id", requireOwner, (req, res, next) => update(req, res, "supportTickets", req.params.id, "supportTicket", "OWNER_SUPPORT_TICKET_EDITED").catch(next));
+
+  app.get("/api/owner/support-settings", requireOwner, async (req, res, next) => {
+    try {
+      const snap = await collection("ownerSettings").doc("global").get();
+      const settings = snap.exists ? snap.data() || {} : {};
+      const configuredInSettings = Object.prototype.hasOwnProperty.call(settings.support || {}, "whatsappNumber");
+      const value = configuredInSettings ? settings.support?.whatsappNumber : process.env.SUPPORT_WHATSAPP_NUMBER;
+      const { normalizeSupportNumber } = require("./support-whatsapp");
+      const whatsappNumber = normalizeSupportNumber(value) || "";
+      res.json({ configured: Boolean(whatsappNumber), whatsappNumber, source: configuredInSettings ? "OWNER_SETTINGS" : (whatsappNumber ? "ENVIRONMENT" : "UNCONFIGURED") });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/support-settings", requireOwner, async (req, res, next) => {
+    try {
+      const { normalizeSupportNumber } = require("./support-whatsapp");
+      const raw = String(req.body?.whatsappNumber || "").trim();
+      const whatsappNumber = normalizeSupportNumber(raw);
+      if (!whatsappNumber) return res.status(400).json({ error: "Enter a valid WhatsApp number with country code (10–15 digits)." });
+      await collection("ownerSettings").doc("global").set({
+        support: { whatsappNumber },
+        updatedAtEpochMs: now(), updatedBy: req.user.uid
+      }, { merge: true });
+      await audit(req, "OWNER_SUPPORT_WHATSAPP_UPDATED", "ownerSettings/global", { field: "support.whatsappNumber", digits: whatsappNumber.length });
+      res.json({ ok: true, configured: true, whatsappNumber, source: "OWNER_SETTINGS" });
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/owner/health", requireOwner, async (req, res) => {
     res.json({ ok: true, service: "smart-control-backend", checkedAt: now() });
   });

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -22,7 +23,7 @@ type Panel = {
   note: string;
 };
 type Row = Record<string, unknown> & { id: string };
-type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
+type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "gateway" | "support-config" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
 type Tab = { id: TabId; label: string; path?: string; key?: string; description: string };
 
 const TABS: Tab[] = [
@@ -32,6 +33,8 @@ const TABS: Tab[] = [
   { id: "features", label: "Feature flags", path: "/api/owner/feature-flags", key: "featureFlags", description: "Configure feature flags and rollout controls." },
   { id: "catalog-features", label: "All 19 features", path: "/api/owner/catalog-features", key: "features", description: "Enable or disable each canonical app feature. These changes update the shared feature policy." },
   { id: "settings", label: "All settings", path: "/api/owner/settings", key: "settings", description: "Edit the complete global settings JSON stored by the backend." },
+  { id: "gateway", label: "Payment gateway", description: "Configure the encrypted Razorpay permit and store encrypted drafts for other providers. Only implemented adapters can process payments." },
+  { id: "support-config", label: "Support settings", description: "Update the WhatsApp support destination used by the customer support button." },
   { id: "free-access", label: "Free access", path: "/api/owner/free-access", key: "grants", description: "Approve, customize, extend, edit, or revoke time-limited free access." },
   { id: "device-links", label: "Device links", path: "/api/owner/device-links", key: "links", description: "Generate, regenerate, and revoke owner-issued device links." },
   { id: "subscriptions", label: "Subscriptions", path: "/api/owner/subscriptions", key: "subscriptions", description: "Inspect and update subscription records." },
@@ -71,6 +74,158 @@ function recordLabel(row: Row) {
 function cleanRecord(row: Row) {
   const { id, createdAt, createdBy, updatedAt, updatedAtEpochMs, createdAtEpochMs, updatedBy, ...values } = row;
   return values;
+}
+
+
+type GatewayPermit = {
+  configured: boolean; enabled: boolean; mode: string; provider: string | null;
+  displayName: string; revision?: number; updatedAtEpochMs?: number;
+  credentialFieldsConfigured?: { keyId: boolean; keySecret: boolean; webhookSecret: boolean };
+};
+type GatewayProvider = {
+  id: string; name: string; adapterImplemented: boolean; draftSaved: boolean;
+  credentialsConfigured: boolean; draftDisplayName: string; draftMode: string; active: boolean;
+};
+async function callOwnerFunction<T>(name: string, data: Record<string, unknown> = {}): Promise<T> {
+  const callable = httpsCallable<Record<string, unknown>, T>(getFunctions(authClient().app), name);
+  return (await callable(data)).data;
+}
+
+function GatewayManager() {
+  const [permit, setPermit] = useState<GatewayPermit | null>(null);
+  const [providers, setProviders] = useState<GatewayProvider[]>([]);
+  const [displayName, setDisplayName] = useState("Razorpay");
+  const [mode, setMode] = useState("TEST");
+  const [enabled, setEnabled] = useState(false);
+  const [keyId, setKeyId] = useState("");
+  const [keySecret, setKeySecret] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [draftProvider, setDraftProvider] = useState("CASHFREE");
+  const [draftName, setDraftName] = useState("Cashfree");
+  const [draftMode, setDraftMode] = useState("TEST");
+  const [credentialsJson, setCredentialsJson] = useState("{}");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const [current, catalog] = await Promise.all([
+        callOwnerFunction<GatewayPermit>("getPaymentGatewayPermit"),
+        callOwnerFunction<{ providers: GatewayProvider[] }>("getPaymentGatewayProviderCatalog")
+      ]);
+      setPermit(current);
+      setProviders(catalog.providers || []);
+      if (current.displayName) setDisplayName(current.displayName);
+      if (current.mode) setMode(current.mode);
+      setEnabled(current.enabled === true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Payment gateway settings could not be loaded.");
+    } finally { setBusy(false); }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const savePermit = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await callOwnerFunction<{ revision: number; enabled: boolean; mode: string }>("savePaymentGatewayPermit", {
+        provider: "RAZORPAY", displayName, mode, enabled, keyId, keySecret, webhookSecret
+      });
+      setKeyId(""); setKeySecret(""); setWebhookSecret("");
+      setMessage(`Razorpay permit saved (revision ${result.revision}). Secret fields cleared from this form.`);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gateway permit could not be saved.");
+    } finally { setBusy(false); }
+  };
+
+  const saveDraft = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await callOwnerFunction<{ displayName: string; adapterImplemented: boolean }>("savePaymentGatewayProviderDraft", {
+        provider: draftProvider, displayName: draftName, mode: draftMode, credentialsJson
+      });
+      setCredentialsJson("{}");
+      setMessage(`${result.displayName} draft encrypted and saved. ${result.adapterImplemented ? "An adapter is implemented." : "This provider is not active for checkout; its server adapter and verification tests are still required."}`);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gateway draft could not be saved.");
+    } finally { setBusy(false); }
+  };
+
+  return <div className="card">
+    <div className="toolbar" style={{justifyContent:"space-between",alignItems:"center"}}><h2>Payment gateway control</h2><button className="btn" disabled={busy} onClick={() => void refresh()}>Refresh gateway status</button></div>
+    {message && <p className="notice">{message}</p>}{error && <p className="error">{error}</p>}
+    <p className="muted">Gateway secrets are sent directly to authenticated Firebase callable functions and encrypted server-side. They are never returned by the status endpoint. Use test credentials first; live payment processing still requires deployment and a real webhook test.</p>
+    <div className="grid">
+      <div className="stat"><span>Active permit</span><strong>{permit?.enabled ? "Enabled" : "Disabled"}</strong><span className="muted small">{permit?.configured ? `${permit.provider} · ${permit.mode} · revision ${permit.revision ?? 0}` : "No permit configured"}</span></div>
+      <div className="stat"><span>Implemented adapter</span><strong>Razorpay</strong><span className="muted small">Other listed providers are draft-only until their own server adapters and verification tests are implemented.</span></div>
+    </div>
+    <h3>Razorpay — active checkout adapter</h3>
+    <div className="grid">
+      <label>Display name<input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={80}/></label>
+      <label>Mode<select className="input" value={mode} onChange={e => setMode(e.target.value)}><option value="TEST">Test</option><option value="LIVE">Live</option></select></label>
+      <label>Key ID<input className="input" type="password" autoComplete="off" value={keyId} onChange={e => setKeyId(e.target.value)} placeholder={permit?.credentialFieldsConfigured?.keyId ? "Configured — enter new value to rotate" : "rzp_test_… or rzp_live_…"}/></label>
+      <label>Key Secret<input className="input" type="password" autoComplete="new-password" value={keySecret} onChange={e => setKeySecret(e.target.value)} placeholder={permit?.credentialFieldsConfigured?.keySecret ? "Configured — enter new value to rotate" : "Enter secret securely"}/></label>
+      <label>Webhook Secret<input className="input" type="password" autoComplete="new-password" value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder={permit?.credentialFieldsConfigured?.webhookSecret ? "Configured — enter new value to rotate" : "Enter webhook secret securely"}/></label>
+      <label style={{display:"flex",gap:10,alignItems:"center"}}><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}/> Enable Razorpay permit</label>
+    </div>
+    <div className="row-actions"><button className="btn primary" disabled={busy || !displayName.trim() || ((!permit?.configured || enabled) && (!keyId.trim() || !keySecret.trim() || !webhookSecret.trim()))} onClick={() => void savePermit()}>Save encrypted Razorpay permit</button></div>
+    <p className="muted small">To rotate or enable the permit, enter all three credential fields. Turning it off does not delete the encrypted credential history. Never paste credentials into the All settings JSON editor or public issues.</p>
+    <hr style={{border:0,borderTop:"1px solid #e1e8f2",margin:"24px 0"}}/>
+    <h3>Other gateway drafts</h3>
+    <p className="muted">These details are encrypted and stored for future integration planning only. Saving a draft does not enable that provider for checkout.</p>
+    <div className="grid">
+      <label>Provider<select className="input" value={draftProvider} onChange={e => { const id=e.target.value; setDraftProvider(id); setDraftName(providers.find(p=>p.id===id)?.name || id); }}><option value="CASHFREE">Cashfree</option><option value="PHONEPE">PhonePe</option><option value="PAYU">PayU</option><option value="STRIPE">Stripe</option><option value="PAYPAL">PayPal</option><option value="CUSTOM">Custom Gateway</option><option value="RAZORPAY">Razorpay</option></select></label>
+      <label>Display name<input className="input" value={draftName} onChange={e => setDraftName(e.target.value)} maxLength={80}/></label>
+      <label>Draft mode<select className="input" value={draftMode} onChange={e => setDraftMode(e.target.value)}><option value="TEST">Test</option><option value="LIVE">Live (draft only)</option></select></label>
+    </div>
+    <label style={{display:"block",marginTop:12}}>Provider credentials JSON (optional)<textarea className="json" style={{minHeight:100,marginTop:6}} value={credentialsJson} onChange={e => setCredentialsJson(e.target.value)} spellCheck={false}/></label>
+    <div className="row-actions"><button className="btn primary" disabled={busy || !draftName.trim()} onClick={() => void saveDraft()}>Save encrypted draft</button></div>
+    <h3>Provider readiness</h3>
+    {providers.map(provider => <div className="record" key={provider.id}><div className="record-head"><div><div className="record-title">{provider.name}</div><div className="muted small">{provider.adapterImplemented ? "Server adapter implemented" : "Adapter not implemented — cannot process payments"}</div></div><span className="pill" style={provider.active ? undefined : {background:"#f1f4f8",color:"#5a6678"}}>{provider.active ? "ACTIVE" : provider.draftSaved ? "DRAFT SAVED" : "NOT CONFIGURED"}</span></div><p className="muted small">{provider.draftDisplayName ? `Draft name: ${provider.draftDisplayName} · ${provider.draftMode} mode · credentials ${provider.credentialsConfigured ? "saved" : "not saved"}` : "No saved draft."}</p></div>)}
+  </div>;
+}
+
+
+function SupportSettingsManager({ user }: { user: User }) {
+  const [number, setNumber] = useState("");
+  const [source, setSource] = useState("UNCONFIGURED");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const refresh = useCallback(async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const data = await apiRequest<{ configured: boolean; whatsappNumber: string; source: string }>("/api/owner/support-settings", user);
+      setNumber(data.whatsappNumber || "");
+      setSource(data.source || "UNCONFIGURED");
+    } catch (e) { setError(e instanceof Error ? e.message : "Support settings could not be loaded."); }
+    finally { setBusy(false); }
+  }, [user]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const save = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const data = await apiRequest<{ whatsappNumber: string; source: string }>("/api/owner/support-settings", user, "PATCH", { whatsappNumber: number });
+      setNumber(data.whatsappNumber); setSource(data.source);
+      setMessage("WhatsApp support destination saved. New support requests will use this number.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Support settings could not be saved."); }
+    finally { setBusy(false); }
+  };
+  return <div className="card">
+    <div className="toolbar" style={{justifyContent:"space-between",alignItems:"center"}}><h2>WhatsApp support destination</h2><button className="btn" disabled={busy} onClick={() => void refresh()}>Refresh</button></div>
+    <p className="muted">This destination is saved in the private Owner settings document. The public support endpoint returns only a WhatsApp deep link when a user requests support; it does not provide a separate phone-number field.</p>
+    <p className="muted small">Current source: <strong>{source === "OWNER_SETTINGS" ? "Owner settings" : source === "ENVIRONMENT" ? "Server environment fallback" : "Not configured"}</strong></p>
+    <label style={{display:"block",maxWidth:520}}>WhatsApp number with country code
+      <input className="input" style={{marginTop:6}} value={number} onChange={e => setNumber(e.target.value)} placeholder="+91XXXXXXXXXX" inputMode="tel" autoComplete="tel"/>
+    </label>
+    <div className="row-actions"><button className="btn primary" disabled={busy || !number.trim()} onClick={() => void save()}>Save support number</button></div>
+    <p className="muted small">The server normalizes the number to digits and validates 10–15 digits. Changes are audited. The existing SUPPORT_WHATSAPP_NUMBER environment variable remains a fallback until you save a number here.</p>
+    {message && <p className="notice">{message}</p>}{error && <p className="error">{error}</p>}
+  </div>;
 }
 
 export default function OwnerPanel() {
@@ -277,6 +432,8 @@ export default function OwnerPanel() {
         <div className="heading"><div><h1>{currentTab.label}</h1><p className="muted">{currentTab.description}</p></div><div className="toolbar"><button className="btn" disabled={busy || active === "overview"} onClick={() => void loadTab(active)}>Refresh</button></div></div>
         {notice && <p className="notice">{notice}</p>}{error && <p className="error">{error}</p>}{busy && <p className="muted">Working…</p>}
         {active === "overview" && <><div className="card"><span className="pill">SERVER AUTHORIZED</span><h2>Owner control center</h2><p className="muted">Signed in as an authenticated Firebase user. Privileged actions are checked again by the backend. Owner identity fields are intentionally not exposed by the panel API.</p><p><strong>Role:</strong> {panel.role} &nbsp; <strong>Visibility:</strong> {panel.publicVisibility} &nbsp; <strong>Identity:</strong> {panel.identityVisibility}</p><p className="muted small">{status}</p></div><div className="grid">{summary.map(item => <button key={item.value} className="stat" onClick={() => setActive(item.value as TabId)}><span>{item.label}</span><strong>Open →</strong></button>)}</div><div className="card"><h2>All owner capabilities</h2>{Object.entries(panel.capabilities).map(([area, actions]) => <p key={area}><strong>{area}</strong>: {actions.join(" · ")}</p>)}</div><div className="card"><h2>Safety and security</h2><p className="muted">This dashboard does not bypass user consent, Android operating-system permissions, or approved remote-control sessions. Keep production credentials in server-side environment/secret storage.</p></div></>}
+        {active === "gateway" && <GatewayManager/>}
+        {active === "support-config" && user && <SupportSettingsManager user={user}/>}
         {active === "health" && <div className="card"><h2>Backend health response</h2><pre>{jsonText(health ?? { status: "Use Refresh to check health." })}</pre></div>}
         {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">The one-time code is shown after generation so you can copy it. Treat it like a password and share it only with the intended recipient.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
         {active === "settings" && <div className="card"><h2>Global settings JSON</h2><p className="muted">Edit all global settings as a JSON object. Keep values compatible with the backend consumers. Changes are audited.</p>{rows[0] && <RecordCard row={rows[0]} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} hideSummary/>}</div>}
