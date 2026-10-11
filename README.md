@@ -17,6 +17,23 @@ The repository includes a dedicated GitHub Actions workflow for APK generation:
 The existing Android CI and Production Readiness workflows are unchanged; this workflow only adds a dedicated APK build/download path.
 
 
+## WebRTC TURN relay configuration
+
+Remote camera, microphone and screen sessions use short-lived, per-user TURN credentials issued by the authenticated `getWebRtcIceServers` callable. The TURN shared secret is server-side only and is not embedded in APKs.
+
+1. Configure `SMARTCONTROL_TURN_URLS` in the Firebase Functions environment as a comma-separated list of your TURN server URLs (for example, `turns:turn.example.com:5349?transport=tcp`).
+2. Configure the TURN service for REST/shared-secret authentication and store the same shared secret with Firebase Functions:
+   ```sh
+   firebase functions:secrets:set SMARTCONTROL_TURN_CREDENTIAL
+   ```
+3. Deploy Functions and Firestore rules:
+   ```sh
+   firebase deploy --only functions,firestore:rules
+   ```
+4. Verify with two real devices on different carrier/Wi-Fi networks. If TURN is not configured, the app uses STUN fallback and displays a warning; restrictive NATs may prevent the session from connecting.
+
+Do not use a static TURN username/password in Android build configuration. TURN service availability, firewall ports, and production credentials must be verified on the deployed TURN provider.
+
 ## Permanent Gateway Permit (Owner-only)
 
 The Owner panel includes **Permanent Gateway Permit**. The current working provider adapter is Razorpay; the display name is editable, but a new provider needs its own server adapter and verification tests before it can be activated.
