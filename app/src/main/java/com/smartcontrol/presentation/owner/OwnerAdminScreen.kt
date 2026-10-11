@@ -1199,7 +1199,7 @@ private fun PaymentGatewayPermitPanel() {
     suspend fun refreshStatus() {
         busy = true
         try {
-            val result = functions.getHttpsCallable("getPaymentGatewayPermit").call().await().data as? Map<*, *>
+            val result = functions.getHttpsCallable("getPaymentGatewayPermit").call().await().getData() as? Map<*, *>
             if (result != null) {
                 val hasConfig = result["configured"] == true
                 configured = hasConfig
