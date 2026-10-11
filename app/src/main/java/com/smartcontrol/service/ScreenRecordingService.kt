@@ -198,12 +198,11 @@ class ScreenRecordingService : Service() {
             wasRecording && !stoppedCleanly -> "Recording stopped before a playable file could be saved."
             else -> ""
         }
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+        val preferencesEditor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putBoolean(KEY_ACTIVE, false)
             .putString(KEY_ERROR, errorText)
-            .apply {
-                if (savedReference != null) putString(KEY_LAST_RECORDING, savedReference)
-            }
+        if (savedReference != null) preferencesEditor.putString(KEY_LAST_RECORDING, savedReference)
+        preferencesEditor.apply()
         recordingStarted = false
         outputUri = null
         outputFile = null
