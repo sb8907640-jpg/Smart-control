@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -29,8 +32,16 @@ fun FileTransferScreen(
     val device by viewModel.controlledDevice.collectAsState()
     val incoming by viewModel.incoming.collectAsState()
     val status by viewModel.status.collectAsState()
+    val hasPendingUpload by viewModel.hasPendingUpload.collectAsState()
+    var pendingDownloadId by remember { mutableStateOf<String?>(null) }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::uploadSelectedFile)
+    }
+    val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val transferId = pendingDownloadId
+        pendingDownloadId = null
+        if (uri != null && transferId != null) viewModel.download(transferId, uri)
     }
 
     LazyColumn(
@@ -40,7 +51,7 @@ fun FileTransferScreen(
     ) {
         item {
             Text("File Transfer", style = MaterialTheme.typography.headlineSmall)
-            Text("Transfers require receiver approval. Files are selected only through Android's file picker.")
+            Text("Choose a file to request a transfer. The receiving device must approve it before upload; only that receiver can download a ready file.")
             Text(device?.let { "Target device: ${it.deviceUid}" } ?: "Pair a client device first.")
         }
         item {
@@ -52,13 +63,15 @@ fun FileTransferScreen(
                 Text("Choose file and request transfer")
             }
         }
-        item {
-            Button(onClick = viewModel::uploadApproved, modifier = Modifier.fillMaxWidth()) {
-                Text("Upload after approval")
+        if (hasPendingUpload) {
+            item {
+                Button(onClick = viewModel::uploadApproved, modifier = Modifier.fillMaxWidth()) {
+                    Text("Upload selected file after approval")
+                }
             }
         }
         if (incoming.isNotEmpty()) {
-            item { Text("Incoming transfer requests", style = MaterialTheme.typography.titleMedium) }
+            item { Text("Incoming transfer requests and ready files", style = MaterialTheme.typography.titleMedium) }
         }
         items(incoming, key = { it.transferId }) { request ->
             Card(Modifier.fillMaxWidth()) {
@@ -66,18 +79,32 @@ fun FileTransferScreen(
                     Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(request.fileName)
+                    Text(request.fileName, style = MaterialTheme.typography.titleMedium)
                     Text("Size: ${request.sizeBytes} bytes")
                     Text("Sender: ${request.senderDeviceId}")
-                    Button(onClick = { viewModel.approve(request.transferId) }) {
-                        Text("Approve transfer")
+                    Text("Status: ${request.status.name}")
+                    when (request.status) {
+                        com.smartcontrol.domain.filetransfer.FileTransferRequest.Status.REQUESTED -> {
+                            Button(onClick = { viewModel.approve(request.transferId) }) {
+                                Text("Approve transfer")
+                            }
+                        }
+                        com.smartcontrol.domain.filetransfer.FileTransferRequest.Status.READY -> {
+                            OutlinedButton(
+                                onClick = {
+                                    pendingDownloadId = request.transferId
+                                    createDocument.launch(request.fileName)
+                                }
+                            ) {
+                                Text("Download file")
+                            }
+                        }
+                        else -> Unit
                     }
                 }
             }
         }
-        status?.let { message ->
-            item { Text(message) }
-        }
+        status?.let { message -> item { Text(message) } }
         item {
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                 Text("Back")
