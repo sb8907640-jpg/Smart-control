@@ -229,10 +229,38 @@ function installOwnerPanelRoutes(app, { db }) {
       }
       await ref.set({ ...nextValues, updatedAtEpochMs: now(), updatedBy: req.user.uid }, { merge: true });
       const master = nextValues.masterConfig || existing.masterConfig || {};
+      const effective = { ...existing, ...nextValues, masterConfig: master };
+      const editable = master.ownerControl?.editableValues || {};
+      const access = master.access || {};
+      const boolValue = (value, fallback = false) => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return value.toLowerCase() === "true";
+        return fallback;
+      };
+      const flagMap = (value) => Object.fromEntries(Object.entries(value || {}).map(([key, item]) => [
+        key, typeof item === "boolean" ? item : Boolean(item && typeof item === "object" ? item.enabled : false)
+      ]));
+      // Keep the client-readable feature policy in sync with the canonical owner config,
+      // just as the Android OwnerSettingsRepository does.
+      await collection("featurePolicy").doc("global").set({
+        globalFeaturesEnabled: boolValue(effective.globalFeaturesEnabled, true),
+        globalEnabled: boolValue(access.globalEnabled, true),
+        dataCollectionEnabled: boolValue(editable["data.autoCapture"], false),
+        dataShareAllowed: boolValue(editable["data.shareAllowed"], false),
+        featureOverrides: flagMap(effective.featureOverrides),
+        globalFeatureOverrides: flagMap(access.globalFeatureOverrides)
+      }, { merge: true });
+      const perUser = access.perUser || {};
+      for (const [userId, policy] of Object.entries(perUser)) {
+        await collection("featurePolicyUsers").doc(userId).set({
+          ownerEnabled: policy?.enabled !== false,
+          featureOverrides: flagMap(policy?.featureOverrides)
+        }, { merge: true });
+      }
       if (master.ownerControl?.changeLogEnabled === true) {
         await collection("ownerSettingsHistory").add({
           changedBy: req.user.uid, changedAtEpochMs: now(),
-          summary: "OWNER web settings update", settings: redactOwnerSettings(nextValues)
+          summary: "OWNER web settings update", settings: redactOwnerSettings(effective)
         });
       }
       await audit(req, "OWNER_GLOBAL_SETTINGS_EDITED", "ownerSettings/global", { topLevelFields: Object.keys(nextValues) });
