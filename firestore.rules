@@ -97,7 +97,16 @@ service cloud.firestore {
     match /pairingCodes/{token} {
       allow create: if request.auth != null && request.resource.data.deviceUid == request.auth.uid;
       allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
-      allow delete: if request.auth != null && resource.data.deviceUid == request.auth.uid;
+      // The receiver can revoke its own code. A controller can consume a code only
+      // in the same atomic transaction that creates/updates the matching device link.
+      allow delete: if request.auth != null && (
+        resource.data.deviceUid == request.auth.uid
+        || (
+          getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.controllerUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingToken == token
+          && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingActive == true
+        )
+      );
       allow update: if false;
     }
 
