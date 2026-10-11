@@ -51,7 +51,7 @@ jobs:
         run: node scripts/verify-continuous-24x7.js
       - name: Verify Security, Encryption, Consent and Safety Controls
         run: node scripts/verify-security-controls.js
-      - name: Validate Firestore security rules with emulator
+      - name: Set up Java for Firestore emulator
         uses: actions/setup-java@v4
         with:
           distribution: temurin
