@@ -80,6 +80,7 @@ class ScreenRecordingService : Service() {
             val manager = getSystemService(MediaProjectionManager::class.java)
                 ?: error("MediaProjection service is unavailable.")
             val activeProjection = manager.getMediaProjection(resultCode, resultData)
+                ?: error("Android did not provide a screen-capture projection.")
             projection = activeProjection
             activeProjection.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
 
