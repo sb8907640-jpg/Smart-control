@@ -19,6 +19,7 @@ import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import org.webrtc.VideoSink
 
 @HiltViewModel
@@ -100,7 +101,7 @@ class MediaSessionViewModel @Inject constructor(
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
-        engine.publish(session.sessionId, session.capabilities, projectionIntent)
+        engine.publish(session.sessionId, session.capabilities, projectionIntent, resolveIceServers())
             .onSuccess { FamilySafetyService.setSyncing(context) }
             .onFailure {
                 signaling.stopSession(session.sessionId)
@@ -134,6 +135,42 @@ class MediaSessionViewModel @Inject constructor(
         }.getOrDefault(false)
     }
 
+    private suspend fun resolveIceServers(): List<IceServerConfig> {
+        val fallback = WebRtcMediaEngine.defaultIceServers()
+        return try {
+            val payload = FirebaseFunctions.getInstance()
+                .getHttpsCallable("getWebRtcIceServers")
+                .call()
+                .await()
+                .getData() as? Map<*, *> ?: error("ICE server response is invalid")
+            val rawServers = payload["iceServers"] as? List<*> ?: emptyList<Any>()
+            val configured = rawServers.mapNotNull { raw ->
+                val item = raw as? Map<*, *> ?: return@mapNotNull null
+                val urls = when (val value = item["urls"]) {
+                    is String -> listOf(value)
+                    is List<*> -> value.mapNotNull { it as? String }
+                    else -> emptyList()
+                }
+                if (urls.isEmpty()) return@mapNotNull null
+                IceServerConfig(
+                    urls = urls,
+                    username = item["username"] as? String,
+                    credential = item["credential"] as? String
+                )
+            }
+            require(configured.isNotEmpty()) { "No ICE servers were returned" }
+            if (payload["turnConfigured"] != true) {
+                lastError.value = "TURN relay is not configured on the server. Using STUN only; some carrier/NAT networks may not connect."
+            } else if (lastError.value?.contains("TURN relay") == true) {
+                lastError.value = null
+            }
+            configured
+        } catch (_: Exception) {
+            lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
+            fallback
+        }
+    }
+
     fun eglBase() = engine.eglBase()
 
     fun connectViewer(session: MediaSession, sink: VideoSink?) = viewModelScope.launch {
@@ -145,7 +182,7 @@ class MediaSessionViewModel @Inject constructor(
             lastError.value = "Media sharing is disabled in Privacy Controls."
             return@launch
         }
-        engine.view(session.sessionId, sink).onFailure { lastError.value = it.message }
+        engine.view(session.sessionId, sink, resolveIceServers()).onFailure { lastError.value = it.message }
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
