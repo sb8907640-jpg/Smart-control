@@ -219,6 +219,9 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.pairingToken is string
+        && request.resource.data.pairedAt is int
+        && request.resource.data.pairingActive == true
+        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive'])
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
 
