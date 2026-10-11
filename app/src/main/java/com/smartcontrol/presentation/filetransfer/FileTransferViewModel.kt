@@ -57,7 +57,12 @@ class FileTransferViewModel @Inject constructor(
         val mime = resolver.getType(uri)
         val size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         val id = UUID.randomUUID().toString()
-        repository.request(FileTransferRequest(id, sender, receiver, fileName, mime, size, System.currentTimeMillis(), FileTransferRequest.Status.REQUESTED))
+        try {
+            repository.request(FileTransferRequest(id, sender, receiver, fileName, mime, size, System.currentTimeMillis(), FileTransferRequest.Status.REQUESTED))
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not create transfer request."
+            return@launch
+        }
         pendingTransferId = id
         pendingUri = uri
         _hasPendingUpload.value = true
@@ -76,8 +81,9 @@ class FileTransferViewModel @Inject constructor(
             repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED)
             return@launch
         }
-        repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED)
-        _status.value = "Transfer approved. The sender can now upload the selected file."
+        runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED) }
+            .onSuccess { _status.value = "Transfer approved. The sender can now upload the selected file." }
+            .onFailure { _status.value = it.message ?: "Could not approve this transfer." }
     }
 
     fun download(transferId: String, targetUri: Uri) = viewModelScope.launch {
@@ -124,7 +130,10 @@ class FileTransferViewModel @Inject constructor(
             pendingUri = null
         }.onFailure {
             runCatching { repository.updateStatus(id, FileTransferRequest.Status.CANCELLED) }
-            _status.value = it.message ?: "File upload failed."
+            _hasPendingUpload.value = false
+            pendingTransferId = null
+            pendingUri = null
+            _status.value = (it.message ?: "File upload failed.") + " Select the file again to start a new request."
         }
     }
 }
