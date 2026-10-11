@@ -1422,7 +1422,7 @@ private fun PaymentGatewayPermitPanel() {
                                     "mode" to draftMode,
                                     "credentialsJson" to credentialsJson
                                 )
-                            ).await().data as? Map<*, *>
+                            ).await().getData() as? Map<*, *>
                             credentialsJson = ""
                             val adapterReady = result?.get("adapterImplemented") == true
                             draftMessage = if (adapterReady) {
