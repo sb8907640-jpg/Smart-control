@@ -354,6 +354,7 @@ exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (r
 
 // Billing and payment lifecycle exports.
 Object.assign(exports, require("./billing"));
+Object.assign(exports, require("./gateway-permit"));
 Object.assign(exports, require("./ice-servers"));
 
 
