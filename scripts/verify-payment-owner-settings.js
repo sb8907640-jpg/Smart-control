@@ -24,9 +24,15 @@ const firestoreRules = read("firestore.rules");
 
 console.log("FAMILY SURAKSHA — OWNER PAYMENT / TARIFF INTEGRATION VERIFICATION");
 
-check("Owner panel edits provider, mode, webhook secret and provider config",
-  ["payment.gatewayProvider", "payment.gatewayMode", "payment.webhookSecret", "payment.gatewayProviderConfig"]
-    .every(key => ownerPanel.includes('values["' + key + '"]')));
+check("Owner panel uses the secure gateway permit and encrypted future-provider drafts",
+  ownerPanel.includes("PaymentGatewayPermitPanel") &&
+    ownerPanel.includes("savePaymentGatewayPermit") &&
+    ownerPanel.includes("Additional Gateway Profiles") &&
+    ownerPanel.includes("savePaymentGatewayProviderDraft") &&
+    ownerPanel.includes("CASHFREE") &&
+    ownerPanel.includes("PHONEPE") &&
+    !ownerPanel.includes('values["payment.webhookSecret"]'),
+  "Live gateway credentials are isolated in the Owner-only server permit; other providers remain encrypted drafts until adapters are implemented.");
 check("Owner settings persist editable values under the master owner-control model",
   ownerRepository.includes('"editableValues" to config.ownerControl.editableValues'));
 check("Billing backend reads current nested owner settings",
