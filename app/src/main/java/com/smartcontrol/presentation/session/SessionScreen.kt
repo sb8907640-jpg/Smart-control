@@ -44,7 +44,7 @@ fun SessionScreen(
             override fun onAvailable(network: Network) { networkLabel = readNetworkLabel(context) }
             override fun onLost(network: Network) { networkLabel = readNetworkLabel(context) }
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                networkLabel = readNetworkLabel(context)
+                networkLabel = labelNetworkCapabilities(networkCapabilities)
             }
         }
         runCatching { manager?.registerDefaultNetworkCallback(callback) }
@@ -124,6 +124,20 @@ fun SessionScreen(
     }
 }
 
+private fun labelNetworkCapabilities(capabilities: NetworkCapabilities): String {
+    val type = when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile data"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+        else -> "Internet"
+    }
+    return when {
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> "Online • $type"
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) -> "Limited • $type"
+        else -> "Connected • no internet"
+    }
+}
+
 private fun readNetworkLabel(context: Context): String {
     val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         ?: return "Status unavailable"
@@ -135,9 +149,9 @@ private fun readNetworkLabel(context: Context): String {
         capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
         else -> "Internet"
     }
-    return if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-        "Online • $type"
-    } else {
-        "Connected • no internet"
+    return when {
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> "Online • $type"
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) -> "Limited • $type"
+        else -> "Connected • no internet"
     }
 }

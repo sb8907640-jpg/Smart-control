@@ -28,11 +28,17 @@ const pairingRepo = read("app/src/main/java/com/smartcontrol/domain/pairing/Pair
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
 const sessionModels = read("app/src/main/java/com/smartcontrol/domain/session/SessionModels.kt");
 const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/SessionRepository.kt");
+const featureCenter = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureCenterScreen.kt");
+const sessionScreen = read("app/src/main/java/com/smartcontrol/presentation/session/SessionScreen.kt");
+const pairingScreen = read("app/src/main/java/com/smartcontrol/presentation/pairing/PairingScreen.kt");
 
 console.log("SMART CONTROL — 11-STEP OWNER + RECEIVER FLOW VERIFICATION");
 
 check("STEP 1 App Install — Android build surfaces", ["owner", "lite", "full"].every(flavor => new RegExp(`create\\("${flavor}"\\)`).test(gradle)));
 check("STEP 1 App Install — manifest exists", Boolean(manifest));
+check("Dashboard shows validated network state", manifest.includes("android.permission.ACCESS_NETWORK_STATE") && sessionScreen.includes("NET_CAPABILITY_VALIDATED") && sessionScreen.includes("registerDefaultNetworkCallback"));
+check("Files Access has a user-selected folder picker", featureCenter.includes("ActivityResultContracts.OpenDocumentTree()") && featureCenter.includes("FeatureId.FILES_ACCESS") && featureCenter.includes("takePersistableUriPermission"));
+check("Android pairing link scheme matches manifest", pairingScreen.includes("smartcontrol://pair?token=") && manifest.includes('android:scheme="smartcontrol" android:host="pair"'));
 
 check("STEP 2 Login — Google", auth.includes("signInWithGoogle"));
 check("STEP 2 Login — Mobile OTP", auth.includes("sendOtp") && auth.includes("verifyOtp"));
