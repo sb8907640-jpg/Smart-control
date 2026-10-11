@@ -118,6 +118,11 @@ check("Typed master configuration is persisted by the Firestore codec",
     read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("decodeMasterConfig(data[\"masterConfig\"] as? Map<*, *>)"),
   "Typed master configuration is encoded and decoded for Owner Settings persistence.");
 
+check("Owner custom-setting removal persists to Firestore",
+  read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("removedEditableKeys") &&
+    read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("FieldValue.delete()"),
+  "Removing a custom setting deletes its stored Firestore field instead of only hiding it in the editor.");
+
 check("Payment secrets remain outside generic owner settings editor",
   ownerAdmin.includes("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above") &&
     ownerAdmin.includes("legacyGatewaySecretKeys"),
