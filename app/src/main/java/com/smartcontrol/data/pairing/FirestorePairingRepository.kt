@@ -3,7 +3,7 @@ package com.smartcontrol.data.pairing
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import com.smartcontrol.domain.owner.OwnerSettingsRepository
+import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.domain.pairing.PairingCode
 import com.smartcontrol.domain.pairing.PairedDevice
 import com.smartcontrol.domain.pairing.PairingRepository
@@ -19,8 +19,7 @@ import kotlinx.coroutines.tasks.await
 @Singleton
 class FirestorePairingRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val db: FirebaseFirestore,
-    private val ownerSettingsRepository: OwnerSettingsRepository
+    private val db: FirebaseFirestore
 ) : PairingRepository {
     private val random = SecureRandom()
 
@@ -61,27 +60,25 @@ class FirestorePairingRepository @Inject constructor(
     override suspend fun createPairingCode(): Result<PairingCode> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         val token = buildToken()
-        val settings = ownerSettingsRepository.observe().first()
         val createdAt = System.currentTimeMillis()
 
-        // Owner/Admin pairing is an owner-level link and does not expire.
+        // Never read the private ownerSettings document from a normal client.
+        // The callable returns only the effective pairing-code lifetime.
         val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
         val isOwner = claims["admin"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
-        val editable = settings.masterConfig.ownerControl.editableValues
+        val policy = runCatching {
+            FirebaseFunctions.getInstance()
+                .getHttpsCallable("getDevicePairingPolicy")
+                .call()
+                .await()
+                .getData() as? Map<*, *>
+        }.getOrNull()
         val expiryMinutes = if (isOwner) {
             NO_EXPIRY_MINUTES
         } else {
-            val planId = settings.masterConfig.access.perUser[uid]?.planId
-                ?.takeIf { it.isNotBlank() }
-                ?: editable["plans.defaultPlan"]?.takeIf { it.isNotBlank() }
-                ?: DEFAULT_PUBLIC_PLAN_ID
-            val planKey = "plans.${planId.normalizedPlanKey()}PairingTokenExpiryMinutes"
-            editable[planKey]
-                ?.toLongOrNull()
+            (policy?.get("expiryMinutes") as? Number)
+                ?.toLong()
                 ?.coerceIn(1L, 60L)
-                ?: editable["plans.freePairingTokenExpiryMinutes"]
-                    ?.toLongOrNull()
-                    ?.coerceIn(1L, 60L)
                 ?: DEFAULT_PUBLIC_EXPIRY_MINUTES
         }
         val expires = if (expiryMinutes == NO_EXPIRY_MINUTES) {
@@ -158,12 +155,8 @@ class FirestorePairingRepository @Inject constructor(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    private fun String.normalizedPlanKey(): String =
-        trim().lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
-
     private companion object {
-        const val DEFAULT_PUBLIC_PLAN_ID = "free"
-        const val DEFAULT_PUBLIC_EXPIRY_MINUTES = 1L
+        const val DEFAULT_PUBLIC_EXPIRY_MINUTES = 10L
         const val NO_EXPIRY_MINUTES = 0L
     }
 }
