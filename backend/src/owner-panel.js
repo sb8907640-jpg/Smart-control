@@ -439,14 +439,14 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!values || typeof values !== "object" || Array.isArray(values)) return res.status(400).json({ error: "values object is required." });
       const brandName = String(values.brandName || "").trim().slice(0, 100);
       const rawNumber = String(values.supportWhatsAppNumber || "").trim();
-      const supportWhatsAppNumber = rawNumber.replace(/[\\s()+.-]/g, "");
+      const supportWhatsAppNumber = rawNumber.replace(/[\s()+.-]/g, "");
       if (!brandName) return res.status(400).json({ error: "brandName is required." });
-      if (supportWhatsAppNumber && !/^\\d{8,15}$/.test(supportWhatsAppNumber)) return res.status(400).json({ error: "WhatsApp number must contain 8–15 digits including country code." });
+      if (supportWhatsAppNumber && !/^\d{8,15}$/.test(supportWhatsAppNumber)) return res.status(400).json({ error: "WhatsApp number must contain 8–15 digits including country code." });
       const supportWhatsAppMessage = String(values.supportWhatsAppMessage || "").trim().slice(0, 500);
       const supportEmail = String(values.supportEmail || "").trim().slice(0, 254);
       const supportUrl = String(values.supportUrl || "").trim().slice(0, 500);
-      if (supportEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(supportEmail)) return res.status(400).json({ error: "supportEmail is invalid." });
-      if (supportUrl && !/^https:\\/\\//i.test(supportUrl)) return res.status(400).json({ error: "supportUrl must use HTTPS." });
+      if (supportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail)) return res.status(400).json({ error: "supportEmail is invalid." });
+      if (supportUrl && !/^https:\/\/.+/i.test(supportUrl)) return res.status(400).json({ error: "supportUrl must use HTTPS." });
       const businessProfile = { brandName, supportWhatsAppNumber, supportWhatsAppMessage, supportEmail, supportUrl, updatedAt: now(), updatedBy: req.user.uid };
       await collection("ownerSettings").doc("global").set({ masterConfig: { ownerControl: { businessProfile } }, updatedAtEpochMs: now(), updatedBy: req.user.uid }, { merge: true });
       await audit(req, "OWNER_BUSINESS_SETTINGS_EDITED", "businessProfile", { changedFields: Object.keys(values).filter(k => ["brandName", "supportWhatsAppNumber", "supportWhatsAppMessage", "supportEmail", "supportUrl"].includes(k)) });
