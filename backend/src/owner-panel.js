@@ -142,7 +142,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const createdAt = now();
       const expiresAt = calculateExpiry(createdAt, validity);
       await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
-      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, code, expiresAt });
+      await audit(req, "OWNER_DEVICE_LINK_GENERATED", "pairingCode", { planId, expiresAt });
       res.status(201).json({ ok: true, code, planId, expiresAt });
     } catch (e) { next(e); }
   });
@@ -163,7 +163,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const createdAt = now();
       const expiresAt = calculateExpiry(createdAt, validity);
       await collection("pairingCodes").doc(code).set({ ownerUid: req.user.uid, status: "PENDING", createdAt, expiresAt, planId, linkValidityValue: validity.value, linkValidityUnit: validity.unit });
-      await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, newCode: code, expiresAt });
+      await audit(req, "OWNER_DEVICE_LINK_REGENERATED", "pairingCode", { oldCode, planId, expiresAt });
       res.status(201).json({ ok: true, code, planId, expiresAt, previousCode: oldCode });
     } catch (e) { next(e); }
   });
