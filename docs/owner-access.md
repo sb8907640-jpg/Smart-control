@@ -38,7 +38,7 @@ The OWNER panel exposes authenticated management surfaces for:
 - Support tickets
 - System health
 
-Owner name, email, mobile and owner identity details are never returned by the OWNER panel API. Owner actions are recorded in the private audit trail for authenticated OWNER access.
+Owner sign-in email, mobile and identity details are never returned by the OWNER panel API and cannot be changed from the business profile screen. Owner actions are recorded in the private audit trail for authenticated OWNER access. The **Business profile** section edits the customer-facing brand name and support contacts; it does not alter the authentication allowlist.
 
 The panel does **not** bypass user consent, Android/iOS OS permission dialogs, or approved remote-control sessions. Existing safety and consent gates remain authoritative.
 
@@ -49,7 +49,7 @@ The support WhatsApp destination is intentionally **not stored in public source 
 
 `SUPPORT_WHATSAPP_NUMBER`
 
-The authenticated support button calls `POST /api/support/whatsapp/initiate`. The backend creates the support session/audit record and returns a WhatsApp deep link containing the configured private destination plus the pre-filled message:
+The authenticated support action calls `POST /api/support/whatsapp/initiate`. The backend creates a support ticket record and returns a WhatsApp deep link containing the configured destination plus the pre-filled message. The destination is not returned as a standalone API field:
 
 `Hello, I need support for Total Control System`
 
