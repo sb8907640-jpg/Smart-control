@@ -83,59 +83,63 @@ fun FeatureCenterScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Text("Family Suraksha - Feature Center", style = MaterialTheme.typography.headlineSmall)
-        Text("All 19 master features are listed here. Sensitive capabilities remain visible, consent-gated, and subject to Android OS security.")
-        OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") }
-        OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") }
-        OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded, modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") }
-        OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") }
-        OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") }
-        OutlinedButton(onClick = onSafetyAlerts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SOS_ALERTS, userId), modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") }
-        OutlinedButton(onClick = onBilling, modifier = Modifier.fillMaxWidth()) { Text("Plans & Billing") }
-        OutlinedButton(onClick = onProfile, modifier = Modifier.fillMaxWidth()) { Text("Profile & Privacy") }
-        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") }
-        OutlinedButton(
-            onClick = { picker.launch(arrayOf("image/*", "video/*")) },
-            enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.GALLERY, userId),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Open Gallery Picker") }
-        OutlinedButton(onClick = onNotifications, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.NOTIFICATIONS, userId), modifier = Modifier.fillMaxWidth()) { Text("Notification Access") }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onContacts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CONTACTS, userId), modifier = Modifier.weight(1f)) { Text("Contacts") }
-            OutlinedButton(onClick = onSms, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SMS, userId), modifier = Modifier.weight(1f)) { Text("SMS") }
+        item {
+            Text("Family Suraksha - Feature Center", style = MaterialTheme.typography.headlineSmall)
+            Text("All 19 master features are listed here. Sensitive capabilities remain visible, consent-gated, and subject to Android OS security.")
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onCallLogs, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CALL_LOGS, userId), modifier = Modifier.weight(1f)) { Text("Call Logs") }
-            OutlinedButton(onClick = onAppUsage, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_USAGE, userId), modifier = Modifier.weight(1f)) { Text("App Usage") }
+        item { OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") } }
+        item { OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") } }
+        item { OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded, modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") } }
+        item { OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") } }
+        item { OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") } }
+        item { OutlinedButton(onClick = onSafetyAlerts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SOS_ALERTS, userId), modifier = Modifier.fillMaxWidth()) { Text("Safety / SOS Alerts") } }
+        item { OutlinedButton(onClick = onBilling, modifier = Modifier.fillMaxWidth()) { Text("Plans & Billing") } }
+        item { OutlinedButton(onClick = onProfile, modifier = Modifier.fillMaxWidth()) { Text("Profile & Privacy") } }
+        item { OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") } }
+        item {
+            OutlinedButton(
+                onClick = { picker.launch(arrayOf("image/*", "video/*")) },
+                enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.GALLERY, userId),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Open Gallery Picker") }
         }
-        OutlinedButton(onClick = onClipboard, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CLIPBOARD_SYNC, userId), modifier = Modifier.fillMaxWidth()) { Text("Clipboard (local)") }
-        OutlinedButton(onClick = onAppInstall, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_INSTALL, userId), modifier = Modifier.fillMaxWidth()) { Text("App Install / Uninstall") }
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(features) { item ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("${item.number}. ${item.name}", style = MaterialTheme.typography.titleMedium)
-                        val enabled = settingsLoaded && featureAccess.isEnabled(item.featureId, userId)
-                        Text(
-                            when {
-                                !settingsLoaded -> "LOADING OWNER SETTINGS"
-                                !enabled -> "DISABLED BY OWNER"
-                                else -> item.status
-                            },
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Text(item.detail)
-                    }
+        item { OutlinedButton(onClick = onNotifications, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.NOTIFICATIONS, userId), modifier = Modifier.fillMaxWidth()) { Text("Notification Access") } }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onContacts, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CONTACTS, userId), modifier = Modifier.weight(1f)) { Text("Contacts") }
+                OutlinedButton(onClick = onSms, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SMS, userId), modifier = Modifier.weight(1f)) { Text("SMS") }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onCallLogs, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CALL_LOGS, userId), modifier = Modifier.weight(1f)) { Text("Call Logs") }
+                OutlinedButton(onClick = onAppUsage, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_USAGE, userId), modifier = Modifier.weight(1f)) { Text("App Usage") }
+            }
+        }
+        item { OutlinedButton(onClick = onClipboard, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CLIPBOARD_SYNC, userId), modifier = Modifier.fillMaxWidth()) { Text("Clipboard (local)") } }
+        item { OutlinedButton(onClick = onAppInstall, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.APP_INSTALL, userId), modifier = Modifier.fillMaxWidth()) { Text("App Install / Uninstall") } }
+        items(features) { feature ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("${feature.number}. ${feature.name}", style = MaterialTheme.typography.titleMedium)
+                    val enabled = settingsLoaded && featureAccess.isEnabled(feature.featureId, userId)
+                    Text(
+                        when {
+                            !settingsLoaded -> "LOADING OWNER SETTINGS"
+                            !enabled -> "DISABLED BY OWNER"
+                            else -> feature.status
+                        },
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(feature.detail)
                 }
             }
         }
-        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+        item { OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") } }
     }
 }
