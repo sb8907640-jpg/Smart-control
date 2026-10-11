@@ -9,7 +9,7 @@ function installPairingApi(app, { db, authenticate }) {
       const code = String(req.body?.code || "");
       const consent = req.body?.consent === true;
       if (!consent) return res.status(400).json({ error: "Explicit receiver consent is required." });
-      if (!/^[A-Za-z0-9_-]{40,60}$/.test(token) || !/^\\d{6}$/.test(code)) {
+      if (!/^[A-Za-z0-9_-]{40,60}$/.test(token) || !/^\d{6}$/.test(code)) {
         return res.status(400).json({ error: "A valid invitation link and 6-digit code are required." });
       }
 
