@@ -216,8 +216,8 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         ? settingsSnap.data()?.masterConfig?.ownerControl?.businessProfile || {}
         : {};
       const rawNumber = String(profile.supportWhatsAppNumber || process.env.SUPPORT_WHATSAPP_NUMBER || "");
-      const number = rawNumber.replace(/[^\\d]/g, "");
-      if (!/^\\d{8,15}$/.test(number)) {
+      const number = rawNumber.replace(/[^\d]/g, "");
+      if (!/^\d{8,15}$/.test(number)) {
         return res.status(503).json({ error: "WhatsApp support is not configured. Ask the OWNER to set the support number." });
       }
       const now = Date.now();
