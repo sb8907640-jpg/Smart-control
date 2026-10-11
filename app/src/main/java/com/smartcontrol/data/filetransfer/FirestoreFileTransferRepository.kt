@@ -48,14 +48,26 @@ class FirestoreFileTransferRepository @Inject constructor(
             sizeBytes = (data["sizeBytes"] as? Number)?.toLong() ?: -1L,
             createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
             status = runCatching { FileTransferRequest.Status.valueOf(data["status"] as? String ?: "") }
-                .getOrElse { FileTransferRequest.Status.CANCELLED }
+                .getOrElse { FileTransferRequest.Status.CANCELLED },
+            storagePath = data["storagePath"] as? String
         )
+    }
+
+    suspend fun markReady(transferId: String, storagePath: String) {
+        firestore.collection("fileTransfers").document(transferId)
+            .update(
+                mapOf(
+                    "status" to FileTransferRequest.Status.READY.name,
+                    "storagePath" to storagePath,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+            ).await()
     }
 
     fun observeIncoming(deviceId: String): Flow<List<FileTransferRequest>> = callbackFlow {
         val registration = firestore.collection("fileTransfers")
             .whereEqualTo("receiverDeviceId", deviceId)
-            .whereEqualTo("status", FileTransferRequest.Status.REQUESTED.name)
+            .whereIn("status", listOf(FileTransferRequest.Status.REQUESTED.name, FileTransferRequest.Status.READY.name))
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -71,7 +83,9 @@ class FirestoreFileTransferRepository @Inject constructor(
                         mimeType = data["mimeType"] as? String,
                         sizeBytes = (data["sizeBytes"] as? Number)?.toLong() ?: -1L,
                         createdAtEpochMs = (data["createdAtEpochMs"] as? Number)?.toLong() ?: 0L,
-                        status = FileTransferRequest.Status.REQUESTED
+                        status = runCatching { FileTransferRequest.Status.valueOf(data["status"] as? String ?: "") }
+                            .getOrElse { FileTransferRequest.Status.CANCELLED },
+                        storagePath = data["storagePath"] as? String
                     )
                 }
                 trySend(items)
