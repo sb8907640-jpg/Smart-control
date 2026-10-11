@@ -156,6 +156,15 @@ class OwnerAdminViewModel @Inject constructor(
         )
     }
 
+    fun setLegacyFeatureSetting(name: String, enabled: Boolean) {
+        settings = when (name) {
+            "sos" -> settings.copy(sosEnabled = enabled)
+            "download" -> settings.copy(dataDownloadEnabled = enabled)
+            "share" -> settings.copy(dataShareEnabled = enabled)
+            else -> settings.copy(dataDeleteEnabled = enabled)
+        }
+    }
+
     fun editOwnerValue(key: String, value: String) {
         val values = settings.masterConfig.ownerControl.editableValues.toMutableMap()
         values[key] = value
@@ -494,7 +503,8 @@ fun OwnerAdminScreen(
                         OwnerMasterConfigurationPanel(
                             settings = viewModel.settings,
                             onUpdate = viewModel::updateMasterConfig,
-                            onNotificationSetting = viewModel::setNotificationSetting
+                            onNotificationSetting = viewModel::setNotificationSetting,
+                            onLegacySetting = viewModel::setLegacyFeatureSetting
                         )
                     }
 
@@ -584,7 +594,8 @@ fun OwnerAdminScreen(
 private fun OwnerMasterConfigurationPanel(
     settings: com.smartcontrol.domain.owner.OwnerSettings,
     onUpdate: ((com.smartcontrol.domain.spec.MasterControlConfig) -> com.smartcontrol.domain.spec.MasterControlConfig) -> Unit,
-    onNotificationSetting: (String, Boolean) -> Unit
+    onNotificationSetting: (String, Boolean) -> Unit,
+    onLegacySetting: (String, Boolean) -> Unit
 ) {
     val master = settings.masterConfig
     Card(Modifier.fillMaxWidth()) {
@@ -725,6 +736,13 @@ private fun OwnerMasterConfigurationPanel(
             PolicySwitch("Free plan requires manual approval", master.plans.freePlan.manuallyApproved) { enabled ->
                 onUpdate { it.copy(plans = it.plans.copy(freePlan = it.plans.freePlan.copy(manuallyApproved = enabled))) }
             }
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("Privacy, Data & SOS", style = MaterialTheme.typography.titleMedium)
+            PolicySwitch("Enable SOS alerts", settings.sosEnabled) { onLegacySetting("sos", it) }
+            PolicySwitch("Allow user data download", settings.dataDownloadEnabled) { onLegacySetting("download", it) }
+            PolicySwitch("Allow user data sharing", settings.dataShareEnabled) { onLegacySetting("share", it) }
+            PolicySwitch("Allow user data deletion requests", settings.dataDeleteEnabled) { onLegacySetting("delete", it) }
+
             Text("All edits are drafts until Save All Owner Settings. OS permissions, receiver consent, server-side authorization and deployed payment/relay services remain mandatory.")
         }
     }
