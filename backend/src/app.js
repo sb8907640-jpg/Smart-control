@@ -260,15 +260,43 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       const codeHash = crypto.createHash("sha256").update(code).digest("hex");
       const ref = firestore.collection("pairingInvites").doc(tokenHash);
-      const snap = await ref.get();
-      if (!snap.exists) return res.status(404).json({ error: "Invitation not found or invalid." });
-      const invite = snap.data();
-      if (invite.status !== "pending" || invite.expiresAtEpochMs <= Date.now()) {
-        return res.status(410).json({ error: "Invitation has expired or has already been used." });
-      }
-      if (invite.codeHash !== codeHash) return res.status(401).json({ error: "Verification code is incorrect." });
-      if (invite.creatorUid === req.user.uid) return res.status(400).json({ error: "Open the invitation from the receiving account/device." });
-      return res.json({ verified: true, senderRole: invite.senderRole, receiverRole: invite.receiverRole, requiresReceiverConsent: true, pairingCompleted: false });
+      const now = Date.now();
+      const result = await firestore.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists) return { failure: { statusCode: 404, message: "Invitation not found or invalid." } };
+        const invite = snap.data();
+        if (Number(invite.lockedUntilEpochMs || 0) > now) {
+          return { failure: { statusCode: 429, message: "Too many incorrect codes. This invitation is temporarily locked." } };
+        }
+        if (invite.status !== "pending" || invite.expiresAtEpochMs <= now) {
+          return { failure: { statusCode: 410, message: "Invitation has expired or has already been used." } };
+        }
+        if (invite.codeHash !== codeHash) {
+          const failedAttempts = Number(invite.failedAttempts || 0) + 1;
+          const lockedUntilEpochMs = failedAttempts >= 5 ? now + 15 * 60_000 : 0;
+          transaction.update(ref, { failedAttempts, lockedUntilEpochMs });
+          return {
+            failure: {
+              statusCode: lockedUntilEpochMs > now ? 429 : 401,
+              message: lockedUntilEpochMs > now
+                ? "Too many incorrect codes. This invitation is locked for 15 minutes."
+                : "Verification code is incorrect."
+            }
+          };
+        }
+        if (invite.creatorUid === req.user.uid) {
+          return { failure: { statusCode: 400, message: "Open the invitation from the receiving account/device." } };
+        }
+        return {
+          verified: true,
+          senderRole: invite.senderRole,
+          receiverRole: invite.receiverRole,
+          requiresReceiverConsent: true,
+          pairingCompleted: false
+        };
+      });
+      if (result.failure) return res.status(result.failure.statusCode).json({ error: result.failure.message });
+      return res.json(result);
     } catch (error) { next(error); }
   });
 
