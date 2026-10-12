@@ -162,6 +162,43 @@ function installOwnerPanelRoutes(app, { db }) {
     return res.json({ ok: true, id, previousStatus, status });
   };
 
+  // Owner-only readout of permission and consent history. This is intentionally
+  // derived from append-only history/audit collections, never from mutable profile fields.
+  app.get("/api/owner/users/:id/permission-history", requireOwner, async (req, res, next) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+      const profile = await collection("users").doc(id).get();
+      if (!profile.exists) return res.status(404).json({ error: "User not found." });
+      const [permissionRecords, consentRecords, auditRecords] = await Promise.all([
+        read("permissionHistory", 1000),
+        read("consentHistory", 1000),
+        read("auditLogs", 1000)
+      ]);
+      const permissions = permissionRecords.filter(record =>
+        String(record.userId || record.uid || record.id || "") === id
+      );
+      const consents = consentRecords.filter(record =>
+        String(record.userId || record.uid || record.id || "") === id
+      );
+      const audit = auditRecords.filter(record => {
+        const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+        const action = String(record.action || "");
+        return String(record.userId || "") === id
+          || String(metadata.userId || metadata.id || "") === id
+            && /permission|consent|grant|revoke|access/i.test(action);
+      });
+      const events = [
+        ...permissions.map(record => ({ type: "PERMISSION", ...record })),
+        ...consents.map(record => ({ type: "CONSENT", ...record })),
+        ...audit.map(record => ({ type: "AUDIT", ...record }))
+      ].sort((a, b) => Number(b.createdAtEpochMs || b.createdAt || b.timestamp || 0)
+        - Number(a.createdAtEpochMs || a.createdAt || a.timestamp || 0));
+      await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
+      return res.json({ userId: id, count: events.length, events, note: "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted." });
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/owner/users", requireOwner, async (req, res, next) => {
     try {
       const allUsers = await read("users");
