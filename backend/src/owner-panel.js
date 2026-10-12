@@ -163,7 +163,41 @@ function installOwnerPanelRoutes(app, { db }) {
   };
 
   app.get("/api/owner/users", requireOwner, async (req, res, next) => {
-    try { res.json({ users: await read("users") }); } catch (e) { next(e); }
+    try {
+      const allUsers = await read("users");
+      const query = String(req.query?.q || "").trim().toLowerCase();
+      const userId = String(req.query?.userId || "").trim();
+      const status = String(req.query?.status || "").trim().toUpperCase();
+      const users = allUsers.filter(user => {
+        if (userId && user.id !== userId) return false;
+        if (status && String(user.status || "ACTIVE").toUpperCase() !== status) return false;
+        if (!query) return true;
+        return [user.id, user.name, user.displayName, user.email, user.mobile, user.phoneNumber, user.status]
+          .some(value => String(value || "").toLowerCase().includes(query));
+      });
+      res.json({ users, total: users.length, truncated: allUsers.length >= 500 });
+    } catch (e) { next(e); }
+  });
+  app.get("/api/owner/users/:id/export", requireOwner, async (req, res, next) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+      const profile = await collection("users").doc(id).get();
+      if (!profile.exists) return res.status(404).json({ error: "User not found." });
+      const relatedCollections = ["subscriptions", "payments", "supportTickets", "freeAccessGrants"];
+      const related = {};
+      for (const name of relatedCollections) {
+        const byUserId = await collection(name).where("userId", "==", id).limit(500).get();
+        const byUid = await collection(name).where("uid", "==", id).limit(500).get();
+        const unique = new Map();
+        for (const doc of [...byUserId.docs, ...byUid.docs]) unique.set(doc.id, { id: doc.id, ...doc.data() });
+        related[name] = Array.from(unique.values());
+      }
+      const exportedAt = new Date(now()).toISOString();
+      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: ["users", ...relatedCollections] });
+      res.set("Content-Disposition", `attachment; filename="family-suraksha-user-${id}-export.json"`);
+      return res.json({ userId: id, exportedAt, data: { profile: { id, ...profile.data() }, ...related } });
+    } catch (e) { next(e); }
   });
   app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => updateUserProfile(req, res).catch(next));
   app.post("/api/owner/users/:id/suspend", requireOwner, async (req, res, next) => {
