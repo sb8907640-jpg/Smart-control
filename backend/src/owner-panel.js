@@ -127,10 +127,10 @@ function installOwnerPanelRoutes(app, { db }) {
         return res.status(400).json({ error: "Profile values must be strings or null." });
       }
       const max = key === "email" ? 254 : key === "photoURL" || key === "photoUrl" ? 2048 : 160;
-      if (typeof value === "string" && (value.length > max || value.includes("\\u0000"))) {
+      if (typeof value === "string" && (value.length > max || value.includes("\u0000"))) {
         return res.status(400).json({ error: "A profile field exceeds its allowed length or contains invalid characters." });
       }
-      if (key === "email" && typeof value === "string" && value && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) {
+      if (key === "email" && typeof value === "string" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         return res.status(400).json({ error: "A valid profile email is required." });
       }
       normalized[key] = typeof value === "string" ? value.trim() : value;
