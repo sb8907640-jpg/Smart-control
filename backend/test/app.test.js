@@ -19,7 +19,11 @@ function makeOwnerTestDb() {
       ["user-1", { name: "Test User", email: "user@example.test", status: "ACTIVE", role: "USER" }],
       ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
     ]),
-    auditLogs: []
+    auditLogs: [],
+    subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
+    payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
+    supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
+    freeAccessGrants: new Map()
   };
   return {
     data,
@@ -43,6 +47,19 @@ function makeOwnerTestDb() {
           if (name !== "auditLogs") throw new Error("Unexpected collection add: " + name);
           data.auditLogs.push({ id: "audit-" + (data.auditLogs.length + 1), ...value });
           return { id: "audit-" + data.auditLogs.length };
+        },
+        where(field, operator, value) {
+          if (operator !== "==") throw new Error("Unsupported test query operator.");
+          return {
+            limit() {
+              return { async get() {
+                const docs = rows ? Array.from(rows.entries())
+                  .filter(([, record]) => record[field] === value)
+                  .map(([id, record]) => ({ id, data: () => ({ ...record }) })) : [];
+                return { docs };
+              } };
+            }
+          };
         },
         limit() {
           return { async get() {
@@ -267,5 +284,38 @@ test("Owner account deletion fails closed until authenticated deletion and reten
     assert.equal(response.status, 501);
     assert.equal(db.data.users.has("user-1"), true);
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DELETION_BLOCKED");
+  });
+});
+
+
+test("Owner user list supports status and identity-field filters", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users?q=owner&status=ACTIVE", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.total, 1);
+    assert.equal(body.users[0].id, "owner-1");
+    assert.equal(body.users[0].status, "ACTIVE");
+  });
+});
+
+test("Owner user data export includes scoped records and writes an audit event", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/export", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-disposition") || "", /attachment/);
+    const body = await response.json();
+    assert.equal(body.userId, "user-1");
+    assert.equal(body.data.profile.name, "Test User");
+    assert.equal(body.data.subscriptions.length, 1);
+    assert.equal(body.data.payments.length, 1);
+    assert.equal(body.data.supportTickets.length, 1);
+    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DATA_EXPORTED");
   });
 });
