@@ -20,6 +20,7 @@ function makeOwnerTestDb() {
       ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
     ]),
     auditLogs: [],
+    securityEvents: [],
     subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
@@ -44,9 +45,10 @@ function makeOwnerTestDb() {
           };
         },
         async add(value) {
-          if (name !== "auditLogs") throw new Error("Unexpected collection add: " + name);
-          data.auditLogs.push({ id: "audit-" + (data.auditLogs.length + 1), ...value });
-          return { id: "audit-" + data.auditLogs.length };
+          if (name !== "auditLogs" && name !== "securityEvents") throw new Error("Unexpected collection add: " + name);
+          const list = data[name];
+          list.push({ id: name + "-" + (list.length + 1), ...value });
+          return { id: name + "-" + list.length };
         },
         where(field, operator, value) {
           if (operator !== "==") throw new Error("Unsupported test query operator.");
@@ -317,5 +319,25 @@ test("Owner user data export includes scoped records and writes an audit event",
     assert.equal(body.data.payments.length, 1);
     assert.equal(body.data.supportTickets.length, 1);
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DATA_EXPORTED");
+  });
+});
+
+
+test("suspended and blocked accounts are rejected by backend authentication and logged", async () => {
+  const db = makeOwnerTestDb();
+  db.data.users.set("blocked-1", { name: "Blocked", status: "BLOCKED" });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "blocked-1", email: "blocked@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/auth/session", {
+      headers: { authorization: "Bearer blocked-token" }
+    });
+    assert.equal(response.status, 403);
+    assert.match((await response.json()).error, /suspended or blocked/i);
+    assert.equal(db.data.securityEvents.length, 1);
+    assert.equal(db.data.securityEvents[0].event, "AUTH_REJECTED_ACCOUNT_STATUS");
+    assert.equal(db.data.securityEvents[0].userId, "blocked-1");
   });
 });
