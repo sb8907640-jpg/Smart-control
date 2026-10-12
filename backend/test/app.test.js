@@ -341,3 +341,19 @@ test("suspended and blocked accounts are rejected by backend authentication and 
     assert.equal(db.data.securityEvents[0].userId, "blocked-1");
   });
 });
+
+
+test("ordinary authenticated users cannot access Owner management APIs", async () => {
+  const db = makeOwnerTestDb();
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "ordinary-1", email: "ordinary@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/owner/users", {
+      headers: { authorization: "Bearer ordinary-token" }
+    });
+    assert.equal(response.status, 403);
+    assert.match((await response.json()).error, /OWNER access required/i);
+  });
+});
