@@ -24,7 +24,9 @@ function makeOwnerTestDb() {
     subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
-    freeAccessGrants: new Map()
+    freeAccessGrants: new Map(),
+    permissionHistory: new Map(),
+    consentHistory: new Map()
   };
   return {
     data,
@@ -355,5 +357,26 @@ test("ordinary authenticated users cannot access Owner management APIs", async (
     });
     assert.equal(response.status, 403);
     assert.match((await response.json()).error, /OWNER access required/i);
+  });
+});
+
+
+test("Owner permission history returns scoped permission, consent, and audit events", async () => {
+  const db = makeOwnerTestDb();
+  db.data.permissionHistory.set("permission-1", { userId: "user-1", permission: "LOCATION", granted: true, createdAtEpochMs: 1000 });
+  db.data.consentHistory.set("consent-1", { userId: "user-1", consentVersion: "v1", accepted: true, createdAtEpochMs: 2000 });
+  db.data.permissionHistory.set("permission-other", { userId: "other-user", permission: "CAMERA", granted: true, createdAtEpochMs: 3000 });
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.userId, "user-1");
+    assert.equal(body.count, 2);
+    assert.deepEqual(new Set(body.events.map(event => event.type)), new Set(["PERMISSION", "CONSENT"]));
+    assert.ok(body.events.every(event => event.userId === "user-1"));
+    assert.match(body.note, /not proof that consent was granted/i);
+    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
   });
 });
