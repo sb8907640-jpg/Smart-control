@@ -184,9 +184,10 @@ function installOwnerPanelRoutes(app, { db }) {
       const auditEvents = auditRecords.filter(record => {
         const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
         const action = String(record.action || "");
+        if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED") return false;
         return String(record.userId || "") === id
-          || String(metadata.userId || metadata.id || "") === id
-            && /permission|consent|grant|revoke|access/i.test(action);
+          || (String(metadata.userId || metadata.id || "") === id
+            && /permission|consent|grant|revoke|access/i.test(action));
       });
       const events = [
         ...permissions.map(record => ({ type: "PERMISSION", ...record })),
