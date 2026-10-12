@@ -64,13 +64,39 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     const header = String(req.get("authorization") || "");
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Authentication required." });
     if (typeof verifyIdToken !== "function") return res.status(503).json({ error: "Authentication service is unavailable." });
+    let verifiedUser;
     try {
-      const verifiedUser = await verifyIdToken(header.slice(7), true);
-      req.user = applyOwnerRole(verifiedUser);
-      return next();
+      verifiedUser = await verifyIdToken(header.slice(7), true);
     } catch (_) {
       return res.status(401).json({ error: "Invalid or expired authentication token." });
     }
+    req.user = applyOwnerRole(verifiedUser);
+
+    // Owner suspend/block controls must be enforced by the server, not just
+    // displayed in the UI. Missing user profiles remain compatible with older
+    // installations; a configured Firestore status lookup failure fails closed.
+    if (db && typeof db.collection === "function" && req.user?.uid) {
+      try {
+        const account = await db.collection("users").doc(req.user.uid).get();
+        const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+          try {
+            await db.collection("securityEvents").add({
+              event: "AUTH_REJECTED_ACCOUNT_STATUS",
+              userId: req.user.uid,
+              status: accountStatus,
+              createdAtEpochMs: Date.now()
+            });
+          } catch (_) {
+            // Do not allow a secondary audit-store failure to bypass the block.
+          }
+          return res.status(403).json({ error: "This account is suspended or blocked. Contact support if you believe this is an error." });
+        }
+      } catch (_) {
+        return res.status(503).json({ error: "Account status could not be verified. Please try again later." });
+      }
+    }
+    return next();
   };
 
   app.get("/api/system/residency", authenticate, (_req, res) => res.json(getResidencyPolicy()));
