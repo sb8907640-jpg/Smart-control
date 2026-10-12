@@ -181,7 +181,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const consents = consentRecords.filter(record =>
         String(record.userId || record.uid || record.id || "") === id
       );
-      const audit = auditRecords.filter(record => {
+      const auditEvents = auditRecords.filter(record => {
         const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
         const action = String(record.action || "");
         return String(record.userId || "") === id
@@ -191,7 +191,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const events = [
         ...permissions.map(record => ({ type: "PERMISSION", ...record })),
         ...consents.map(record => ({ type: "CONSENT", ...record })),
-        ...audit.map(record => ({ type: "AUDIT", ...record }))
+        ...auditEvents.map(record => ({ type: "AUDIT", ...record }))
       ].sort((a, b) => Number(b.createdAtEpochMs || b.createdAt || b.timestamp || 0)
         - Number(a.createdAtEpochMs || a.createdAt || a.timestamp || 0));
       await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
