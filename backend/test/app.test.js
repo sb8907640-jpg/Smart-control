@@ -13,6 +13,67 @@ async function withServer(app, fn) {
   }
 }
 
+function makeOwnerTestDb() {
+  const data = {
+    users: new Map([
+      ["user-1", { name: "Test User", email: "user@example.test", status: "ACTIVE", role: "USER" }],
+      ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
+    ]),
+    auditLogs: []
+  };
+  return {
+    data,
+    collection(name) {
+      const rows = data[name] instanceof Map ? data[name] : null;
+      return {
+        doc(id) {
+          return {
+            async get() {
+              const value = rows?.get(id);
+              return { exists: value !== undefined, data: () => value ? { ...value } : undefined };
+            },
+            async set(value, options = {}) {
+              if (!rows) throw new Error("Unexpected collection write: " + name);
+              rows.set(id, options.merge ? { ...(rows.get(id) || {}), ...value } : { ...value });
+            },
+            async delete() { rows?.delete(id); }
+          };
+        },
+        async add(value) {
+          if (name !== "auditLogs") throw new Error("Unexpected collection add: " + name);
+          data.auditLogs.push({ id: "audit-" + (data.auditLogs.length + 1), ...value });
+          return { id: "audit-" + data.auditLogs.length };
+        },
+        limit() {
+          return { async get() {
+            const docs = rows ? Array.from(rows.entries()).map(([id, value]) => ({ id, data: () => ({ ...value }) })) : [];
+            return { docs };
+          } };
+        }
+      };
+    }
+  };
+}
+
+async function withOwnerServer(db, fn) {
+  const previous = process.env.OWNER_EMAILS;
+  process.env.OWNER_EMAILS = "owner@example.test";
+  try {
+    const app = createApp({
+      db,
+      verifyIdToken: async () => ({
+        uid: "owner-1",
+        email: "owner@example.test",
+        auth_time: Math.floor(Date.now() / 1000)
+      })
+    });
+    await withServer(app, fn);
+  } finally {
+    if (previous === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = previous;
+  }
+}
+
 test("health and readiness endpoints are public", async () => {
   const app = createApp();
   await withServer(app, async base => {
@@ -139,5 +200,72 @@ test("pairing acceptance fails closed without explicit receiver consent", async 
     });
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /explicit receiver consent/i);
+  });
+});
+
+
+test("Owner user profile editing rejects role and account-status escalation", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { role: "OWNER", admin: true, status: "ACTIVE" } })
+    });
+    assert.equal(response.status, 400);
+    assert.equal(db.data.users.get("user-1").role, "USER");
+    assert.equal(db.data.users.get("user-1").admin, undefined);
+    assert.equal(db.data.auditLogs.length, 0);
+  });
+});
+
+test("Owner can edit allowlisted profile fields and audit the change", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { name: "Updated User", email: "updated@example.test" } })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(db.data.users.get("user-1").name, "Updated User");
+    assert.equal(db.data.users.get("user-1").email, "updated@example.test");
+    assert.equal(db.data.auditLogs.length, 1);
+    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PROFILE_EDITED");
+    assert.equal(db.data.auditLogs[0].userId, "owner-1");
+  });
+});
+
+test("Owner suspend, unsuspend, block, and unblock actions update status and audit each transition", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    for (const [action, expected] of [
+      ["suspend", "SUSPENDED"], ["unsuspend", "ACTIVE"],
+      ["block", "BLOCKED"], ["unblock", "ACTIVE"]
+    ]) {
+      const response = await fetch(base + "/api/owner/users/user-1/" + action, {
+        method: "POST",
+        headers: { authorization: "Bearer owner-token" }
+      });
+      assert.equal(response.status, 200, action);
+      assert.equal((await response.json()).status, expected);
+      assert.equal(db.data.users.get("user-1").status, expected);
+    }
+    assert.deepEqual(db.data.auditLogs.map(log => log.action), [
+      "OWNER_USER_SUSPENDED", "OWNER_USER_UNSUSPENDED", "OWNER_USER_BLOCKED", "OWNER_USER_UNBLOCKED"
+    ]);
+  });
+});
+
+test("Owner account deletion fails closed until authenticated deletion and retention are configured", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1", {
+      method: "DELETE",
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 501);
+    assert.equal(db.data.users.has("user-1"), true);
+    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DELETION_BLOCKED");
   });
 });
