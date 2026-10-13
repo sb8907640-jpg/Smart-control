@@ -56,7 +56,7 @@ function gatewaySecret(config, provider) {
       // Fall back to the single configured secret for backwards compatibility.
     }
   }
-  return String(config["payment.webhookSecret"] || config["payment.encryptionKey"] || "");
+  return String(config["payment.webhookSecret"] || "");
 }
 
 function requireAuth(request) {
@@ -1013,6 +1013,16 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       paymentForSecret = paymentSnap.exists ? paymentSnap.data() : null;
     }
     const provider = normalizeGateway(paymentForSecret?.gatewayProvider || paymentForSecret?.gateway || config["payment.gatewayProvider"] || config["payment.gateway"]);
+    // This generic HMAC contract is reserved for explicitly configured custom
+    // integrations. Built-in gateways must use their provider-specific verifier.
+    if (provider !== "CUSTOM") {
+      res.status(409).send("This gateway requires its provider-specific webhook adapter.");
+      return;
+    }
+    if (!paymentForSecret) {
+      res.status(404).send("Payment not found.");
+      return;
+    }
     const secret = gatewaySecret(config, provider);
     const signature = String(req.get("x-smartcontrol-signature") || "");
     if (!secret || !signature) {
@@ -1037,6 +1047,10 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       res.status(400).send("Payment ID and reference are required.");
       return;
     }
+    if (!["SUCCESS", "PAID", "CAPTURED", "FAILED", "CANCELLED", "REFUNDED"].includes(status)) {
+      res.status(400).send("Unsupported custom gateway payment status.");
+      return;
+    }
     // The signed payload must refer to the exact payment record whose provider
     // secret was used to validate this webhook.
     if (webhookPaymentId !== paymentId) {
@@ -1051,6 +1065,19 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       return;
     }
     const payment = snap.data() || {};
+    if (Number(body.amountMinor) !== Number(payment.amountMinor) ||
+        String(body.currency || "").toUpperCase() !== String(payment.currency || "INR").toUpperCase()) {
+      res.status(400).send("Custom gateway amount/currency mismatch.");
+      return;
+    }
+    if (payment.status === "REFUNDED" && status !== "REFUNDED") {
+      res.status(409).send("A refunded payment cannot change state.");
+      return;
+    }
+    if (payment.status === "SUCCESS" && ["FAILED", "CANCELLED"].includes(status)) {
+      res.status(409).send("A successful payment cannot be downgraded.");
+      return;
+    }
     if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
       const activation = await activateSubscriptionForPayment(paymentId, payment);
       await ref.update({
@@ -1081,12 +1108,6 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
           updatedAtEpochMs: Date.now()
         }, { merge: true });
       }
-    } else {
-      await ref.update({
-        status: "PENDING",
-        gatewayReference: reference,
-        updatedAtEpochMs: Date.now()
-      });
     }
 
     res.status(200).json({ ok: true });
