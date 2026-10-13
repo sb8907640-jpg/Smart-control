@@ -213,6 +213,7 @@ function installOwnerPanelRoutes(app, { db }) {
       });
       await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
       const truncated = permissionHistory.truncated || consentHistory.truncated || auditHistory.truncated;
+      res.set("Cache-Control", "no-store");
       return res.json({
         userId: id, count: events.length, events, truncated,
         note: truncated
