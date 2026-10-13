@@ -557,6 +557,9 @@ exports.refundPayment = onCall(
     const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
     const targetRefundMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
     const alreadyRefundedMinor = Math.max(0, Number(payment.refundedAmountMinor || 0));
+    if (Number(payment.pendingRefundAmountMinor || 0) > 0) {
+      throw new HttpsError("failed-precondition", "A refund is already pending at the payment provider; wait for its webhook before retrying.");
+    }
     const refundAmountMinor = targetRefundMinor - alreadyRefundedMinor;
     if (refundAmountMinor <= 0) {
       throw new HttpsError("failed-precondition", "The configured refund policy has already been fulfilled for this payment.");
@@ -975,6 +978,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
           refundedAmountMinor,
           refundAmountMinor: Number(entity.amount_refunded || refundedAmountMinor),
+          pendingRefundAmountMinor: 0,
           gatewayReference: razorpayPaymentId || null,
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
