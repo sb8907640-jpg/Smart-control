@@ -632,7 +632,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const saved = root.masterConfig?.ownerControl?.businessProfile || {};
       res.json({ businessSettings: {
         brandName: String(saved.brandName || "Family Suraksha"),
-        supportWhatsAppNumber: String(saved.supportWhatsAppNumber || process.env.SUPPORT_WHATSAPP_NUMBER || ""),
+        supportWhatsAppNumber: String(saved.supportWhatsAppNumber || root.support?.whatsappNumber || process.env.SUPPORT_WHATSAPP_NUMBER || ""),
         supportWhatsAppMessage: String(saved.supportWhatsAppMessage || "Hello, I need support for Family Suraksha"),
         supportEmail: String(saved.supportEmail || ""),
         supportUrl: String(saved.supportUrl || "")
@@ -651,8 +651,8 @@ function installOwnerPanelRoutes(app, { db }) {
       }
       const rawNumber = String(values.supportWhatsAppNumber || "").trim();
       const supportWhatsAppNumber = rawNumber.replace(/\D/g, "");
-      if (rawNumber && !/^\d{8,15}$/.test(supportWhatsAppNumber)) {
-        return res.status(400).json({ error: "WhatsApp number must contain 8–15 digits including country code." });
+      if (!/^\d{8,15}$/.test(supportWhatsAppNumber)) {
+        return res.status(400).json({ error: "A WhatsApp number with 8–15 digits including country code is required." });
       }
       const supportWhatsAppMessage = String(values.supportWhatsAppMessage || ("Hello, I need support for " + brandName)).trim().slice(0, 500);
       const supportEmail = String(values.supportEmail || "").trim().toLowerCase();
@@ -673,6 +673,7 @@ function installOwnerPanelRoutes(app, { db }) {
       };
       await collection("ownerSettings").doc("global").set({
         masterConfig: { ownerControl: { businessProfile } },
+        support: { whatsappNumber: supportWhatsAppNumber },
         updatedAtEpochMs: now(), updatedBy: req.user.uid
       }, { merge: true });
       await audit(req, "OWNER_BUSINESS_SETTINGS_EDITED", "businessProfile", {
