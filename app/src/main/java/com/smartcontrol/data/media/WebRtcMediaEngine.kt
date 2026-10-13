@@ -14,8 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -88,10 +88,10 @@ class WebRtcMediaEngine(
         val offer = createOffer(pc)
         pc.setLocalDescriptionAwait(offer)
         signaling.writeOffer(sessionId, offer.description).getOrThrow()
-        waitForAnswerAndCandidates(sessionId, pc)
+        val initialAnswerSdp = waitForAnswerAndCandidates(sessionId, pc)
         signaling.markActive(sessionId).getOrThrow()
         offererSessions += sessionId
-        observeAnswerRestarts(sessionId, pc)
+        observeAnswerRestarts(sessionId, pc, initialAnswerSdp)
     }
 
     suspend fun view(sessionId: String, remoteVideoSink: org.webrtc.VideoSink? = null, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
@@ -104,7 +104,7 @@ class WebRtcMediaEngine(
         signaling.writeAnswer(sessionId, answer.description).getOrThrow()
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
         signaling.markActive(sessionId).getOrThrow()
-        observeOfferRestarts(sessionId, pc)
+        observeOfferRestarts(sessionId, pc, session.offerSdp!!)
     }
 
     suspend fun stop(sessionId: String) {
@@ -175,10 +175,11 @@ class WebRtcMediaEngine(
         return pc
     }
 
-    private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
+    private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection): String {
         val session = signaling.observeSession(sessionId).filterNotNull().first { !it.answerSdp.isNullOrBlank() }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp!!))
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
+        return session.answerSdp!!
     }
 
     private suspend fun collectRemoteCandidates(sessionId: String, pc: PeerConnection) {
@@ -189,14 +190,14 @@ class WebRtcMediaEngine(
         }
     }
 
-    private fun observeAnswerRestarts(sessionId: String, pc: PeerConnection) {
+    private fun observeAnswerRestarts(sessionId: String, pc: PeerConnection, initialSdp: String) {
         renegotiationJobs[sessionId]?.cancel()
         renegotiationJobs[sessionId] = scope.launch {
             signaling.observeSession(sessionId)
                 .map { it?.answerSdp }
                 .filterNotNull()
                 .distinctUntilChanged()
-                .drop(1)
+                .filter { it != initialSdp }
                 .collect { sdp ->
                     if (peerConnections[sessionId] === pc) {
                         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, sdp))
@@ -205,14 +206,14 @@ class WebRtcMediaEngine(
         }
     }
 
-    private fun observeOfferRestarts(sessionId: String, pc: PeerConnection) {
+    private fun observeOfferRestarts(sessionId: String, pc: PeerConnection, initialSdp: String) {
         renegotiationJobs[sessionId]?.cancel()
         renegotiationJobs[sessionId] = scope.launch {
             signaling.observeSession(sessionId)
                 .map { it?.offerSdp }
                 .filterNotNull()
                 .distinctUntilChanged()
-                .drop(1)
+                .filter { it != initialSdp }
                 .collect { sdp ->
                     if (peerConnections[sessionId] === pc) {
                         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.OFFER, sdp))
