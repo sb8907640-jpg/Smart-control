@@ -8,6 +8,13 @@ plugins {
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
 val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").map { it.ifBlank { "969691895574-9f7jujuf7irm6hktusvdtp0uik96cqke.apps.googleusercontent.com" } }.get()
 val apiBaseUrl = providers.gradleProperty("SMARTCONTROL_API_BASE_URL").orElse("").get()
+val termsUrl = providers.gradleProperty("SMARTCONTROL_TERMS_URL").orElse("").get()
+val privacyUrl = providers.gradleProperty("SMARTCONTROL_PRIVACY_URL").orElse("").get()
+val eulaUrl = providers.gradleProperty("SMARTCONTROL_EULA_URL").orElse("").get()
+fun quoteBuildConfig(value: String): String {
+    val escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return "\"" + escaped + "\""
+}
 
 android {
     namespace="com.smartcontrol"
@@ -26,7 +33,10 @@ android {
         versionName="0.3.0"
         testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String","GOOGLE_WEB_CLIENT_ID","\"$googleWebClientId\"")
-        buildConfigField("String","SMARTCONTROL_API_BASE_URL","\"$apiBaseUrl\"")
+        buildConfigField("String","SMARTCONTROL_API_BASE_URL",quoteBuildConfig(apiBaseUrl))
+        buildConfigField("String","SMARTCONTROL_TERMS_URL",quoteBuildConfig(termsUrl))
+        buildConfigField("String","SMARTCONTROL_PRIVACY_URL",quoteBuildConfig(privacyUrl))
+        buildConfigField("String","SMARTCONTROL_EULA_URL",quoteBuildConfig(eulaUrl))
     }
     buildFeatures { compose=true; buildConfig=true }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }

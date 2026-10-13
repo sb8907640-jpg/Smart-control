@@ -15,6 +15,8 @@ const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentat
 const consentScreen = read("app/src/main/java/com/smartcontrol/presentation/consent/ConsentScreen.kt");
 const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
 const functionsIndex = read("functions/index.js");
+const gradleConfig = read("app/build.gradle.kts");
+const readinessPreflight = read("scripts/production-readiness-preflight.js");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
@@ -25,10 +27,17 @@ check("Legal consent is versioned and saved before continuing",
     consentScreen.includes('.commit()') &&
     mainActivity.includes('preferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION'),
   "Consent acceptance stores its version and timestamp before continuing; a new policy version forces re-acceptance.");
-check("Consent ledger limitation is disclosed",
-  consentScreen.includes("synchronized to the server after authentication") &&
-    consentScreen.includes("Official document links are not configured in this build."),
-  "The app does not misrepresent local preferences as server-audited consent or unavailable legal links.");
+check("Consent acceptance requires official HTTPS legal documents",
+  consentScreen.includes("legalLinksConfigured") &&
+    consentScreen.includes("Official HTTPS Terms, Privacy Policy and EULA URLs are required before acceptance can continue.") &&
+    ["SMARTCONTROL_TERMS_URL", "SMARTCONTROL_PRIVACY_URL", "SMARTCONTROL_EULA_URL"].every(key => gradleConfig.includes(key)) &&
+    ["SMARTCONTROL_TERMS_URL", "SMARTCONTROL_PRIVACY_URL", "SMARTCONTROL_EULA_URL"].every(key => readinessPreflight.includes(key)) &&
+    readinessPreflight.includes("const invalidEnv = []") &&
+    readinessPreflight.includes('parsed.protocol !== "https:"'),
+  "Consent remains disabled until valid HTTPS Terms, Privacy Policy and EULA URLs are built into the app and the preflight validates production URL formats.");
+check("Consent synchronization disclosure",
+  consentScreen.includes("synchronized to the server after authentication"),
+  "The app discloses that acceptance is saved locally before authentication and then synchronized to the server.");
 check("Legal consent is recorded server-side after authentication",
   functionsIndex.includes("exports.recordLegalConsent") &&
     functionsIndex.includes("FieldValue.serverTimestamp()") &&
