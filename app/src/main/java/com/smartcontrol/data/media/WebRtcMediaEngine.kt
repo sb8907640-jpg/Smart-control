@@ -90,6 +90,7 @@ class WebRtcMediaEngine(
         signaling.writeOffer(sessionId, offer.description).getOrThrow()
         waitForAnswerAndCandidates(sessionId, pc)
         signaling.markActive(sessionId).getOrThrow()
+        offererSessions += sessionId
         observeAnswerRestarts(sessionId, pc)
     }
 
@@ -171,7 +172,6 @@ class WebRtcMediaEngine(
         }
         val pc = factory.createPeerConnection(config, observer) ?: error("Unable to create PeerConnection")
         peerConnections[sessionId] = pc
-        if (isOfferer) offererSessions += sessionId
         return pc
     }
 
