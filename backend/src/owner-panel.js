@@ -49,6 +49,19 @@ function installOwnerPanelRoutes(app, { db }) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   };
 
+  // Query history by subject instead of scanning the first global page. Fetch
+  // one extra record to detect real truncation while keeping response size bounded.
+  const readUserHistory = async (name, userId, fields, limit = 1000) => {
+    const records = new Map();
+    let truncated = false;
+    for (const field of fields) {
+      const snapshot = await collection(name).where(field, "==", userId).limit(limit + 1).get();
+      if (snapshot.docs.length > limit) truncated = true;
+      for (const doc of snapshot.docs.slice(0, limit)) records.set(doc.id, { id: doc.id, ...doc.data() });
+    }
+    return { records: Array.from(records.values()), truncated };
+  };
+
   const normalizeFeatures = (body = {}) => {
     const all19 = body.all19 === true || body.allPermissions === true;
     const selected = Array.isArray(body.features) ? body.features.map(String).filter(Boolean) : [];
@@ -170,24 +183,20 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
       const profile = await collection("users").doc(id).get();
       if (!profile.exists) return res.status(404).json({ error: "User not found." });
-      const [permissionRecords, consentRecords, auditRecords] = await Promise.all([
-        read("permissionHistory", 1000),
-        read("consentHistory", 1000),
-        read("auditLogs", 1000)
+      const [permissionHistory, consentHistory, auditHistory] = await Promise.all([
+        readUserHistory("permissionHistory", id, ["userId", "uid", "targetUserId"]),
+        readUserHistory("consentHistory", id, ["userId", "uid", "targetUserId"]),
+        readUserHistory("auditLogs", id, ["userId", "metadata.userId", "metadata.targetUserId", "metadata.id"])
       ]);
-      const permissions = permissionRecords.filter(record =>
-        String(record.userId || record.uid || record.id || "") === id
-      );
-      const consents = consentRecords.filter(record =>
-        String(record.userId || record.uid || record.id || "") === id
-      );
-      const auditEvents = auditRecords.filter(record => {
+      const permissions = permissionHistory.records;
+      const consents = consentHistory.records;
+      const auditEvents = auditHistory.records.filter(record => {
         const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
         const action = String(record.action || "");
         if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED") return false;
+        if (!/permission|consent|grant|revoke|access/i.test(action)) return false;
         return String(record.userId || "") === id
-          || (String(metadata.userId || metadata.id || "") === id
-            && /permission|consent|grant|revoke|access/i.test(action));
+          || String(metadata.userId || metadata.targetUserId || metadata.id || "") === id;
       });
       const events = [
         ...permissions.map(record => ({ type: "PERMISSION", ...record })),
@@ -203,7 +212,14 @@ function installOwnerPanelRoutes(app, { db }) {
         return timestamp(b) - timestamp(a);
       });
       await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
-      return res.json({ userId: id, count: events.length, events, note: "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted." });
+      const truncated = permissionHistory.truncated || consentHistory.truncated || auditHistory.truncated;
+      res.set("Cache-Control", "no-store");
+      return res.json({
+        userId: id, count: events.length, events, truncated,
+        note: truncated
+          ? "History is partial because at least one source exceeded the per-query cap. Missing records are not proof that consent was granted."
+          : "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted."
+      });
     } catch (e) { next(e); }
   });
 
@@ -223,25 +239,103 @@ function installOwnerPanelRoutes(app, { db }) {
       res.json({ users, total: users.length, truncated: allUsers.length >= 500 });
     } catch (e) { next(e); }
   });
+
   app.get("/api/owner/users/:id/export", requireOwner, async (req, res, next) => {
     try {
       const id = String(req.params.id || "").trim();
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
       const profile = await collection("users").doc(id).get();
       if (!profile.exists) return res.status(404).json({ error: "User not found." });
-      const relatedCollections = ["subscriptions", "payments", "supportTickets", "freeAccessGrants"];
+
+      const relatedQueryFields = {
+        subscriptions: ["userId", "uid"],
+        payments: ["userId", "uid"],
+        supportTickets: ["userId", "uid"],
+        freeAccessGrants: ["userId", "uid"],
+        permissionHistory: ["userId", "uid", "targetUserId"],
+        consentHistory: ["userId", "uid", "targetUserId"],
+        auditLogs: ["userId", "uid", "targetUserId", "metadata.userId", "metadata.targetUserId", "metadata.id"],
+        securityEvents: ["userId", "uid", "targetUserId", "metadata.userId", "metadata.targetUserId", "metadata.id"],
+        devices: ["userId", "uid", "controllerUid", "deviceUid", "ownerUid"],
+        mediaSessions: ["userId", "uid", "controllerUid", "targetDeviceId"],
+        fileTransfers: ["userId", "uid", "senderDeviceId", "receiverDeviceId"],
+        pairingInvites: ["userId", "uid", "creatorUid", "receiverUid"],
+        statusAlerts: ["userId", "uid", "deviceId"],
+        sharedLocation: ["userId", "uid", "ownerUid"],
+        userAccess: ["userId", "uid"],
+        featurePolicyUsers: ["userId", "uid"],
+        invoices: ["userId", "uid"],
+        emiSchedule: ["userId", "uid"],
+        payouts: ["userId", "uid"],
+        parentSecurity: ["userId", "uid"],
+        anomalyAlerts: ["userId", "deviceId"]
+      };
+      const truncatedCollections = new Set();
+      const sensitiveKey = /token|secret|credential|private.?key|password|otp|api.?key|pairing.?code|pairing.?url|invite.?code|invite.?url|magic.?link|download.?url|signed.?url|authorization|session.?cookie/i;
+      const sanitize = (value) => {
+        if (value instanceof Date) return value.toISOString();
+        if (value && typeof value.toDate === "function") return value.toDate().toISOString();
+        if (Array.isArray(value)) return value.map(sanitize);
+        if (value && typeof value === "object") {
+          return Object.fromEntries(Object.entries(value)
+            .filter(([key]) => !sensitiveKey.test(key))
+            .map(([key, item]) => [key, sanitize(item)]));
+        }
+        return value;
+      };
       const related = {};
-      for (const name of relatedCollections) {
-        const byUserId = await collection(name).where("userId", "==", id).limit(500).get();
-        const byUid = await collection(name).where("uid", "==", id).limit(500).get();
+      await Promise.all(Object.entries(relatedQueryFields).map(async ([name, fields]) => {
         const unique = new Map();
-        for (const doc of [...byUserId.docs, ...byUid.docs]) unique.set(doc.id, { id: doc.id, ...doc.data() });
+        const snapshots = await Promise.all(fields.map(field =>
+          collection(name).where(field, "==", id).limit(501).get()
+        ));
+        for (const snapshot of snapshots) {
+          if (snapshot.docs.length > 500) truncatedCollections.add(name);
+          for (const doc of snapshot.docs.slice(0, 500)) {
+            unique.set(doc.id, { ...sanitize(doc.data()), id: doc.id });
+          }
+        }
         related[name] = Array.from(unique.values());
+      }));
+
+      // Some user-owned records are keyed directly by UID rather than carrying
+      // a userId field. Include those exact documents without exposing global settings.
+      for (const name of ["devices", "userAccess", "parentSecurity", "sharedLocation", "featurePolicyUsers"]) {
+        const direct = await collection(name).doc(id).get();
+        if (!direct.exists) continue;
+        const rows = new Map((related[name] || []).map(record => [record.id, record]));
+        rows.set(id, { ...sanitize(direct.data()), id });
+        related[name] = Array.from(rows.values());
       }
+
+      const recentAudit = await read("auditLogs", 1001);
+      if (recentAudit.length >= 1001) truncatedCollections.add("auditLogs");
+      const subjectAudit = recentAudit.filter(record => {
+        const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+        return String(metadata.userId || metadata.id || "") === id;
+      });
+      const auditRows = new Map((related.auditLogs || []).map(record => [record.id, record]));
+      for (const record of subjectAudit) auditRows.set(record.id, sanitize(record));
+      related.auditLogs = Array.from(auditRows.values());
+
       const exportedAt = new Date(now()).toISOString();
-      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: ["users", ...relatedCollections] });
-      res.set("Content-Disposition", `attachment; filename="family-suraksha-user-${id}-export.json"`);
-      return res.json({ userId: id, exportedAt, data: { profile: { id, ...profile.data() }, ...related } });
+      const collectionsIncluded = ["users", ...Object.keys(related)];
+      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", {
+        id, collections: collectionsIncluded, truncatedCollections: Array.from(truncatedCollections)
+      });
+      res.set("Cache-Control", "no-store");
+      res.set("Content-Disposition", "attachment; filename=\"family-suraksha-user-" + id + "-export.json\"");
+      return res.json({
+        userId: id,
+        exportedAt,
+        exportMetadata: {
+          collectionLimit: 500,
+          truncatedCollections: Array.from(truncatedCollections).sort(),
+          excluded: ["Authentication credentials, access tokens, pairing codes, and secret values are omitted for security."],
+          note: "Records are collected from known user/UID/device relationship fields. Review truncatedCollections before treating this as a complete legal data-subject export."
+        },
+        data: { profile: { ...sanitize(profile.data()), id }, ...related }
+      });
     } catch (e) { next(e); }
   });
   app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => updateUserProfile(req, res).catch(next));
