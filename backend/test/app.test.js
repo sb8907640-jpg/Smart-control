@@ -450,6 +450,10 @@ test("Owner user data export includes scoped history and redacts credential fiel
   db.data.permissionHistory.set("permission-1", { userId: "user-1", permission: "CAMERA", createdAtEpochMs: 100 });
   db.data.consentHistory.set("consent-1", { userId: "user-1", consentVersion: 1, recordedAtEpochMs: 200 });
   db.data.devices.set("user-1", { controllerUid: "user-1", paired: true, pairingToken: "must-not-export" });
+  db.data.auditLogs.push(
+    { id: "audit-user", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { targetUserId: "user-1" } },
+    { id: "audit-other", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { targetUserId: "other-user" } }
+  );
   await withOwnerServer(db, async base => {
     const response = await fetch(base + "/api/owner/users/user-1/export", {
       headers: { authorization: "Bearer owner-token" }
@@ -467,8 +471,10 @@ test("Owner user data export includes scoped history and redacts credential fiel
     assert.equal(body.data.consentHistory[0].consentVersion, 1);
     assert.equal(body.data.devices[0].paired, true);
     assert.equal(body.data.devices[0].pairingToken, undefined);
+    assert.equal(body.data.auditLogs.length, 1);
+    assert.equal(body.data.auditLogs[0].metadata.targetUserId, "user-1");
     assert.deepEqual(body.exportMetadata.truncatedCollections, []);
-    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DATA_EXPORTED");
+    assert.equal(db.data.auditLogs.at(-1).action, "OWNER_USER_DATA_EXPORTED");
   });
 });
 
