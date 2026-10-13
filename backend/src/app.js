@@ -233,6 +233,48 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   });
 
 
+
+  // Authenticated customer support entry point. The destination and message are
+  // resolved server-side from the private Owner business profile.
+  app.post("/api/support/whatsapp/initiate", authenticate, requireFirestore, async (req, res, next) => {
+    try {
+      const settingsSnap = await firestore.collection("ownerSettings").doc("global").get();
+      const root = settingsSnap.exists ? settingsSnap.data() || {} : {};
+      const profile = root.masterConfig?.ownerControl?.businessProfile || {};
+      const rawNumber = String(profile.supportWhatsAppNumber || root.support?.whatsappNumber || process.env.SUPPORT_WHATSAPP_NUMBER || "");
+      const number = rawNumber.replace(/\D/g, "");
+      if (!/^\d{8,15}$/.test(number)) {
+        return res.status(503).json({ error: "WhatsApp support is not configured. Ask the OWNER to set the support number." });
+      }
+      const now = Date.now();
+      const recent = await firestore.collection("supportTickets")
+        .where("userId", "==", req.user.uid)
+        .where("createdAtEpochMs", ">=", now - 60_000)
+        .limit(3).get();
+      if (recent.size >= 3) return res.status(429).json({ error: "Too many support requests. Please wait a minute." });
+      const brandName = String(profile.brandName || "Family Suraksha").trim().slice(0, 100);
+      const message = String(profile.supportWhatsAppMessage || ("Hello, I need support for " + brandName)).trim().slice(0, 500);
+      const ticket = await firestore.collection("supportTickets").add({
+        userId: req.user.uid,
+        category: "WHATSAPP_SUPPORT",
+        status: "OPEN",
+        brandName,
+        channel: "WHATSAPP",
+        createdAtEpochMs: now,
+        updatedAtEpochMs: now
+      });
+      const whatsappUrl = "https://wa.me/" + number + "?text=" + encodeURIComponent(message);
+      await firestore.collection("auditLogs").add({
+        userId: req.user.uid,
+        action: "SUPPORT_WHATSAPP_INITIATED",
+        resource: "supportTicket",
+        metadata: { ticketId: ticket.id, channel: "WHATSAPP" },
+        createdAt: now
+      });
+      return res.status(201).json({ ok: true, ticketId: ticket.id, channel: "WHATSAPP", whatsappUrl });
+    } catch (error) { next(error); }
+  });
+
   // Create a short-lived, consent-based pairing invitation. The raw token/code
   // are returned only once; only their hashes are persisted.
   app.post("/api/pairing/invites", authenticate, requireFirestore, async (req, res, next) => {
