@@ -162,7 +162,7 @@ service cloud.firestore {
             )
             || (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offerSdp'])
-              && resource.data.status == 'APPROVED'
+              && resource.data.status in ['APPROVED', 'ACTIVE']
               && request.resource.data.status == resource.data.status
               && request.resource.data.offerSdp is string
             )
@@ -186,7 +186,7 @@ service cloud.firestore {
             )
             || (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answerSdp'])
-              && resource.data.status == 'APPROVED'
+              && resource.data.status in ['APPROVED', 'ACTIVE']
               && request.resource.data.status == resource.data.status
               && request.resource.data.answerSdp is string
             )
