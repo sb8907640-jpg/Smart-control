@@ -12,10 +12,30 @@ const session = read("app/src/main/java/com/smartcontrol/domain/session/SessionM
 const sessionRepo = read("app/src/main/java/com/smartcontrol/domain/session/SessionRepository.kt");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
 const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt");
+const consentScreen = read("app/src/main/java/com/smartcontrol/presentation/consent/ConsentScreen.kt");
+const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
+const functionsIndex = read("functions/index.js");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
 check("Consent + activity logs", /consentLog: true/.test(policy) && /activityLog: true/.test(policy), "Both audit categories are mandatory.");
+check("Legal consent is versioned and saved before continuing",
+  consentScreen.includes("CURRENT_LEGAL_CONSENT_VERSION") &&
+    consentScreen.includes('putLong("accepted_at_epoch_ms"') &&
+    consentScreen.includes('.commit()') &&
+    mainActivity.includes('preferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION'),
+  "Consent acceptance stores its version and timestamp before continuing; a new policy version forces re-acceptance.");
+check("Consent ledger limitation is disclosed",
+  consentScreen.includes("synchronized to the server after authentication") &&
+    consentScreen.includes("Official document links are not configured in this build."),
+  "The app does not misrepresent local preferences as server-audited consent or unavailable legal links.");
+check("Legal consent is recorded server-side after authentication",
+  functionsIndex.includes("exports.recordLegalConsent") &&
+    functionsIndex.includes("FieldValue.serverTimestamp()") &&
+    mainActivity.includes('getHttpsCallable("recordLegalConsent")') &&
+    mainActivity.includes('consentSyncState != "SYNCED"') &&
+    mainActivity.includes("Retry consent sync"),
+  "An authenticated callable writes an idempotent consent record; protected app flows stay locked until synchronization succeeds.");
 check("Live indicator", /startVisibleForeground|setOngoing\(true\)|Family Safety Active/.test(service), "Foreground notification remains visible.");
 check("STOP", /ACTION_STOP_SYNC|Stop Sync|stopSelf\(\)/.test(service), "User-visible service stop action exists.");
 check("Access notification", /Notification/.test(service) && /statusAlerts/.test(service), "Notification/status alert surface exists.");

@@ -8,6 +8,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
@@ -25,6 +32,7 @@ import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.audit.AuditLogScreen
 import com.smartcontrol.presentation.billing.BillingScreen
 import com.smartcontrol.presentation.consent.ConsentScreen
+import com.smartcontrol.presentation.consent.CURRENT_LEGAL_CONSENT_VERSION
 import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
 import com.smartcontrol.presentation.features.FeatureAccessViewModel
 import com.smartcontrol.presentation.features.FeatureCenterScreen
@@ -148,10 +156,14 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             val featureAccessViewModel: FeatureAccessViewModel = hiltViewModel()
             val featureSettings by featureAccessViewModel.settings.collectAsState()
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
+            var consentSyncState by remember { mutableStateOf("WAITING") }
+            var consentSyncAttempt by remember { mutableStateOf(0) }
             var consented by remember {
                 mutableStateOf(
-                    getSharedPreferences("legal_consent", MODE_PRIVATE)
-                        .getBoolean("accepted", false)
+                    getSharedPreferences("legal_consent", MODE_PRIVATE).let { preferences ->
+                        preferences.getBoolean("accepted", false) &&
+                            preferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION
+                    }
                 )
             }
             var ageVerified by remember {
@@ -184,6 +196,33 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 )
             }
             val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+
+            LaunchedEffect(signedIn, consented, consentSyncAttempt) {
+                if (!signedIn || !consented) {
+                    consentSyncState = "WAITING"
+                    return@LaunchedEffect
+                }
+                val consentPreferences = getSharedPreferences("legal_consent", MODE_PRIVATE)
+                if (consentPreferences.getInt("accepted_version", 0) != CURRENT_LEGAL_CONSENT_VERSION) {
+                    consentSyncState = "FAILED"
+                    return@LaunchedEffect
+                }
+                try {
+                    FirebaseFunctions.getInstance().getHttpsCallable("recordLegalConsent").call(
+                        mapOf(
+                            "version" to CURRENT_LEGAL_CONSENT_VERSION,
+                            "deviceOwnerConsent" to consentPreferences.getBoolean("device_owner_consent", false),
+                            "privacyConsent" to consentPreferences.getBoolean("privacy_consent", false),
+                            "eulaConsent" to consentPreferences.getBoolean("eula_consent", false),
+                            "clientAcceptedAtEpochMs" to consentPreferences.getLong("accepted_at_epoch_ms", 0L)
+                        )
+                    ).await()
+                    consentSyncState = "SYNCED"
+                } catch (_: Exception) {
+                    consentSyncState = "FAILED"
+                }
+            }
+
             val backToHub: () -> Unit = { route = "features" }
 
             fun startServiceFromUserAction() {
@@ -220,6 +259,32 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 ConsentScreen(this@MainActivity) { consented = true }
             } else if (!signedIn) {
                 AuthScreen(onAuthenticated = { signedIn = true })
+            } else if (consentSyncState != "SYNCED") {
+                Column(
+                    Modifier.fillMaxSize().padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text("Saving legal consent", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+                    Text(
+                        if (consentSyncState == "FAILED") {
+                            "Consent could not be verified by the server. Retry when connected, or sign out. Protected app features remain locked until the consent record is saved."
+                        } else {
+                            "Please wait while your consent acknowledgement is securely recorded."
+                        }
+                    )
+                    if (consentSyncState == "FAILED") {
+                        androidx.compose.material3.Button(onClick = { consentSyncAttempt += 1 }) {
+                            Text("Retry consent sync")
+                        }
+                        androidx.compose.material3.OutlinedButton(onClick = {
+                            FirebaseAuth.getInstance().signOut()
+                            signedIn = false
+                            consentSyncState = "WAITING"
+                        }) {
+                            Text("Sign out")
+                        }
+                    }
+                }
             } else if (!ageVerified) {
                 AgeVerificationScreen(this@MainActivity) { ageVerified = true }
             } else if (!modeSelected) {
