@@ -24,6 +24,9 @@ Required build/runtime configuration:
 - NEXT_PUBLIC_FIREBASE_PROJECT_ID
 - NEXT_PUBLIC_FIREBASE_APP_ID
 - NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL
+- SMARTCONTROL_TERMS_URL (official public HTTPS Terms of Service URL)
+- SMARTCONTROL_PRIVACY_URL (official public HTTPS Privacy Policy URL)
+- SMARTCONTROL_EULA_URL (official public HTTPS EULA URL)
 
 ## Android
 CI accepts optional:
