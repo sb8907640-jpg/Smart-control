@@ -31,8 +31,10 @@ check("Consent acceptance requires official HTTPS legal documents",
   consentScreen.includes("legalLinksConfigured") &&
     consentScreen.includes("Official HTTPS Terms, Privacy Policy and EULA URLs are required before acceptance can continue.") &&
     ["SMARTCONTROL_TERMS_URL", "SMARTCONTROL_PRIVACY_URL", "SMARTCONTROL_EULA_URL"].every(key => gradleConfig.includes(key)) &&
-    ["SMARTCONTROL_TERMS_URL", "SMARTCONTROL_PRIVACY_URL", "SMARTCONTROL_EULA_URL"].every(key => readinessPreflight.includes(key)),
-  "Consent remains disabled until valid HTTPS Terms, Privacy Policy and EULA URLs are built into the app and present in production configuration.");
+    ["SMARTCONTROL_TERMS_URL", "SMARTCONTROL_PRIVACY_URL", "SMARTCONTROL_EULA_URL"].every(key => readinessPreflight.includes(key)) &&
+    readinessPreflight.includes("const invalidEnv = []") &&
+    readinessPreflight.includes('parsed.protocol !== "https:"'),
+  "Consent remains disabled until valid HTTPS Terms, Privacy Policy and EULA URLs are built into the app and the preflight validates production URL formats.");
 check("Consent synchronization disclosure",
   consentScreen.includes("synchronized to the server after authentication"),
   "The app discloses that acceptance is saved locally before authentication and then synchronized to the server.");
