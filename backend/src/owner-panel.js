@@ -247,17 +247,40 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!profile.exists) return res.status(404).json({ error: "User not found." });
       const relatedCollections = ["subscriptions", "payments", "supportTickets", "freeAccessGrants"];
       const related = {};
+      let relatedTruncated = false;
       for (const name of relatedCollections) {
-        const byUserId = await collection(name).where("userId", "==", id).limit(500).get();
-        const byUid = await collection(name).where("uid", "==", id).limit(500).get();
+        const byUserId = await collection(name).where("userId", "==", id).limit(501).get();
+        const byUid = await collection(name).where("uid", "==", id).limit(501).get();
+        if (byUserId.docs.length > 500 || byUid.docs.length > 500) relatedTruncated = true;
         const unique = new Map();
-        for (const doc of [...byUserId.docs, ...byUid.docs]) unique.set(doc.id, { id: doc.id, ...doc.data() });
+        for (const doc of [...byUserId.docs.slice(0, 500), ...byUid.docs.slice(0, 500)]) {
+          unique.set(doc.id, { id: doc.id, ...doc.data() });
+        }
         related[name] = Array.from(unique.values());
       }
+      const [permissionHistory, consentHistory, auditHistory] = await Promise.all([
+        readUserHistory("permissionHistory", id, ["userId", "uid"]),
+        readUserHistory("consentHistory", id, ["userId", "uid"]),
+        readUserHistory("auditLogs", id, ["userId", "metadata.userId", "metadata.id"])
+      ]);
+      related.permissionHistory = permissionHistory.records;
+      related.consentHistory = consentHistory.records;
+      related.auditLogs = auditHistory.records.filter(record => {
+        const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+        const action = String(record.action || "");
+        if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED" || action === "OWNER_USER_DATA_EXPORTED") return false;
+        return String(record.userId || "") === id || String(metadata.userId || metadata.id || "") === id;
+      });
+      const truncated = relatedTruncated || permissionHistory.truncated || consentHistory.truncated || auditHistory.truncated;
       const exportedAt = new Date(now()).toISOString();
-      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: ["users", ...relatedCollections] });
+      const exportedCollections = ["users", ...relatedCollections, "permissionHistory", "consentHistory", "auditLogs"];
+      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: exportedCollections, truncated });
       res.set("Content-Disposition", `attachment; filename="family-suraksha-user-${id}-export.json"`);
-      return res.json({ userId: id, exportedAt, data: { profile: { id, ...profile.data() }, ...related } });
+      return res.json({
+        userId: id, exportedAt, truncated,
+        note: truncated ? "Export is partial because at least one source reached its query cap." : "Export includes records found in the configured user-related collections.",
+        data: { profile: { id, ...profile.data() }, ...related }
+      });
     } catch (e) { next(e); }
   });
   app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => updateUserProfile(req, res).catch(next));
