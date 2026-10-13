@@ -1,11 +1,13 @@
 package com.smartcontrol.presentation.consent
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.smartcontrol.BuildConfig
 
 const val CURRENT_LEGAL_CONSENT_VERSION = 1
 
@@ -15,6 +17,16 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
     var privacyConsent by remember { mutableStateOf(false) }
     var eulaConsent by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val legalDocuments = listOf(
+        "Terms of Service" to BuildConfig.SMARTCONTROL_TERMS_URL,
+        "Privacy Policy" to BuildConfig.SMARTCONTROL_PRIVACY_URL,
+        "End User Licence Agreement (EULA)" to BuildConfig.SMARTCONTROL_EULA_URL
+    )
+    val legalLinksConfigured = legalDocuments.all { (_, url) ->
+        val uri = Uri.parse(url)
+        url.length <= 2048 && uri.scheme == "https" && !uri.host.isNullOrBlank()
+    }
 
     Column(
         Modifier.fillMaxSize().padding(24.dp),
@@ -24,7 +36,21 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
         Text("Smart Control uses explicit consent for remote support, camera, microphone, screen sharing, location and file transfer.")
         Text("The app stays visible while sensitive capabilities are active. Android system permission dialogs remain under the user's control.")
         Text("If the device user is under 18, a parent or guardian should approve use of family-safety features.")
-        Text("Review the applicable Terms, Privacy Policy and EULA supplied by the service operator before accepting. Official document links are not configured in this build.")
+        Text("Open and review each official legal document before accepting.")
+        legalDocuments.forEach { (label, url) ->
+            val uri = Uri.parse(url)
+            if (url.length <= 2048 && uri.scheme == "https" && !uri.host.isNullOrBlank()) {
+                TextButton(onClick = { runCatching { uriHandler.openUri(url) } }) {
+                    Text("Open " + label)
+                }
+            }
+        }
+        if (!legalLinksConfigured) {
+            Text(
+                "Official HTTPS Terms, Privacy Policy and EULA URLs are required before acceptance can continue.",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         Text("Acceptance is saved on this device before sign-in, then synchronized to the server after authentication. Protected features stay locked until the server confirms the record.")
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -58,7 +84,7 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
                 saveFailed = !saved
                 if (saved) onAccepted()
             },
-            enabled = deviceOwnerConsent && privacyConsent && eulaConsent,
+            enabled = deviceOwnerConsent && privacyConsent && eulaConsent && legalLinksConfigured,
             modifier = Modifier.fillMaxWidth()
         ) { Text("Accept & Continue") }
     }
