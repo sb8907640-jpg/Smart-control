@@ -92,6 +92,21 @@ async function main() {
       tx.delete(codeRef);
     }));
 
+    // Health heartbeat writes are required for online/offline health reporting,
+    // but only the paired device itself may publish the allowlisted payload.
+    const health = {
+      serviceAlive: true,
+      lastHeartbeatAt: Date.now(),
+      permissions: { camera: true, microphone: false, location: true, notifications: true }
+    };
+    await assertSucceeds(updateDoc(doc(target.firestore(), "devices", "target-user"), { health }));
+    await assertFails(updateDoc(doc(controller.firestore(), "devices", "target-user"), {
+      health: { ...health, lastHeartbeatAt: Date.now() + 1 }
+    }));
+    await assertFails(updateDoc(doc(target.firestore(), "devices", "target-user"), {
+      health: { ...health, ownerOverride: true }
+    }));
+
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
         controllerUid: "media-controller",
@@ -136,7 +151,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry, atomic pairing claim, device-owned health heartbeat authorization, SDP participant permissions, and paired-device file-transfer requests.");
   } finally {
     await env.cleanup();
   }
