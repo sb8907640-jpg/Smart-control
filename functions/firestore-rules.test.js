@@ -130,6 +130,11 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
+    // ICE restart renegotiation may refresh only each participant's own SDP
+    // while a session is APPROVED or ACTIVE; unrelated users remain blocked.
+    await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { offerSdp: "ice-restart-offer-sdp" }));
+    await assertSucceeds(updateDoc(sessionRef, { answerSdp: "ice-restart-answer-sdp" }));
+    await assertFails(updateDoc(doc(env.authenticatedContext("unrelated-user").firestore(), "mediaSessions", "session-1"), { offerSdp: "spoofed-offer" }));
 
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
@@ -151,7 +156,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, device-owned health heartbeat authorization, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry, atomic pairing claim, device-owned health heartbeat authorization, SDP participant permissions including active-session ICE restart, and paired-device file-transfer requests.");
   } finally {
     await env.cleanup();
   }
