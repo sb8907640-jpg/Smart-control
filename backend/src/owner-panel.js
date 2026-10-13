@@ -318,7 +318,7 @@ function installOwnerPanelRoutes(app, { db }) {
           excluded: ["Authentication credentials, access tokens, pairing codes, and secret values are omitted for security."],
           note: "Records are collected from known user/UID/device relationship fields. Review truncatedCollections before treating this as a complete legal data-subject export."
         },
-        data: { profile: { id, ...sanitize(profile.data()) }, ...related }
+        data: { profile: { ...sanitize(profile.data()), id }, ...related }
       });
     } catch (e) { next(e); }
   });
