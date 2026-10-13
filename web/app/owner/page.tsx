@@ -23,7 +23,7 @@ type Panel = {
   note: string;
 };
 type Row = Record<string, unknown> & { id: string };
-type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "gateway" | "support-config" | "owner-profile" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
+type TabId = "overview" | "users" | "plans" | "features" | "catalog-features" | "settings" | "gateway" | "support-config" | "owner-profile" | "business-settings" | "free-access" | "device-links" | "subscriptions" | "payments" | "emi" | "legal-templates" | "support-tickets" | "audit" | "health";
 type Tab = { id: TabId; label: string; path?: string; key?: string; description: string };
 
 const TABS: Tab[] = [
@@ -36,6 +36,7 @@ const TABS: Tab[] = [
   { id: "gateway", label: "Payment gateway", description: "Configure the encrypted Razorpay permit and store encrypted drafts for other providers. Only implemented adapters can process payments." },
   { id: "support-config", label: "Support settings", description: "Update the WhatsApp support destination used by the customer support button." },
   { id: "owner-profile", label: "Owner profile", description: "Edit the Owner display name and contact details without changing the secured sign-in identity." },
+  { id: "business-settings", label: "Business profile", description: "Edit customer-facing brand name, WhatsApp message, support email and HTTPS support URL." },
   { id: "free-access", label: "Free access", path: "/api/owner/free-access", key: "grants", description: "Approve, customize, extend, edit, or revoke time-limited free access." },
   { id: "device-links", label: "Device links", path: "/api/owner/device-links", key: "links", description: "Generate, regenerate, and revoke owner-issued device links." },
   { id: "subscriptions", label: "Subscriptions", path: "/api/owner/subscriptions", key: "subscriptions", description: "Inspect and update subscription records." },
@@ -227,6 +228,51 @@ function OwnerProfileManager({ user }: { user: User }) {
       <label>Contact mobile (country code)<input className="input" type="tel" value={contactMobile} onChange={e => setContactMobile(e.target.value)} placeholder="+91XXXXXXXXXX" maxLength={16} autoComplete="tel" /></label>
     </div>
     <div className="row-actions"><button className="btn primary" disabled={busy || displayName.trim().length < 2} onClick={() => void save()}>Save Owner profile</button></div>
+    {message && <p className="notice">{message}</p>}{error && <p className="error">{error}</p>}
+  </div>;
+}
+
+
+function BusinessProfileManager({ user }: { user: User }) {
+  const [values, setValues] = useState({
+    brandName: "Family Suraksha",
+    supportWhatsAppNumber: "",
+    supportWhatsAppMessage: "Hello, I need support for Family Suraksha",
+    supportEmail: "",
+    supportUrl: ""
+  });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const refresh = useCallback(async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const data = await apiRequest<{ businessSettings: typeof values }>("/api/owner/business-settings", user);
+      setValues(current => ({ ...current, ...data.businessSettings }));
+    } catch (e) { setError(e instanceof Error ? e.message : "Business profile could not be loaded."); }
+    finally { setBusy(false); }
+  }, [user]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const save = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const data = await apiRequest<{ businessSettings: typeof values }>("/api/owner/business-settings", user, "PATCH", { values });
+      setValues(current => ({ ...current, ...data.businessSettings }));
+      setMessage("Business profile saved and audited.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Business profile could not be saved."); }
+    finally { setBusy(false); }
+  };
+  return <div className="card">
+    <div className="toolbar" style={{justifyContent:"space-between",alignItems:"center"}}><h2>Family Suraksha business profile</h2><button className="btn" disabled={busy} onClick={() => void refresh()}>Refresh</button></div>
+    <p className="muted">These fields are customer-facing only. They do not change Firebase sign-in identity or the OWNER allowlist. WhatsApp destinations are kept in private Owner settings and are only used by the authenticated support endpoint.</p>
+    <div className="grid">
+      <label>Brand name<input className="input" value={values.brandName} onChange={e => setValues(v => ({...v, brandName:e.target.value}))} maxLength={100}/></label>
+      <label>WhatsApp number with country code<input className="input" value={values.supportWhatsAppNumber} onChange={e => setValues(v => ({...v, supportWhatsAppNumber:e.target.value}))} placeholder="+91XXXXXXXXXX" maxLength={20}/></label>
+      <label>Support email<input className="input" type="email" value={values.supportEmail} onChange={e => setValues(v => ({...v, supportEmail:e.target.value}))} maxLength={254}/></label>
+      <label>Support URL (HTTPS)<input className="input" type="url" value={values.supportUrl} onChange={e => setValues(v => ({...v, supportUrl:e.target.value}))} placeholder="https://support.example.com" maxLength={500}/></label>
+    </div>
+    <label style={{display:"block",marginTop:14}}>Prefilled WhatsApp message<textarea className="input" value={values.supportWhatsAppMessage} onChange={e => setValues(v => ({...v, supportWhatsAppMessage:e.target.value}))} maxLength={500} rows={3}/></label>
+    <div className="row-actions"><button className="btn primary" disabled={busy || values.brandName.trim().length < 2} onClick={() => void save()}>Save business profile</button></div>
     {message && <p className="notice">{message}</p>}{error && <p className="error">{error}</p>}
   </div>;
 }
@@ -546,6 +592,7 @@ export default function OwnerPanel() {
         {active === "gateway" && <GatewayManager/>}
         {active === "support-config" && user && <SupportSettingsManager user={user}/>}
         {active === "owner-profile" && user && <OwnerProfileManager user={user}/>}
+        {active === "business-settings" && user && <BusinessProfileManager user={user}/>}
         {active === "health" && <div className="card"><h2>Backend health response</h2><pre>{jsonText(health ?? { status: "Use Refresh to check health." })}</pre></div>}
         {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">The one-time code is shown after generation so you can copy it. Treat it like a password and share it only with the intended recipient.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
         {active === "settings" && <div className="card"><h2>Global settings JSON</h2><p className="muted">Edit all global settings as a JSON object. Keep values compatible with the backend consumers. Changes are audited.</p>{rows[0] && <RecordCard row={rows[0]} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} hideSummary/>}</div>}
