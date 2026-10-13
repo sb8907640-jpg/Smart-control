@@ -361,6 +361,22 @@ test("Owner account deletion fails closed until authenticated deletion and reten
 });
 
 
+
+test("Owner permission history sorts server-recorded consent events by timestamp", async () => {
+  const db = makeOwnerTestDb();
+  db.data.consentHistory.set("consent-old", { userId: "user-1", consentVersion: 1, recordedAtEpochMs: 100 });
+  db.data.consentHistory.set("consent-new", { userId: "user-1", consentVersion: 2, recordedAtEpochMs: 300 });
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const consentEvents = body.events.filter(event => event.type === "CONSENT");
+    assert.deepEqual(consentEvents.map(event => event.id), ["consent-new", "consent-old"]);
+  });
+});
+
 test("Owner user list supports status and identity-field filters", async () => {
   const db = makeOwnerTestDb();
   await withOwnerServer(db, async base => {
