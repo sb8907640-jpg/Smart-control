@@ -392,7 +392,8 @@ test("Owner permission history queries scoped records and isolates unrelated aud
   db.data.consentHistory.set("consent-user", { userId: "user-1", consentVersion: 1, accepted: true, createdAtEpochMs: 2000 });
   db.data.auditLogs.push(
     { id: "audit-user", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { userId: "user-1" }, createdAt: 2500 },
-    { id: "audit-other", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { userId: "other-user" }, createdAt: 2600 }
+    { id: "audit-other", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { userId: "other-user" }, createdAt: 2600 },
+    { id: "audit-unrelated", userId: "user-1", action: "LOGIN_SUCCEEDED", metadata: { userId: "user-1" }, createdAt: 2700 }
   );
   await withOwnerServer(db, async base => {
     const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
