@@ -193,8 +193,15 @@ function installOwnerPanelRoutes(app, { db }) {
         ...permissions.map(record => ({ type: "PERMISSION", ...record })),
         ...consents.map(record => ({ type: "CONSENT", ...record })),
         ...auditEvents.map(record => ({ type: "AUDIT", ...record }))
-      ].sort((a, b) => Number(b.createdAtEpochMs || b.createdAt || b.timestamp || 0)
-        - Number(a.createdAtEpochMs || a.createdAt || a.timestamp || 0));
+      ].sort((a, b) => {
+        const timestamp = (record) => {
+          const value = record.createdAtEpochMs ?? record.recordedAtEpochMs ?? record.createdAt ?? record.timestamp;
+          if (value && typeof value.toMillis === "function") return value.toMillis();
+          const numeric = Number(value || 0);
+          return Number.isFinite(numeric) ? numeric : 0;
+        };
+        return timestamp(b) - timestamp(a);
+      });
       await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
       return res.json({ userId: id, count: events.length, events, note: "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted." });
     } catch (e) { next(e); }
