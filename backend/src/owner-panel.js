@@ -282,11 +282,14 @@ function installOwnerPanelRoutes(app, { db }) {
         related[name] = Array.from(unique.values());
       }));
 
-      const deviceDoc = await collection("devices").doc(id).get();
-      if (deviceDoc.exists) {
-        const deviceRows = new Map((related.devices || []).map(record => [record.id, record]));
-        deviceRows.set(id, { ...sanitize(deviceDoc.data()), id });
-        related.devices = Array.from(deviceRows.values());
+      // Some user-owned records are keyed directly by UID rather than carrying
+      // a userId field. Include those exact documents without exposing global settings.
+      for (const name of ["devices", "userAccess", "parentSecurity", "sharedLocation", "featurePolicyUsers"]) {
+        const direct = await collection(name).doc(id).get();
+        if (!direct.exists) continue;
+        const rows = new Map((related[name] || []).map(record => [record.id, record]));
+        rows.set(id, { ...sanitize(direct.data()), id });
+        related[name] = Array.from(rows.values());
       }
 
       const recentAudit = await read("auditLogs", 1001);
