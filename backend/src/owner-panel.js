@@ -255,7 +255,7 @@ function installOwnerPanelRoutes(app, { db }) {
         anomalyAlerts: ["userId", "deviceId"]
       };
       const truncatedCollections = new Set();
-      const sensitiveKey = /token|secret|credential|private.?key|password|otp|api.?key|pairing.?code|invite.?code|download.?url|signed.?url|authorization|session.?cookie/i;
+      const sensitiveKey = /token|secret|credential|private.?key|password|otp|api.?key|pairing.?code|pairing.?url|invite.?code|invite.?url|magic.?link|download.?url|signed.?url|authorization|session.?cookie/i;
       const sanitize = (value) => {
         if (value instanceof Date) return value.toISOString();
         if (value && typeof value.toDate === "function") return value.toDate().toISOString();
