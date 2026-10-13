@@ -256,6 +256,8 @@ function installOwnerPanelRoutes(app, { db }) {
       const truncatedCollections = new Set();
       const sensitiveKey = /token|secret|credential|private.?key|password|otp|api.?key|pairing.?code|download.?url/i;
       const sanitize = (value) => {
+        if (value instanceof Date) return value.toISOString();
+        if (value && typeof value.toDate === "function") return value.toDate().toISOString();
         if (Array.isArray(value)) return value.map(sanitize);
         if (value && typeof value === "object") {
           return Object.fromEntries(Object.entries(value)
@@ -273,7 +275,7 @@ function installOwnerPanelRoutes(app, { db }) {
         for (const snapshot of snapshots) {
           if (snapshot.docs.length > 500) truncatedCollections.add(name);
           for (const doc of snapshot.docs.slice(0, 500)) {
-            unique.set(doc.id, { id: doc.id, ...sanitize(doc.data()) });
+            unique.set(doc.id, { ...sanitize(doc.data()), id: doc.id });
           }
         }
         related[name] = Array.from(unique.values());
@@ -282,7 +284,7 @@ function installOwnerPanelRoutes(app, { db }) {
       const deviceDoc = await collection("devices").doc(id).get();
       if (deviceDoc.exists) {
         const deviceRows = new Map((related.devices || []).map(record => [record.id, record]));
-        deviceRows.set(id, { id, ...sanitize(deviceDoc.data()) });
+        deviceRows.set(id, { ...sanitize(deviceDoc.data()), id });
         related.devices = Array.from(deviceRows.values());
       }
 
