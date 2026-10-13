@@ -26,7 +26,7 @@ check("Legal consent is versioned and saved before continuing",
     mainActivity.includes('preferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION'),
   "Consent acceptance stores its version and timestamp before continuing; a new policy version forces re-acceptance.");
 check("Consent ledger limitation is disclosed",
-  consentScreen.includes("stored on this device only") &&
+  consentScreen.includes("synchronized to the server after authentication") &&
     consentScreen.includes("Official document links are not configured in this build."),
   "The app does not misrepresent local preferences as server-audited consent or unavailable legal links.");
 check("Legal consent is recorded server-side after authentication",
