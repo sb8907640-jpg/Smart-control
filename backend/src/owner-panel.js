@@ -223,25 +223,97 @@ function installOwnerPanelRoutes(app, { db }) {
       res.json({ users, total: users.length, truncated: allUsers.length >= 500 });
     } catch (e) { next(e); }
   });
+
   app.get("/api/owner/users/:id/export", requireOwner, async (req, res, next) => {
     try {
       const id = String(req.params.id || "").trim();
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
       const profile = await collection("users").doc(id).get();
       if (!profile.exists) return res.status(404).json({ error: "User not found." });
-      const relatedCollections = ["subscriptions", "payments", "supportTickets", "freeAccessGrants"];
+
+      const relatedQueryFields = {
+        subscriptions: ["userId", "uid"],
+        payments: ["userId", "uid"],
+        supportTickets: ["userId", "uid"],
+        freeAccessGrants: ["userId", "uid"],
+        permissionHistory: ["userId", "uid"],
+        consentHistory: ["userId", "uid"],
+        auditLogs: ["userId", "uid"],
+        securityEvents: ["userId", "uid"],
+        devices: ["userId", "uid", "controllerUid", "deviceUid"],
+        mediaSessions: ["userId", "uid", "controllerUid", "targetDeviceId"],
+        fileTransfers: ["userId", "uid", "senderDeviceId", "receiverDeviceId"],
+        pairingInvites: ["userId", "uid", "creatorUid", "receiverUid"],
+        statusAlerts: ["userId", "uid", "deviceId"],
+        sharedLocation: ["userId", "uid", "ownerUid"],
+        userAccess: ["userId", "uid"],
+        invoices: ["userId", "uid"],
+        emiSchedule: ["userId", "uid"],
+        payouts: ["userId", "uid"],
+        parentSecurity: ["userId", "uid"],
+        anomalyAlerts: ["userId", "deviceId"]
+      };
+      const truncatedCollections = new Set();
+      const sensitiveKey = /token|secret|credential|private.?key|password|otp|api.?key|pairing.?code|download.?url/i;
+      const sanitize = (value) => {
+        if (Array.isArray(value)) return value.map(sanitize);
+        if (value && typeof value === "object") {
+          return Object.fromEntries(Object.entries(value)
+            .filter(([key]) => !sensitiveKey.test(key))
+            .map(([key, item]) => [key, sanitize(item)]));
+        }
+        return value;
+      };
       const related = {};
-      for (const name of relatedCollections) {
-        const byUserId = await collection(name).where("userId", "==", id).limit(500).get();
-        const byUid = await collection(name).where("uid", "==", id).limit(500).get();
+      await Promise.all(Object.entries(relatedQueryFields).map(async ([name, fields]) => {
         const unique = new Map();
-        for (const doc of [...byUserId.docs, ...byUid.docs]) unique.set(doc.id, { id: doc.id, ...doc.data() });
+        const snapshots = await Promise.all(fields.map(field =>
+          collection(name).where(field, "==", id).limit(501).get()
+        ));
+        for (const snapshot of snapshots) {
+          if (snapshot.docs.length > 500) truncatedCollections.add(name);
+          for (const doc of snapshot.docs.slice(0, 500)) {
+            unique.set(doc.id, { id: doc.id, ...sanitize(doc.data()) });
+          }
+        }
         related[name] = Array.from(unique.values());
+      }));
+
+      const deviceDoc = await collection("devices").doc(id).get();
+      if (deviceDoc.exists) {
+        const deviceRows = new Map((related.devices || []).map(record => [record.id, record]));
+        deviceRows.set(id, { id, ...sanitize(deviceDoc.data()) });
+        related.devices = Array.from(deviceRows.values());
       }
+
+      const recentAudit = await read("auditLogs", 1001);
+      if (recentAudit.length >= 1001) truncatedCollections.add("auditLogs");
+      const subjectAudit = recentAudit.filter(record => {
+        const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+        return String(metadata.userId || metadata.id || "") === id;
+      });
+      const auditRows = new Map((related.auditLogs || []).map(record => [record.id, record]));
+      for (const record of subjectAudit) auditRows.set(record.id, sanitize(record));
+      related.auditLogs = Array.from(auditRows.values());
+
       const exportedAt = new Date(now()).toISOString();
-      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: ["users", ...relatedCollections] });
-      res.set("Content-Disposition", `attachment; filename="family-suraksha-user-${id}-export.json"`);
-      return res.json({ userId: id, exportedAt, data: { profile: { id, ...profile.data() }, ...related } });
+      const collectionsIncluded = ["users", ...Object.keys(related)];
+      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", {
+        id, collections: collectionsIncluded, truncatedCollections: Array.from(truncatedCollections)
+      });
+      res.set("Cache-Control", "no-store");
+      res.set("Content-Disposition", "attachment; filename=\"family-suraksha-user-" + id + "-export.json\"");
+      return res.json({
+        userId: id,
+        exportedAt,
+        exportMetadata: {
+          collectionLimit: 500,
+          truncatedCollections: Array.from(truncatedCollections).sort(),
+          excluded: ["Authentication credentials, access tokens, pairing codes, and secret values are omitted for security."],
+          note: "Records are collected from known user/UID/device relationship fields. Review truncatedCollections before treating this as a complete legal data-subject export."
+        },
+        data: { profile: { id, ...sanitize(profile.data()) }, ...related }
+      });
     } catch (e) { next(e); }
   });
   app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => updateUserProfile(req, res).catch(next));
