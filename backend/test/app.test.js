@@ -27,7 +27,8 @@ function makeOwnerTestDb() {
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
     freeAccessGrants: new Map(),
     permissionHistory: new Map(),
-    consentHistory: new Map()
+    consentHistory: new Map(),
+    devices: new Map()
   };
   return {
     data,
@@ -391,20 +392,29 @@ test("Owner user list supports status and identity-field filters", async () => {
   });
 });
 
-test("Owner user data export includes scoped records and writes an audit event", async () => {
+test("Owner user data export includes scoped history and redacts credential fields", async () => {
   const db = makeOwnerTestDb();
+  db.data.permissionHistory.set("permission-1", { userId: "user-1", permission: "CAMERA", createdAtEpochMs: 100 });
+  db.data.consentHistory.set("consent-1", { userId: "user-1", consentVersion: 1, recordedAtEpochMs: 200 });
+  db.data.devices.set("user-1", { controllerUid: "user-1", paired: true, pairingToken: "must-not-export" });
   await withOwnerServer(db, async base => {
     const response = await fetch(base + "/api/owner/users/user-1/export", {
       headers: { authorization: "Bearer owner-token" }
     });
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-disposition") || "", /attachment/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
     const body = await response.json();
     assert.equal(body.userId, "user-1");
     assert.equal(body.data.profile.name, "Test User");
     assert.equal(body.data.subscriptions.length, 1);
     assert.equal(body.data.payments.length, 1);
     assert.equal(body.data.supportTickets.length, 1);
+    assert.equal(body.data.permissionHistory[0].permission, "CAMERA");
+    assert.equal(body.data.consentHistory[0].consentVersion, 1);
+    assert.equal(body.data.devices[0].paired, true);
+    assert.equal(body.data.devices[0].pairingToken, undefined);
+    assert.deepEqual(body.exportMetadata.truncatedCollections, []);
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DATA_EXPORTED");
   });
 });
