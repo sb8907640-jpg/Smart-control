@@ -45,6 +45,31 @@ jobs:
         if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
 
+      - name: Verify Firebase configuration before producing APKs
+        run: |
+          set -euo pipefail
+          test -s app/google-services.json || {
+            echo "Missing app/google-services.json. Configure the FIREBASE_GOOGLE_SERVICES_JSON repository secret before building APK artifacts." >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("app/google-services.json").read_text())
+          project_id = config.get("project_info", {}).get("project_id")
+          app_ids = [
+              client.get("client_info", {}).get("mobilesdk_app_id")
+              for client in config.get("client", [])
+              if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.smart.control"
+          ]
+          if not project_id or not any(app_ids):
+              raise SystemExit(
+                  "Firebase config must include project_id and an Android client for package com.smart.control."
+              )
+          print("Firebase config validated for package com.smart.control.")
+          PY
+
       - name: Build APKs
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
