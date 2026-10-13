@@ -106,22 +106,161 @@ function installOwnerPanelRoutes(app, { db }) {
   app.get("/api/owner/audit", requireOwner, async (req, res, next) => {
     try { res.json({ logs: await read("auditLogs", 1000) }); } catch (e) { next(e); }
   });
-  app.get("/api/owner/users", requireOwner, async (req, res, next) => {
-    try { res.json({ users: await read("users") }); } catch (e) { next(e); }
-  });
-  app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => update(req, res, "users", req.params.id, "user", "OWNER_USER_EDITED").catch(next));
-  app.post("/api/owner/users/:id/ban", requireOwner, async (req, res, next) => {
+  const userProfileFields = new Set([
+    "name", "displayName", "email", "phoneNumber", "mobile", "photoURL", "photoUrl"
+  ]);
+  const updateUserProfile = async (req, res) => {
+    const id = String(req.params.id || "").trim();
+    const values = req.body?.values;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      return res.status(400).json({ error: "values object is required." });
+    }
+    const keys = Object.keys(values);
+    if (!keys.length || keys.some(key => !userProfileFields.has(key))) {
+      return res.status(400).json({ error: "Only profile fields may be edited. Account status, roles, permissions, and identity claims require dedicated server-side controls." });
+    }
+    const normalized = {};
+    for (const key of keys) {
+      const value = values[key];
+      if (value !== null && typeof value !== "string") {
+        return res.status(400).json({ error: "Profile values must be strings or null." });
+      }
+      const max = key === "email" ? 254 : key === "photoURL" || key === "photoUrl" ? 2048 : 160;
+      if (typeof value === "string" && (value.length > max || value.includes("\u0000"))) {
+        return res.status(400).json({ error: "A profile field exceeds its allowed length or contains invalid characters." });
+      }
+      if (key === "email" && typeof value === "string" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        return res.status(400).json({ error: "A valid profile email is required." });
+      }
+      normalized[key] = typeof value === "string" ? value.trim() : value;
+    }
+    const ref = collection("users").doc(id);
+    const before = await ref.get();
+    if (!before.exists) return res.status(404).json({ error: "User not found." });
+    await ref.set({ ...normalized, updatedAt: now(), updatedBy: req.user.uid }, { merge: true });
+    await audit(req, "OWNER_USER_PROFILE_EDITED", "user", { id, fields: keys });
+    return res.json({ ok: true, id, status: "UPDATED", fields: keys });
+  };
+
+  const setUserStatus = async (req, res, status, action) => {
+    const id = String(req.params.id || "").trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+    if (id === req.user.uid) return res.status(409).json({ error: "Owners cannot change their own account status through this endpoint." });
+    const ref = collection("users").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "User not found." });
+    const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
+    const timestamp = now();
+    const statusFields = status === "ACTIVE"
+      ? { status, unsuspendedAt: timestamp, unsuspendedBy: req.user.uid, suspendedAt: null, blockedAt: null }
+      : status === "SUSPENDED"
+        ? { status, suspendedAt: timestamp, suspendedBy: req.user.uid }
+        : { status, blockedAt: timestamp, blockedBy: req.user.uid };
+    await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
+    await audit(req, action, "user", { id, previousStatus, status });
+    return res.json({ ok: true, id, previousStatus, status });
+  };
+
+  // Owner-only readout of permission and consent history. This is intentionally
+  // derived from append-only history/audit collections, never from mutable profile fields.
+  app.get("/api/owner/users/:id/permission-history", requireOwner, async (req, res, next) => {
     try {
-      await collection("users").doc(req.params.id).set({ status: "BANNED", bannedAt: now(), bannedBy: req.user.uid }, { merge: true });
-      await audit(req, "OWNER_USER_BANNED", "user", { id: req.params.id });
-      res.json({ ok: true, id: req.params.id, status: "BANNED" });
+      const id = String(req.params.id || "").trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+      const profile = await collection("users").doc(id).get();
+      if (!profile.exists) return res.status(404).json({ error: "User not found." });
+      const [permissionRecords, consentRecords, auditRecords] = await Promise.all([
+        read("permissionHistory", 1000),
+        read("consentHistory", 1000),
+        read("auditLogs", 1000)
+      ]);
+      const permissions = permissionRecords.filter(record =>
+        String(record.userId || record.uid || record.id || "") === id
+      );
+      const consents = consentRecords.filter(record =>
+        String(record.userId || record.uid || record.id || "") === id
+      );
+      const auditEvents = auditRecords.filter(record => {
+        const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+        const action = String(record.action || "");
+        if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED") return false;
+        return String(record.userId || "") === id
+          || (String(metadata.userId || metadata.id || "") === id
+            && /permission|consent|grant|revoke|access/i.test(action));
+      });
+      const events = [
+        ...permissions.map(record => ({ type: "PERMISSION", ...record })),
+        ...consents.map(record => ({ type: "CONSENT", ...record })),
+        ...auditEvents.map(record => ({ type: "AUDIT", ...record }))
+      ].sort((a, b) => Number(b.createdAtEpochMs || b.createdAt || b.timestamp || 0)
+        - Number(a.createdAtEpochMs || a.createdAt || a.timestamp || 0));
+      await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
+      return res.json({ userId: id, count: events.length, events, note: "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted." });
     } catch (e) { next(e); }
+  });
+
+  app.get("/api/owner/users", requireOwner, async (req, res, next) => {
+    try {
+      const allUsers = await read("users");
+      const query = String(req.query?.q || "").trim().toLowerCase();
+      const userId = String(req.query?.userId || "").trim();
+      const status = String(req.query?.status || "").trim().toUpperCase();
+      const users = allUsers.filter(user => {
+        if (userId && user.id !== userId) return false;
+        if (status && String(user.status || "ACTIVE").toUpperCase() !== status) return false;
+        if (!query) return true;
+        return [user.id, user.name, user.displayName, user.email, user.mobile, user.phoneNumber, user.status]
+          .some(value => String(value || "").toLowerCase().includes(query));
+      });
+      res.json({ users, total: users.length, truncated: allUsers.length >= 500 });
+    } catch (e) { next(e); }
+  });
+  app.get("/api/owner/users/:id/export", requireOwner, async (req, res, next) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
+      const profile = await collection("users").doc(id).get();
+      if (!profile.exists) return res.status(404).json({ error: "User not found." });
+      const relatedCollections = ["subscriptions", "payments", "supportTickets", "freeAccessGrants"];
+      const related = {};
+      for (const name of relatedCollections) {
+        const byUserId = await collection(name).where("userId", "==", id).limit(500).get();
+        const byUid = await collection(name).where("uid", "==", id).limit(500).get();
+        const unique = new Map();
+        for (const doc of [...byUserId.docs, ...byUid.docs]) unique.set(doc.id, { id: doc.id, ...doc.data() });
+        related[name] = Array.from(unique.values());
+      }
+      const exportedAt = new Date(now()).toISOString();
+      await audit(req, "OWNER_USER_DATA_EXPORTED", "user", { id, collections: ["users", ...relatedCollections] });
+      res.set("Content-Disposition", `attachment; filename="family-suraksha-user-${id}-export.json"`);
+      return res.json({ userId: id, exportedAt, data: { profile: { id, ...profile.data() }, ...related } });
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/users/:id", requireOwner, (req, res, next) => updateUserProfile(req, res).catch(next));
+  app.post("/api/owner/users/:id/suspend", requireOwner, async (req, res, next) => {
+    try { await setUserStatus(req, res, "SUSPENDED", "OWNER_USER_SUSPENDED"); } catch (e) { next(e); }
+  });
+  app.post("/api/owner/users/:id/unsuspend", requireOwner, async (req, res, next) => {
+    try { await setUserStatus(req, res, "ACTIVE", "OWNER_USER_UNSUSPENDED"); } catch (e) { next(e); }
+  });
+  app.post("/api/owner/users/:id/block", requireOwner, async (req, res, next) => {
+    try { await setUserStatus(req, res, "BLOCKED", "OWNER_USER_BLOCKED"); } catch (e) { next(e); }
+  });
+  app.post("/api/owner/users/:id/unblock", requireOwner, async (req, res, next) => {
+    try { await setUserStatus(req, res, "ACTIVE", "OWNER_USER_UNBLOCKED"); } catch (e) { next(e); }
+  });
+  // Backward-compatible alias for existing Owner UI clients.
+  app.post("/api/owner/users/:id/ban", requireOwner, async (req, res, next) => {
+    try { await setUserStatus(req, res, "BLOCKED", "OWNER_USER_BLOCKED"); } catch (e) { next(e); }
   });
   app.delete("/api/owner/users/:id", requireOwner, async (req, res, next) => {
     try {
-      await collection("users").doc(req.params.id).delete();
-      await audit(req, "OWNER_USER_DELETED", "user", { id: req.params.id });
-      res.json({ ok: true, id: req.params.id, status: "DELETED" });
+      // A Firestore profile delete is not a complete account deletion: it does
+      // not revoke Firebase Authentication or apply the data-retention policy.
+      // Fail closed until a configured deletion workflow can perform that work.
+      await audit(req, "OWNER_USER_DELETION_BLOCKED", "user", { id: req.params.id, reason: "DELETION_WORKFLOW_NOT_CONFIGURED" });
+      res.status(501).json({ error: "Account deletion is not enabled until the authenticated-account deletion and data-retention workflow is configured. No user data was deleted." });
     } catch (e) { next(e); }
   });
 

@@ -13,10 +13,28 @@ function createRealtimeServer({ app, verifyToken, firestore }) {
     try {
       const token = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : "";
       if (!token) return next(new Error("Authentication required."));
-      socket.user = await verifyToken(token, true);
+      const verifiedUser = await verifyToken(token, true);
+      if (firestore && typeof firestore.collection === "function" && verifiedUser?.uid) {
+        const account = await firestore.collection("users").doc(verifiedUser.uid).get();
+        const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+          try {
+            await firestore.collection("securityEvents").add({
+              event: "SOCKET_REJECTED_ACCOUNT_STATUS",
+              userId: verifiedUser.uid,
+              status: accountStatus,
+              createdAtEpochMs: Date.now()
+            });
+          } catch (_) {
+            // Logging failures must never bypass account-status enforcement.
+          }
+          return next(new Error("This account is suspended or blocked."));
+        }
+      }
+      socket.user = verifiedUser;
       return next();
     } catch (_) {
-      return next(new Error("Invalid authentication token."));
+      return next(new Error("Authentication or account-status verification failed."));
     }
   });
 

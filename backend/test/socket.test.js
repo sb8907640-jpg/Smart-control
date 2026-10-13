@@ -5,9 +5,21 @@ const { io: connect } = require("socket.io-client");
 const { createRealtimeServer } = require("../src/server");
 const { createApp } = require("../src/app");
 
-function fakeFirestore(session) {
+function fakeFirestore(session, accountStatus = "ACTIVE") {
+  const securityEvents = [];
   return {
+    securityEvents,
     collection(name) {
+      if (name === "users") {
+        return {
+          doc(_id) {
+            return { get: async () => ({ exists: accountStatus !== null, data: () => ({ status: accountStatus }) }) };
+          }
+        };
+      }
+      if (name === "securityEvents") {
+        return { add: async event => { securityEvents.push(event); return { id: "security-1" }; } };
+      }
       assert.equal(name, "mediaSessions");
       return {
         doc(id) {
@@ -158,5 +170,41 @@ test("Socket.IO client recovers after a simulated transport disconnect", async (
     client.close();
     await new Promise(resolve => io.close(resolve));
     await new Promise(resolve => httpServer.close(resolve));
+  }
+});
+
+
+test("Socket.IO rejects suspended accounts before creating a realtime session", async () => {
+  const app = express();
+  const firestore = fakeFirestore({
+    controllerUid: "blocked-1",
+    targetDeviceId: "device-1",
+    status: "ACTIVE"
+  }, "BLOCKED");
+  const { httpServer, io } = createRealtimeServer({
+    app,
+    verifyToken: async () => ({ uid: "blocked-1" }),
+    firestore
+  });
+  await new Promise((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", resolve);
+  });
+  const client = connect("http://127.0.0.1:" + httpServer.address().port, {
+    auth: { token: "valid-token" }, transports: ["websocket"], timeout: 5000, reconnection: false
+  });
+  try {
+    const error = await new Promise(resolve => {
+      client.once("connect_error", resolve);
+      client.once("connect", () => resolve(null));
+    });
+    assert.ok(error);
+    assert.match(error.message, /suspended or blocked/i);
+    assert.equal(firestore.securityEvents.length, 1);
+    assert.equal(firestore.securityEvents[0].event, "SOCKET_REJECTED_ACCOUNT_STATUS");
+  } finally {
+    client.close();
+    await new Promise(resolve => io.close(resolve));
+    if (httpServer.listening) await new Promise(resolve => httpServer.close(resolve));
   }
 });

@@ -279,6 +279,8 @@ export default function OwnerPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [userStatusFilter, setUserStatusFilter] = useState("ALL");
   const [editorId, setEditorId] = useState<string | null>(null);
   const [editorText, setEditorText] = useState("");
   const [createText, setCreateText] = useState("");
@@ -289,6 +291,17 @@ export default function OwnerPanel() {
   const [linkPlanId, setLinkPlanId] = useState("");
   const [freeGrantText, setFreeGrantText] = useState(jsonText({ userName: "", email: "", mobile: "", userId: "", durationPreset: "CUSTOM", startsAt: Date.now(), endsAt: Date.now() + 7 * 86400000, all19: true, features: [], reason: "" }));
   const currentTab = useMemo(() => TABS.find(tab => tab.id === active) ?? TABS[0], [active]);
+  const visibleRows = useMemo(() => {
+    if (active !== "users") return rows;
+    const query = userSearch.trim().toLowerCase();
+    return rows.filter(row => {
+      const rowStatus = String(row.status || "ACTIVE").toUpperCase();
+      if (userStatusFilter !== "ALL" && rowStatus !== userStatusFilter) return false;
+      if (!query) return true;
+      return [row.id, row.name, row.displayName, row.email, row.mobile, row.phoneNumber, row.status]
+        .some(value => String(value ?? "").toLowerCase().includes(query));
+    });
+  }, [active, rows, userSearch, userStatusFilter]);
 
   useEffect(() => {
     const auth = authClient();
@@ -363,7 +376,15 @@ export default function OwnerPanel() {
     let values: Record<string, unknown>;
     try { values = JSON.parse(editorText); }
     catch { setError("Editor content must be valid JSON."); return; }
-    if (active === "settings") {
+    if (active === "users") {
+      const allowed = new Set(["name", "displayName", "email", "phoneNumber", "mobile", "photoURL", "photoUrl"]);
+      values = Object.fromEntries(Object.entries(values).filter(([key]) => allowed.has(key)));
+      if (Object.keys(values).length === 0) {
+        setError("Edit at least one supported profile field. Account status and roles use dedicated controls.");
+        return;
+      }
+      await runAction("User profile updated.", `/api/owner/users/${encodeURIComponent(row.id)}`, "PATCH", { values });
+    } else if (active === "settings") {
       await runAction("Global settings saved.", "/api/owner/settings", "PATCH", { values });
     } else if (active === "free-access") {
       await runAction("Free-access grant updated.", `/api/owner/free-access/${encodeURIComponent(row.id)}`, "PATCH", { values });
@@ -372,6 +393,55 @@ export default function OwnerPanel() {
       if (!path) return;
       await runAction("Changes saved.", `${path}/${encodeURIComponent(row.id)}`, "PATCH", { values });
     }
+  };
+
+  const exportUserData = async (row: Row) => {
+    if (!user) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(apiBase() + `/api/owner/users/${encodeURIComponent(row.id)}/export`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store"
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? `Export failed (HTTP ${response.status}).`);
+      const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `family-suraksha-user-${row.id}-export.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice(`User data export downloaded for ${row.id}.`);
+      await loadTab("users", user);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "User data export failed.");
+    } finally { setBusy(false); }
+  };
+
+  const exportPermissionHistory = async (row: Row) => {
+    if (!user) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(apiBase() + `/api/owner/users/${encodeURIComponent(row.id)}/permission-history`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store"
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? `Permission history failed (HTTP ${response.status}).`);
+      const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `family-suraksha-permission-history-${row.id}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Permission and consent history downloaded for ${row.id} (${Number(body.count || 0)} event(s)).`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Permission history export failed.");
+    } finally { setBusy(false); }
   };
 
   const createRecord = async () => {
@@ -480,9 +550,9 @@ export default function OwnerPanel() {
         {active === "device-links" && <div className="card"><h2>Generate device link</h2><p className="muted">Enter an enabled plan document ID. The backend creates a random one-time code using that plan's configured link validity.</p><div className="toolbar"><input className="input" style={{maxWidth:360}} value={linkPlanId} onChange={e => setLinkPlanId(e.target.value)} placeholder="Enabled plan document ID"/><button className="btn primary" disabled={busy || !linkPlanId.trim()} onClick={() => void runAction("Device link generated.", "/api/owner/device-links/generate", "POST", { planId: linkPlanId.trim() }, true)}>Generate link</button></div><p className="muted small">The one-time code is shown after generation so you can copy it. Treat it like a password and share it only with the intended recipient.</p><h3>Owned links</h3>{rows.length === 0 ? <div className="empty">No owner-issued device links found, or none have been loaded.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly extraActions={<><button className="btn" onClick={() => void runAction("Link regenerated.", `/api/owner/device-links/regenerate/${encodeURIComponent(row.id)}`, "POST", {})}>Regenerate</button><button className="btn danger" onClick={() => { if (confirm("Revoke this device link?")) void runAction("Link revoked.", `/api/owner/device-links/revoke/${encodeURIComponent(row.id)}`, "POST", {}); }}>Revoke</button></>}/>)}</div>}
         {active === "settings" && <div className="card"><h2>Global settings JSON</h2><p className="muted">Edit all global settings as a JSON object. Keep values compatible with the backend consumers. Changes are audited.</p>{rows[0] && <RecordCard row={rows[0]} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} hideSummary/>}</div>}
         {(active === "users" || active === "plans" || active === "features" || active === "catalog-features" || active === "free-access" || active === "subscriptions" || active === "payments" || active === "emi" || active === "legal-templates" || active === "support-tickets" || active === "audit") && <div className="card">
-          <div className="heading"><div><h2>{currentTab.label} records</h2><p className="muted small">{rows.length} record(s) loaded. Use Edit JSON to change the complete record payload.</p></div><div className="toolbar">{(active === "plans" || active === "free-access") && <button className="btn primary" onClick={() => { setShowCreate(v => !v); setError(""); setEditorId(null); }}>＋ {active === "plans" ? "Create plan" : "Approve free access"}</button>}</div></div>
+          <div className="heading"><div><h2>{currentTab.label} records</h2><p className="muted small">{active === "users" ? `${visibleRows.length} matching of ${rows.length} loaded user(s). Account deletion is disabled until the authenticated-account deletion and retention workflow is configured.` : `${rows.length} record(s) loaded. Use Edit JSON to change the complete record payload.`}</p></div><div className="toolbar">{active === "users" && <><input aria-label="Search users by name, mobile, email, status, or ID" className="search" placeholder="Search users…" value={userSearch} onChange={e => setUserSearch(e.target.value)}/><select aria-label="Filter users by status" className="search" value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value)}><option value="ALL">All statuses</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option><option value="BLOCKED">Blocked</option></select></>}{(active === "plans" || active === "free-access") && <button className="btn primary" onClick={() => { setShowCreate(v => !v); setError(""); setEditorId(null); }}>＋ {active === "plans" ? "Create plan" : "Approve free access"}</button>}</div></div>
           {showCreate && <div className="record"><h3>{active === "plans" ? "New plan" : "Approve free access"}</h3><p className="muted small">Provide a JSON object matching the backend API fields.</p><textarea className="json" value={active === "free-access" ? freeGrantText : createText} onChange={e => active === "free-access" ? setFreeGrantText(e.target.value) : setCreateText(e.target.value)} spellCheck={false}/><div className="row-actions"><button className="btn primary" disabled={busy} onClick={() => void createRecord()}>Save</button><button className="btn" onClick={() => setShowCreate(false)}>Cancel</button></div></div>}
-          {rows.length === 0 ? <div className="empty">No records returned for this section.</div> : rows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly={active === "audit"} extraActions={<>{active === "users" && <button className="btn" onClick={() => void runAction("User banned.", `/api/owner/users/${encodeURIComponent(row.id)}/ban`, "POST", {})}>Ban</button>}{active === "catalog-features" && <button className={`btn ${row.enabled === true ? "danger" : "primary"}`} onClick={() => void runAction(`Feature ${row.enabled === true ? "disabled" : "enabled"}.`, `/api/owner/catalog-features/${encodeURIComponent(row.id)}`, "PATCH", { values: { enabled: row.enabled !== true } })}>{row.enabled === true ? "Disable" : "Enable"}</button>}{active === "free-access" && <button className="btn danger" onClick={() => { if (confirm("Revoke this free-access grant?")) void runAction("Free access revoked.", `/api/owner/free-access/${encodeURIComponent(row.id)}/revoke`, "POST", {}); }}>Revoke</button>}{(active === "users" || active === "plans" || active === "subscriptions") && <button className="btn danger" onClick={() => { if (confirm(`Delete ${recordLabel(row)}? This cannot be undone.`)) void runAction("Record deleted.", `${currentTab.path}/${encodeURIComponent(row.id)}`, "DELETE", {}); }}>Delete</button>}</>}/>)}
+          {visibleRows.length === 0 ? <div className="empty">No records match the current filters.</div> : visibleRows.map(row => <RecordCard key={row.id} row={row} editorId={editorId} editorText={editorText} setEditorId={setEditorId} setEditorText={setEditorText} onSave={saveRow} onCancel={() => setEditorId(null)} busy={busy} readOnly={active === "audit"} extraActions={<>{active === "users" && <><button className="btn" disabled={busy} onClick={() => void runAction("User suspended.", `/api/owner/users/${encodeURIComponent(row.id)}/suspend`, "POST", {})}>Suspend</button><button className="btn" disabled={busy} onClick={() => void runAction("User unsuspended.", `/api/owner/users/${encodeURIComponent(row.id)}/unsuspend`, "POST", {})}>Unsuspend</button><button className="btn danger" disabled={busy} onClick={() => void runAction("User blocked.", `/api/owner/users/${encodeURIComponent(row.id)}/block`, "POST", {})}>Block</button><button className="btn" disabled={busy} onClick={() => void runAction("User unblocked.", `/api/owner/users/${encodeURIComponent(row.id)}/unblock`, "POST", {})}>Unblock</button><button className="btn" disabled={busy} onClick={() => void exportUserData(row)}>Export data</button><button className="btn" disabled={busy} onClick={() => void exportPermissionHistory(row)}>Permission history</button></>}{active === "catalog-features" && <button className={`btn ${row.enabled === true ? "danger" : "primary"}`} onClick={() => void runAction(`Feature ${row.enabled === true ? "disabled" : "enabled"}.`, `/api/owner/catalog-features/${encodeURIComponent(row.id)}`, "PATCH", { values: { enabled: row.enabled !== true } })}>{row.enabled === true ? "Disable" : "Enable"}</button>}{active === "free-access" && <button className="btn danger" onClick={() => { if (confirm("Revoke this free-access grant?")) void runAction("Free access revoked.", `/api/owner/free-access/${encodeURIComponent(row.id)}/revoke`, "POST", {}); }}>Revoke</button>}{(active === "plans" || active === "subscriptions") && <button className="btn danger" onClick={() => { if (confirm(`Delete ${recordLabel(row)}? This cannot be undone.`)) void runAction("Record deleted.", `${currentTab.path}/${encodeURIComponent(row.id)}`, "DELETE", {}); }}>Delete</button>}</>}/>)}
         </div>}
         <footer className="muted small">Smart Control Owner Panel · Access control is enforced server-side · Owner identity is not rendered.</footer>
       </section>
