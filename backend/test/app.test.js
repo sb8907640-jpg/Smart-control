@@ -54,12 +54,16 @@ function makeOwnerTestDb() {
         },
         where(field, operator, value) {
           if (operator !== "==") throw new Error("Unsupported test query operator.");
+          const fieldValue = (record) => field.split(".").reduce((current, key) => current?.[key], record);
+          const entries = () => rows
+            ? Array.from(rows.entries())
+            : Array.isArray(data[name]) ? data[name].map((record, index) => [record.id || String(index), record]) : [];
           return {
             limit() {
               return { async get() {
-                const docs = rows ? Array.from(rows.entries())
-                  .filter(([, record]) => record[field] === value)
-                  .map(([id, record]) => ({ id, data: () => ({ ...record }) })) : [];
+                const docs = entries()
+                  .filter(([, record]) => fieldValue(record) === value)
+                  .map(([id, record]) => ({ id, data: () => ({ ...record }) }));
                 return { docs };
               } };
             }
@@ -67,7 +71,10 @@ function makeOwnerTestDb() {
         },
         limit() {
           return { async get() {
-            const docs = rows ? Array.from(rows.entries()).map(([id, value]) => ({ id, data: () => ({ ...value }) })) : [];
+            const entries = rows
+              ? Array.from(rows.entries())
+              : Array.isArray(data[name]) ? data[name].map((record, index) => [record.id || String(index), record]) : [];
+            const docs = entries.map(([id, value]) => ({ id, data: () => ({ ...value }) }));
             return { docs };
           } };
         }
@@ -366,6 +373,10 @@ test("Owner permission history returns scoped permission, consent, and audit eve
   db.data.permissionHistory.set("permission-1", { userId: "user-1", permission: "LOCATION", granted: true, createdAtEpochMs: 1000 });
   db.data.consentHistory.set("consent-1", { userId: "user-1", consentVersion: "v1", accepted: true, createdAtEpochMs: 2000 });
   db.data.permissionHistory.set("permission-other", { userId: "other-user", permission: "CAMERA", granted: true, createdAtEpochMs: 3000 });
+  db.data.auditLogs.push(
+    { id: "audit-target", userId: "owner-1", action: "CONSENT_RECORDED", resource: "user", metadata: { userId: "user-1" }, createdAt: 2500 },
+    { id: "audit-other", userId: "owner-1", action: "CONSENT_RECORDED", resource: "user", metadata: { userId: "other-user" }, createdAt: 2600 }
+  );
   await withOwnerServer(db, async base => {
     const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
       headers: { authorization: "Bearer owner-token" }
@@ -373,9 +384,10 @@ test("Owner permission history returns scoped permission, consent, and audit eve
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.userId, "user-1");
-    assert.equal(body.count, 2);
-    assert.deepEqual(new Set(body.events.map(event => event.type)), new Set(["PERMISSION", "CONSENT"]));
-    assert.ok(body.events.every(event => event.userId === "user-1"));
+    assert.equal(body.count, 3);
+    assert.equal(body.truncated, false);
+    assert.deepEqual(new Set(body.events.map(event => event.type)), new Set(["PERMISSION", "CONSENT", "AUDIT"]));
+    assert.ok(body.events.every(event => event.userId === "user-1" || event.metadata?.userId === "user-1"));
     assert.match(body.note, /not proof that consent was granted/i);
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
   });
