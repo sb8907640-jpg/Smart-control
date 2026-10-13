@@ -22,7 +22,7 @@ const baseEnv = {
   SMARTCONTROL_TURN_CREDENTIAL: "ephemeral-password",
   SMARTCONTROL_IOS_FIREBASE_CONFIG: JSON.stringify({ projectId: "smartcontrol-prod", appId: "1:1234567890:ios:abcdef", apiKey: "ios-api-key" }),
   SMARTCONTROL_AUDIT_RPC_URL: "https://rpc.example.test",
-  SMARTCONTROL_AUDIT_PRIVATE_KEY: "1".repeat(64),
+  SMARTCONTROL_AUDIT_PRIVATE_KEY: Array.from({ length: 64 }, (_, i) => String(i % 10)).join(""),
   SMARTCONTROL_AUDIT_CONTRACT_ADDRESS: "0x" + "a".repeat(40),
   FIREBASE_GOOGLE_SERVICES_JSON: JSON.stringify({
     project_info: { project_id: "smartcontrol-prod" },
