@@ -310,6 +310,23 @@ service cloud.firestore {
           && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
           && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
         )
+        ||
+        // Permit the device itself to publish its opt-in health heartbeat without
+        // opening controller/pairing fields to client writes.
+        (
+          request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health'])
+          && request.resource.data.health is map
+          && request.resource.data.health.keys().hasOnly(['serviceAlive', 'lastHeartbeatAt', 'permissions'])
+          && request.resource.data.health.serviceAlive is bool
+          && request.resource.data.health.lastHeartbeatAt is int
+          && request.resource.data.health.permissions is map
+          && request.resource.data.health.permissions.keys().hasOnly(['camera', 'microphone', 'location', 'notifications'])
+          && request.resource.data.health.permissions.camera is bool
+          && request.resource.data.health.permissions.microphone is bool
+          && request.resource.data.health.permissions.location is bool
+          && request.resource.data.health.permissions.notifications is bool
+        )
       );
 
       match /sharedLocation/{locationId} {
