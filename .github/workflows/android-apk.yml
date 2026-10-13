@@ -137,10 +137,11 @@ jobs:
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$APKSIGNER" || { echo "Android apksigner tool was not found." >&2; exit 1; }
-          find app/build/outputs/apk -path '*/release/*.apk' -type f -name '*.apk' -print0 |
-            while IFS= read -r -d '' apk; do
-              "$APKSIGNER" verify "$apk"
-            done
+          mapfile -d '' RELEASE_APKS < <(find app/build/outputs/apk -path '*/release/*.apk' -type f -name '*.apk' -print0)
+          test "${#RELEASE_APKS[@]}" -gt 0 || { echo "Release build requested, but no release APKs were produced." >&2; exit 1; }
+          for apk in "${RELEASE_APKS[@]}"; do
+            "$APKSIGNER" verify "$apk"
+          done
 
       - name: Verify APK outputs are present
         run: |
