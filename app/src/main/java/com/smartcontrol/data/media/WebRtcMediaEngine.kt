@@ -7,6 +7,7 @@ import com.smartcontrol.domain.media.IceCandidateModel
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSignalingRepository
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -43,11 +44,11 @@ class WebRtcMediaEngine(
     private val scope: CoroutineScope
 ) {
     private val initialized = AtomicBoolean(false)
-    private val peerConnections = mutableMapOf<String, PeerConnection>()
-    private val candidateJobs = mutableMapOf<String, Job>()
-    private val renegotiationJobs = mutableMapOf<String, Job>()
-    private val reconnectJobs = mutableMapOf<String, Job>()
-    private val offererSessions = mutableSetOf<String>()
+    private val peerConnections = ConcurrentHashMap<String, PeerConnection>()
+    private val candidateJobs = ConcurrentHashMap<String, Job>()
+    private val renegotiationJobs = ConcurrentHashMap<String, Job>()
+    private val reconnectJobs = ConcurrentHashMap<String, Job>()
+    private val offererSessions = ConcurrentHashMap.newKeySet<String>()
     private val captures = mutableMapOf<String, List<AutoCloseable>>()
     private val eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
