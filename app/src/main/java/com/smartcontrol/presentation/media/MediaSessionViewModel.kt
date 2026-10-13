@@ -37,7 +37,7 @@ class MediaSessionViewModel @Inject constructor(
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
 
-    val controlledDevice = pairingRepository.observeControlledDevice()
+    val controlledDevice = pairingRepository.observeControlledDevice().retryTransiently()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun <T> Flow<T>.retryTransiently() = retryWhen { cause, attempt ->
