@@ -275,15 +275,22 @@ test("WhatsApp support endpoint uses private Owner destination and creates a tic
     supportWhatsAppMessage: "Hello from Family Suraksha"
   } } } });
   await withOwnerServer(db, async base => {
-    const response = await fetch(base + "/api/support/whatsapp/initiate", {
-      method: "POST", headers: { authorization: "Bearer owner-token" }
-    });
-    assert.equal(response.status, 201);
-    const body = await response.json();
+    let body;
+    for (let i = 0; i < 3; i++) {
+      const response = await fetch(base + "/api/support/whatsapp/initiate", {
+        method: "POST", headers: { authorization: "Bearer owner-token" }
+      });
+      assert.equal(response.status, 201);
+      body = await response.json();
+    }
     assert.match(body.whatsappUrl, /^https:\/\/wa\.me\/919876543210\?text=/);
     assert.equal(body.channel, "WHATSAPP");
-    assert.equal(db.data.supportTickets.size, 2);
-    assert.equal(db.data.auditLogs.at(-1).action, "SUPPORT_WHATSAPP_INITIATED");
+    assert.equal(db.data.supportTickets.size, 4);
+    assert.equal(db.data.auditLogs.filter(log => log.action === "SUPPORT_WHATSAPP_INITIATED").length, 3);
+    const throttled = await fetch(base + "/api/support/whatsapp/initiate", {
+      method: "POST", headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(throttled.status, 429);
   });
 });
 
