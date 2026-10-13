@@ -51,7 +51,7 @@ The authenticated support button calls `POST /api/support/whatsapp/initiate`. Th
 
 `Hello, I need support for Total Control System`
 
-The customer-facing UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render a separate support-number field. The authenticated Owner settings screen can read/update the destination. Changes are recorded in the private audit trail.
+The customer-facing UI renders only **💬 WhatsApp Support** and **Click → Talk to Support**; it does not render a separate support-number field. The authenticated Owner settings screen can read/update the destination. Changes are recorded in the private audit trail. The **Business profile** section separately edits the customer-facing brand name, WhatsApp prefill message, support email, and HTTPS support URL; it does not alter sign-in identity or the Owner allowlist.
 
 Run `npm run verify:support` in the backend deployment environment to verify that the private number is configured without printing the number. Do not place the real number in source code, README files, public issues, CI logs, or client bundles.
 
