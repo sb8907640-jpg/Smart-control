@@ -25,6 +25,7 @@ import com.smartcontrol.presentation.auth.AuthScreen
 import com.smartcontrol.presentation.audit.AuditLogScreen
 import com.smartcontrol.presentation.billing.BillingScreen
 import com.smartcontrol.presentation.consent.ConsentScreen
+import com.smartcontrol.presentation.consent.CURRENT_LEGAL_CONSENT_VERSION
 import com.smartcontrol.presentation.emergency.EmergencyContactsScreen
 import com.smartcontrol.presentation.features.FeatureAccessViewModel
 import com.smartcontrol.presentation.features.FeatureCenterScreen
@@ -150,8 +151,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
             var consented by remember {
                 mutableStateOf(
-                    getSharedPreferences("legal_consent", MODE_PRIVATE)
-                        .getBoolean("accepted", false)
+                    getSharedPreferences("legal_consent", MODE_PRIVATE).let { preferences ->
+                        preferences.getBoolean("accepted", false) &&
+                            preferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION
+                    }
                 )
             }
             var ageVerified by remember {
