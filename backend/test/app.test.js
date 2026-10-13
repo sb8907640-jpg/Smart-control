@@ -410,6 +410,25 @@ test("Owner permission history queries scoped records and isolates unrelated aud
   });
 });
 
+test("Owner permission history reports when a source exceeds the query cap", async () => {
+  const db = makeOwnerTestDb();
+  for (let index = 0; index < 1001; index += 1) {
+    db.data.permissionHistory.set("permission-" + index, {
+      userId: "user-1", permission: "LOCATION", granted: true, createdAtEpochMs: index
+    });
+  }
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.count, 1000);
+    assert.equal(body.truncated, true);
+    assert.match(body.note, /history is partial/i);
+  });
+});
+
 test("Owner user list supports status and identity-field filters", async () => {
   const db = makeOwnerTestDb();
   await withOwnerServer(db, async base => {
