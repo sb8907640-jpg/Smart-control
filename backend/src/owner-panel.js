@@ -186,7 +186,7 @@ function installOwnerPanelRoutes(app, { db }) {
         const action = String(record.action || "");
         if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED") return false;
         return String(record.userId || "") === id
-          || (String(metadata.userId || metadata.id || "") === id
+          || (String(metadata.userId || metadata.targetUserId || metadata.id || "") === id
             && /permission|consent|grant|revoke|access/i.test(action));
       });
       const events = [
