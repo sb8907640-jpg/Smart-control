@@ -61,10 +61,17 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Install Firestore rules test dependencies
-        working-directory: functions
-        run: npm install --no-audit --no-fund
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          TEST_DEPS_DIR="$RUNNER_TEMP/firestore-rules-test-deps"
+          mkdir -p "$TEST_DEPS_DIR"
+          npm install --prefix "$TEST_DEPS_DIR" --no-audit --no-fund --no-save firebase@11 @firebase/rules-unit-testing@4
       - name: Test Firestore rules in emulator
-        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node functions/firestore-rules.test.js"
+        timeout-minutes: 10
+        env:
+          NODE_PATH: ${{ runner.temp }}/firestore-rules-test-deps/node_modules
+        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "NODE_PATH=$NODE_PATH node functions/firestore-rules.test.js"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
