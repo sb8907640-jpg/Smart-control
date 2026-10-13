@@ -241,7 +241,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const settingsSnap = await firestore.collection("ownerSettings").doc("global").get();
       const root = settingsSnap.exists ? settingsSnap.data() || {} : {};
       const profile = root.masterConfig?.ownerControl?.businessProfile || {};
-      const rawNumber = String(profile.supportWhatsAppNumber || process.env.SUPPORT_WHATSAPP_NUMBER || "");
+      const rawNumber = String(profile.supportWhatsAppNumber || root.support?.whatsappNumber || process.env.SUPPORT_WHATSAPP_NUMBER || "");
       const number = rawNumber.replace(/\D/g, "");
       if (!/^\d{8,15}$/.test(number)) {
         return res.status(503).json({ error: "WhatsApp support is not configured. Ask the OWNER to set the support number." });
