@@ -446,6 +446,12 @@ test("Owner user list supports status and identity-field filters", async () => {
 
 test("Owner user data export includes scoped records and writes an audit event", async () => {
   const db = makeOwnerTestDb();
+  db.data.permissionHistory.set("permission-export", { userId: "user-1", permission: "LOCATION", granted: true });
+  db.data.consentHistory.set("consent-export", { userId: "user-1", consentVersion: 1, accepted: true });
+  db.data.auditLogs.push(
+    { id: "audit-export-user", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { userId: "user-1" } },
+    { id: "audit-export-other", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { userId: "other-user" } }
+  );
   await withOwnerServer(db, async base => {
     const response = await fetch(base + "/api/owner/users/user-1/export", {
       headers: { authorization: "Bearer owner-token" }
@@ -458,7 +464,12 @@ test("Owner user data export includes scoped records and writes an audit event",
     assert.equal(body.data.subscriptions.length, 1);
     assert.equal(body.data.payments.length, 1);
     assert.equal(body.data.supportTickets.length, 1);
-    assert.equal(db.data.auditLogs[0].action, "OWNER_USER_DATA_EXPORTED");
+    assert.equal(body.data.permissionHistory.length, 1);
+    assert.equal(body.data.consentHistory.length, 1);
+    assert.equal(body.data.auditLogs.length, 1);
+    assert.equal(body.data.auditLogs[0].metadata.userId, "user-1");
+    assert.equal(body.truncated, false);
+    assert.equal(db.data.auditLogs.at(-1).action, "OWNER_USER_DATA_EXPORTED");
   });
 });
 
