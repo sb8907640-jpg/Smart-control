@@ -65,10 +65,14 @@ function makeOwnerTestDb() {
             where(nextField, nextOperator, nextValue) { filters.push([nextField, nextOperator, nextValue]); return query; },
             limit(max) {
               return { async get() {
-                let entries = rows ? Array.from(rows.entries()) : [];
+                const fieldValue = (record, key) => key.split(".").reduce((current, part) => current?.[part], record);
+                let entries = rows
+                  ? Array.from(rows.entries())
+                  : Array.isArray(data[name]) ? data[name].map((record, index) => [record.id || String(index), record]) : [];
                 entries = entries.filter(([, record]) => filters.every(([key, op, expected]) => {
-                  if (op === "==") return record[key] === expected;
-                  if (op === ">=") return Number(record[key] || 0) >= Number(expected);
+                  const actual = fieldValue(record, key);
+                  if (op === "==") return actual === expected;
+                  if (op === ">=") return Number(actual || 0) >= Number(expected);
                   throw new Error("Unsupported test query operator: " + op);
                 }));
                 if (Number.isFinite(max)) entries = entries.slice(0, max);
@@ -79,10 +83,14 @@ function makeOwnerTestDb() {
           };
           return query;
         },
-        limit() {
+        limit(max) {
           return { async get() {
-            const docs = rows ? Array.from(rows.entries()).map(([id, value]) => ({ id, data: () => ({ ...value }) })) : [];
-            return { docs };
+            const entries = rows
+              ? Array.from(rows.entries())
+              : Array.isArray(data[name]) ? data[name].map((record, index) => [record.id || String(index), record]) : [];
+            const docs = entries.slice(0, Number.isFinite(max) ? max : undefined)
+              .map(([id, value]) => ({ id, data: () => ({ ...value }) }));
+            return { docs, size: docs.length, empty: docs.length === 0 };
           } };
         }
       };
@@ -375,6 +383,51 @@ test("Owner permission history sorts server-recorded consent events by timestamp
     const body = await response.json();
     const consentEvents = body.events.filter(event => event.type === "CONSENT");
     assert.deepEqual(consentEvents.map(event => event.id), ["consent-new", "consent-old"]);
+  });
+});
+
+test("Owner permission history queries scoped records and excludes unrelated audit actions", async () => {
+  const db = makeOwnerTestDb();
+  db.data.permissionHistory.set("permission-user", { userId: "user-1", permission: "LOCATION", granted: true, createdAtEpochMs: 1000 });
+  db.data.permissionHistory.set("permission-other", { userId: "other-user", permission: "CAMERA", granted: true, createdAtEpochMs: 3000 });
+  db.data.consentHistory.set("consent-user", { userId: "user-1", consentVersion: 1, accepted: true, recordedAtEpochMs: 2000 });
+  db.data.auditLogs.push(
+    { id: "audit-user", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { targetUserId: "user-1" }, createdAt: 2500 },
+    { id: "audit-other", userId: "owner-1", action: "CONSENT_RECORDED", metadata: { targetUserId: "other-user" }, createdAt: 2600 },
+    { id: "audit-unrelated", userId: "user-1", action: "LOGIN_SUCCEEDED", metadata: { userId: "user-1" }, createdAt: 2700 }
+  );
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.userId, "user-1");
+    assert.equal(body.count, 3);
+    assert.equal(body.truncated, false);
+    assert.deepEqual(new Set(body.events.map(event => event.type)), new Set(["PERMISSION", "CONSENT", "AUDIT"]));
+    assert.ok(body.events.every(event => event.userId === "user-1" || event.metadata?.targetUserId === "user-1" || event.metadata?.userId === "user-1"));
+    assert.match(body.note, /not proof that consent was granted/i);
+    assert.equal(db.data.auditLogs.at(-1).action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
+  });
+});
+
+test("Owner permission history reports truncation only when a source exceeds its cap", async () => {
+  const db = makeOwnerTestDb();
+  for (let index = 0; index < 1001; index += 1) {
+    db.data.permissionHistory.set("permission-" + index, {
+      userId: "user-1", permission: "LOCATION", granted: true, createdAtEpochMs: index
+    });
+  }
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/users/user-1/permission-history", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.count, 1000);
+    assert.equal(body.truncated, true);
+    assert.match(body.note, /history is partial/i);
   });
 });
 
