@@ -11,17 +11,19 @@ All sensitive device capabilities will require explicit Android consent and visi
 The repository includes a dedicated GitHub Actions workflow for APK generation:
 - Open **Actions → Android APK Download**.
 - Choose **Run workflow** and select **all**, **debug**, or **release**.
-- After the run succeeds, download the **family-Suraksha-apks** artifact.
+- After the run succeeds, download the **smart-control-apks** artifact.
 - The artifact contains the generated Owner, Lite, and Full APKs requested by the selected build type.
+
+Before producing an APK artifact, the workflow validates that the **FIREBASE_GOOGLE_SERVICES_JSON** GitHub Actions secret contains a Firebase Android configuration for package **com.smart.control**. Without this configuration, Firebase Authentication, Firestore, and callable Functions cannot initialize correctly at runtime, so the workflow now stops rather than publishing a misleading APK artifact.
 
 The existing Android CI and Production Readiness workflows are unchanged; this workflow only adds a dedicated APK build/download path.
 
 
 ## WebRTC TURN relay configuration
 
-Remote camera, microphone and screen sessions use short-lived, per-user TURN credentials issued by the authenticated `getWebRtcIceServers` callable. The TURN shared secret is server-side only and is not embedded in APKs.
+Remote camera, microphone and screen sessions use short-lived, per-user TURN credentials issued by the authenticated **getWebRtcIceServers** callable. The TURN shared secret is server-side only and is not embedded in APKs.
 
-1. Configure `SMARTCONTROL_TURN_URLS` in the Firebase Functions environment as a comma-separated list of your TURN server URLs (for example, `turns:turn.example.com:5349?transport=tcp`).
+1. Configure **SMARTCONTROL_TURN_URLS** in the Firebase Functions environment as a comma-separated list of your TURN server URLs (for example, **turns:turn.example.com:5349?transport=tcp**).
 2. Configure the TURN service for REST/shared-secret authentication and store the same shared secret with Firebase Functions:
    ```sh
    firebase functions:secrets:set SMARTCONTROL_TURN_CREDENTIAL
@@ -40,7 +42,7 @@ The Owner panel includes **Permanent Gateway Permit**. The current working provi
 
 ### One-time secure server setup
 
-1. Generate a 32-byte encryption key on a trusted machine, for example with `openssl rand -base64 32`.
+1. Generate a 32-byte encryption key on a trusted machine, for example with **openssl rand -base64 32**.
 2. Store it in Firebase Secret Manager (do not commit it or paste it into chat):
    ```sh
    firebase functions:secrets:set SMARTCONTROL_GATEWAY_ENCRYPTION_KEY
@@ -51,7 +53,7 @@ The Owner panel includes **Permanent Gateway Permit**. The current working provi
    firebase deploy --only functions
    ```
 4. Sign in to the app using the configured Owner account. Open **Owner / Admin Control Panel → Permanent Gateway Permit**, enter the Razorpay display name, Test/Live mode, Key ID, Key Secret and Webhook Secret, then save. The server encrypts the credentials with AES-256-GCM and never returns the secret values to the app.
-5. In the Razorpay dashboard, configure a webhook to the deployed `razorpayWebhook` function URL and enable `payment.captured`, `payment.failed`, and `payment.refunded`. Use the same webhook secret in the Owner panel.
+5. In the Razorpay dashboard, configure a webhook to the deployed **razorpayWebhook** function URL and enable **payment.captured**, **payment.failed**, and **payment.refunded**. Use the same webhook secret in the Owner panel.
 
 The Android checkout sends only the public Key ID and order details to Razorpay. The backend validates the checkout signature and then fetches the payment from Razorpay to verify order, amount, currency and captured status before activating a subscription. Credential revisions are retained so a pending order can still be verified after the Owner changes gateway credentials.
 
