@@ -401,6 +401,7 @@ test("Owner permission history queries scoped records and excludes unrelated aud
       headers: { authorization: "Bearer owner-token" }
     });
     assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
     const body = await response.json();
     assert.equal(body.userId, "user-1");
     assert.equal(body.count, 3);
