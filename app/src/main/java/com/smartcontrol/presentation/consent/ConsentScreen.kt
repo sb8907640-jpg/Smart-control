@@ -25,7 +25,7 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
         Text("The app stays visible while sensitive capabilities are active. Android system permission dialogs remain under the user's control.")
         Text("If the device user is under 18, a parent or guardian should approve use of family-safety features.")
         Text("Review the applicable Terms, Privacy Policy and EULA supplied by the service operator before accepting. Official document links are not configured in this build.")
-        Text("Acceptance is currently stored on this device only; it is not yet synchronized to a server-side consent ledger.")
+        Text("Acceptance is saved on this device before sign-in, then synchronized to the server after authentication. Protected features stay locked until the server confirms the record.")
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("I am the device owner or have permission to use this app.")
