@@ -14,6 +14,7 @@ const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/Connec
 const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt");
 const consentScreen = read("app/src/main/java/com/smartcontrol/presentation/consent/ConsentScreen.kt");
 const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
+const functionsIndex = read("functions/index.js");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
@@ -28,6 +29,13 @@ check("Consent ledger limitation is disclosed",
   consentScreen.includes("stored on this device only") &&
     consentScreen.includes("Official document links are not configured in this build."),
   "The app does not misrepresent local preferences as server-audited consent or unavailable legal links.");
+check("Legal consent is recorded server-side after authentication",
+  functionsIndex.includes("exports.recordLegalConsent") &&
+    functionsIndex.includes("FieldValue.serverTimestamp()") &&
+    mainActivity.includes('getHttpsCallable("recordLegalConsent")') &&
+    mainActivity.includes('consentSyncState != "SYNCED"') &&
+    mainActivity.includes("Retry consent sync"),
+  "An authenticated callable writes an idempotent consent record; protected app flows stay locked until synchronization succeeds.");
 check("Live indicator", /startVisibleForeground|setOngoing\(true\)|Family Safety Active/.test(service), "Foreground notification remains visible.");
 check("STOP", /ACTION_STOP_SYNC|Stop Sync|stopSelf\(\)/.test(service), "User-visible service stop action exists.");
 check("Access notification", /Notification/.test(service) && /statusAlerts/.test(service), "Notification/status alert surface exists.");
