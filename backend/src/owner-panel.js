@@ -56,9 +56,9 @@ function installOwnerPanelRoutes(app, { db }) {
     const records = new Map();
     let truncated = false;
     for (const field of fields) {
-      const snapshot = await collection(name).where(field, "==", userId).limit(limit).get();
-      if (snapshot.docs.length >= limit) truncated = true;
-      for (const doc of snapshot.docs) records.set(doc.id, { id: doc.id, ...doc.data() });
+      const snapshot = await collection(name).where(field, "==", userId).limit(limit + 1).get();
+      if (snapshot.docs.length > limit) truncated = true;
+      for (const doc of snapshot.docs.slice(0, limit)) records.set(doc.id, { id: doc.id, ...doc.data() });
     }
     return { records: Array.from(records.values()), truncated };
   };
