@@ -6,8 +6,9 @@ This document records the external configuration required after code and CI veri
 Required in production:
 - DATABASE_URL
 - SMARTCONTROL_DATA_REGION (IN, EU, US, UK, or APAC)
-- Firebase Admin credentials/environment supported by firebase-admin
+- Firebase Admin credentials/environment supported by firebase-admin (use the hosting platform service identity / Application Default Credentials where available; a JSON key file is not universally required)
 - CORS_ORIGIN
+- PUBLIC_APP_URL (HTTPS base URL used to generate pairing invitation links)
 - PORT (defaults to 8080)
 
 For blockchain audit anchoring:
