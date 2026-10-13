@@ -2,13 +2,54 @@ const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
 const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
 
 initializeApp();
 const db = getFirestore();
+
+
+const CURRENT_LEGAL_CONSENT_VERSION = 1;
+
+// Record consent with server-controlled identity and a server timestamp.
+exports.recordLegalConsent = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in before recording consent.");
+  }
+  const version = Number(request.data?.version);
+  if (!Number.isInteger(version) || version !== CURRENT_LEGAL_CONSENT_VERSION) {
+    throw new HttpsError("failed-precondition", "The legal consent version is outdated. Review the current terms and accept again.");
+  }
+  const acknowledgements = ["deviceOwnerConsent", "privacyConsent", "eulaConsent"];
+  if (!acknowledgements.every((key) => request.data?.[key] === true)) {
+    throw new HttpsError("invalid-argument", "All required legal consent acknowledgements must be true.");
+  }
+  const clientAcceptedAtEpochMs = Number(request.data?.clientAcceptedAtEpochMs);
+  if (!Number.isFinite(clientAcceptedAtEpochMs) || clientAcceptedAtEpochMs <= 0) {
+    throw new HttpsError("invalid-argument", "A valid local acceptance timestamp is required.");
+  }
+  const userId = request.auth.uid;
+  const ref = db.collection("consentHistory").doc(userId + "_" + version);
+  const result = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(ref);
+    if (existing.exists) return { recorded: false, eventId: ref.id };
+    transaction.create(ref, {
+      userId,
+      consentVersion: version,
+      deviceOwnerConsent: true,
+      privacyConsent: true,
+      eulaConsent: true,
+      clientAcceptedAtEpochMs,
+      recordedAt: FieldValue.serverTimestamp(),
+      recordedAtEpochMs: Date.now(),
+      source: "ANDROID_APP"
+    });
+    return { recorded: true, eventId: ref.id };
+  });
+  return { ok: true, ...result, consentVersion: version };
+});
 
 exports.getDevicePairingPolicy = onCall(async (request) => {
   if (!request.auth) {
