@@ -615,6 +615,66 @@ function installOwnerPanelRoutes(app, { db }) {
     } catch (e) { next(e); }
   });
 
+
+  // Customer-facing business profile. This never changes authentication identity
+  // or the server-side OWNER allowlist.
+  app.get("/api/owner/business-settings", requireOwner, async (_req, res, next) => {
+    try {
+      const snap = await collection("ownerSettings").doc("global").get();
+      const root = snap.exists ? snap.data() || {} : {};
+      const saved = root.masterConfig?.ownerControl?.businessProfile || {};
+      res.json({ businessSettings: {
+        brandName: String(saved.brandName || "Family Suraksha"),
+        supportWhatsAppNumber: String(saved.supportWhatsAppNumber || process.env.SUPPORT_WHATSAPP_NUMBER || ""),
+        supportWhatsAppMessage: String(saved.supportWhatsAppMessage || "Hello, I need support for Family Suraksha"),
+        supportEmail: String(saved.supportEmail || ""),
+        supportUrl: String(saved.supportUrl || "")
+      }});
+    } catch (e) { next(e); }
+  });
+  app.patch("/api/owner/business-settings", requireOwner, async (req, res, next) => {
+    try {
+      const values = req.body?.values;
+      if (!values || typeof values !== "object" || Array.isArray(values)) {
+        return res.status(400).json({ error: "values object is required." });
+      }
+      const brandName = String(values.brandName || "").trim();
+      if (brandName.length < 2 || brandName.length > 100) {
+        return res.status(400).json({ error: "Brand name must be 2–100 characters." });
+      }
+      const rawNumber = String(values.supportWhatsAppNumber || "").trim();
+      const supportWhatsAppNumber = rawNumber.replace(/\D/g, "");
+      if (rawNumber && !/^\d{8,15}$/.test(supportWhatsAppNumber)) {
+        return res.status(400).json({ error: "WhatsApp number must contain 8–15 digits including country code." });
+      }
+      const supportWhatsAppMessage = String(values.supportWhatsAppMessage || ("Hello, I need support for " + brandName)).trim().slice(0, 500);
+      const supportEmail = String(values.supportEmail || "").trim().toLowerCase();
+      if (supportEmail && (supportEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail))) {
+        return res.status(400).json({ error: "supportEmail is invalid." });
+      }
+      const supportUrl = String(values.supportUrl || "").trim();
+      if (supportUrl) {
+        let parsed;
+        try { parsed = new URL(supportUrl); } catch (_) { return res.status(400).json({ error: "supportUrl must be a valid HTTPS URL." }); }
+        if (parsed.protocol !== "https:" || supportUrl.length > 500) {
+          return res.status(400).json({ error: "supportUrl must be a valid HTTPS URL no longer than 500 characters." });
+        }
+      }
+      const businessProfile = {
+        brandName, supportWhatsAppNumber, supportWhatsAppMessage, supportEmail, supportUrl,
+        updatedAt: now(), updatedBy: req.user.uid
+      };
+      await collection("ownerSettings").doc("global").set({
+        masterConfig: { ownerControl: { businessProfile } },
+        updatedAtEpochMs: now(), updatedBy: req.user.uid
+      }, { merge: true });
+      await audit(req, "OWNER_BUSINESS_SETTINGS_EDITED", "businessProfile", {
+        changedFields: Object.keys(values).filter(key => ["brandName", "supportWhatsAppNumber", "supportWhatsAppMessage", "supportEmail", "supportUrl"].includes(key))
+      });
+      res.json({ ok: true, businessSettings: { brandName, supportWhatsAppNumber, supportWhatsAppMessage, supportEmail, supportUrl } });
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/owner/health", requireOwner, async (req, res) => {
     res.json({ ok: true, service: "smart-control-backend", checkedAt: now() });
   });
