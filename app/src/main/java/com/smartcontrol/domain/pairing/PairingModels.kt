@@ -5,8 +5,7 @@ data class PairingCode(
     val deviceUid: String,
     val expiresAtEpochMs: Long,
     val senderRole: String = "Other",
-    val receiverRole: String = "Other",
-    val lastHeartbeatAtEpochMs: Long? = null
+    val receiverRole: String = "Other"
 )
 data class PairedDevice(
     val deviceUid: String,
@@ -14,5 +13,6 @@ data class PairedDevice(
     val createdAtEpochMs: Long,
     val active: Boolean,
     val senderRole: String = "Other",
-    val receiverRole: String = "Other"
+    val receiverRole: String = "Other",
+    val lastHeartbeatAtEpochMs: Long? = null
 )
