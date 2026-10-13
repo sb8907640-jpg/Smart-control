@@ -14,7 +14,7 @@ The repository includes a dedicated GitHub Actions workflow for APK generation:
 - After the run succeeds, download the **smart-control-apks** artifact.
 - The artifact contains the generated Owner, Lite, and Full APKs requested by the selected build type.
 
-Before producing an APK artifact, the workflow validates that the **FIREBASE_GOOGLE_SERVICES_JSON** GitHub Actions secret contains a Firebase Android configuration for package **com.smart.control**. Without this configuration, Firebase Authentication, Firestore, and callable Functions cannot initialize correctly at runtime, so the workflow now stops rather than publishing a misleading APK artifact.
+Before producing an APK artifact, the workflow validates `app/google-services.json` for package **com.smart.control**. It uses the `FIREBASE_GOOGLE_SERVICES_JSON` GitHub Actions secret when provided; otherwise, an existing repository config file is used. At least one valid config source is required. This file contains client-side Firebase configuration, not server credentials; secure Firebase Rules, provider setup, and backend deployment are still required for production.
 
 For signed release APKs, configure these GitHub Actions secrets: **ANDROID_RELEASE_KEYSTORE_BASE64**, **ANDROID_RELEASE_STORE_PASSWORD**, **ANDROID_RELEASE_KEY_ALIAS**, and **ANDROID_RELEASE_KEY_PASSWORD**. The keystore secret must contain the Base64-encoded release keystore. The workflow builds debug variants on push/pull-request checks; manual **release** or **all** builds require the release signing secrets and verify the resulting APK signatures before upload. Keep the keystore and passwords private and do not commit them.
 
