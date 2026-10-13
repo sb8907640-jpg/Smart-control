@@ -58,8 +58,11 @@ jobs:
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+          SMARTCONTROL_TERMS_URL: ${{ secrets.SMARTCONTROL_TERMS_URL }}
+          SMARTCONTROL_PRIVACY_URL: ${{ secrets.SMARTCONTROL_PRIVACY_URL }}
+          SMARTCONTROL_EULA_URL: ${{ secrets.SMARTCONTROL_EULA_URL }}
           FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
-        run: gradle test assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+        run: gradle test assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL" -PSMARTCONTROL_TERMS_URL="$SMARTCONTROL_TERMS_URL" -PSMARTCONTROL_PRIVACY_URL="$SMARTCONTROL_PRIVACY_URL" -PSMARTCONTROL_EULA_URL="$SMARTCONTROL_EULA_URL"
 
       - name: Verify PostgreSQL backend code
         working-directory: backend
