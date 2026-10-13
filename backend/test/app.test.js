@@ -19,6 +19,7 @@ function makeOwnerTestDb() {
       ["user-1", { name: "Test User", email: "user@example.test", status: "ACTIVE", role: "USER" }],
       ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
     ]),
+    ownerSettings: new Map([["global", {}]]),
     auditLogs: [],
     securityEvents: [],
     subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
@@ -47,23 +48,35 @@ function makeOwnerTestDb() {
           };
         },
         async add(value) {
+          if (name === "supportTickets" && rows) {
+            const id = "ticket-" + (rows.size + 1);
+            rows.set(id, { ...value });
+            return { id };
+          }
           if (name !== "auditLogs" && name !== "securityEvents") throw new Error("Unexpected collection add: " + name);
           const list = data[name];
           list.push({ id: name + "-" + (list.length + 1), ...value });
           return { id: name + "-" + list.length };
         },
         where(field, operator, value) {
-          if (operator !== "==") throw new Error("Unsupported test query operator.");
-          return {
-            limit() {
+          const filters = [[field, operator, value]];
+          const query = {
+            where(nextField, nextOperator, nextValue) { filters.push([nextField, nextOperator, nextValue]); return query; },
+            limit(max) {
               return { async get() {
-                const docs = rows ? Array.from(rows.entries())
-                  .filter(([, record]) => record[field] === value)
-                  .map(([id, record]) => ({ id, data: () => ({ ...record }) })) : [];
-                return { docs };
+                let entries = rows ? Array.from(rows.entries()) : [];
+                entries = entries.filter(([, record]) => filters.every(([key, op, expected]) => {
+                  if (op === "==") return record[key] === expected;
+                  if (op === ">=") return Number(record[key] || 0) >= Number(expected);
+                  throw new Error("Unsupported test query operator: " + op);
+                }));
+                if (Number.isFinite(max)) entries = entries.slice(0, max);
+                const docs = entries.map(([id, record]) => ({ id, data: () => ({ ...record }) }));
+                return { docs, size: docs.length, empty: docs.length === 0 };
               } };
             }
           };
+          return query;
         },
         limit() {
           return { async get() {
@@ -224,6 +237,55 @@ test("pairing acceptance fails closed without explicit receiver consent", async 
   });
 });
 
+
+
+test("Owner business profile validates fields, persists privately, and audits changes", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const bad = await fetch(base + "/api/owner/business-settings", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { brandName: "FS", supportUrl: "http://insecure.example.test" } })
+    });
+    assert.equal(bad.status, 400);
+    const response = await fetch(base + "/api/owner/business-settings", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: {
+        brandName: "Family Suraksha",
+        supportWhatsAppNumber: "+91 98765 43210",
+        supportWhatsAppMessage: "Hello support",
+        supportEmail: "help@example.test",
+        supportUrl: "https://support.example.test"
+      } })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.businessSettings.supportWhatsAppNumber, "919876543210");
+    assert.equal(db.data.ownerSettings.get("global").masterConfig.ownerControl.businessProfile.brandName, "Family Suraksha");
+    assert.equal(db.data.auditLogs.at(-1).action, "OWNER_BUSINESS_SETTINGS_EDITED");
+  });
+});
+
+test("WhatsApp support endpoint uses private Owner destination and creates a ticket", async () => {
+  const db = makeOwnerTestDb();
+  db.data.ownerSettings.set("global", { masterConfig: { ownerControl: { businessProfile: {
+    brandName: "Family Suraksha",
+    supportWhatsAppNumber: "919876543210",
+    supportWhatsAppMessage: "Hello from Family Suraksha"
+  } } } });
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/support/whatsapp/initiate", {
+      method: "POST", headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    assert.match(body.whatsappUrl, /^https:\/\/wa\.me\/919876543210\?text=/);
+    assert.equal(body.channel, "WHATSAPP");
+    assert.equal(db.data.supportTickets.size, 2);
+    assert.equal(db.data.auditLogs.at(-1).action, "SUPPORT_WHATSAPP_INITIATED");
+  });
+});
 
 test("Owner user profile editing rejects role and account-status escalation", async () => {
   const db = makeOwnerTestDb();
