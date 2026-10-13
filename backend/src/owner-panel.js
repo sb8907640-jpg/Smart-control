@@ -49,6 +49,20 @@ function installOwnerPanelRoutes(app, { db }) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   };
 
+  // Query history by subject rather than scanning only the first 1,000 global
+  // records. Keep an explicit truncation signal when a single indexed query
+  // reaches its safety cap so callers never mistake a partial export for all history.
+  const readUserHistory = async (name, userId, fields, limit = 1000) => {
+    const records = new Map();
+    let truncated = false;
+    for (const field of fields) {
+      const snapshot = await collection(name).where(field, "==", userId).limit(limit).get();
+      if (snapshot.docs.length >= limit) truncated = true;
+      for (const doc of snapshot.docs) records.set(doc.id, { id: doc.id, ...doc.data() });
+    }
+    return { records: Array.from(records.values()), truncated };
+  };
+
   const normalizeFeatures = (body = {}) => {
     const all19 = body.all19 === true || body.allPermissions === true;
     const selected = Array.isArray(body.features) ? body.features.map(String).filter(Boolean) : [];
@@ -170,18 +184,14 @@ function installOwnerPanelRoutes(app, { db }) {
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid user ID." });
       const profile = await collection("users").doc(id).get();
       if (!profile.exists) return res.status(404).json({ error: "User not found." });
-      const [permissionRecords, consentRecords, auditRecords] = await Promise.all([
-        read("permissionHistory", 1000),
-        read("consentHistory", 1000),
-        read("auditLogs", 1000)
+      const [permissionHistory, consentHistory, auditHistory] = await Promise.all([
+        readUserHistory("permissionHistory", id, ["userId", "uid"]),
+        readUserHistory("consentHistory", id, ["userId", "uid"]),
+        readUserHistory("auditLogs", id, ["userId", "metadata.userId", "metadata.id"])
       ]);
-      const permissions = permissionRecords.filter(record =>
-        String(record.userId || record.uid || record.id || "") === id
-      );
-      const consents = consentRecords.filter(record =>
-        String(record.userId || record.uid || record.id || "") === id
-      );
-      const auditEvents = auditRecords.filter(record => {
+      const permissions = permissionHistory.records;
+      const consents = consentHistory.records;
+      const auditEvents = auditHistory.records.filter(record => {
         const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
         const action = String(record.action || "");
         if (action === "OWNER_USER_PERMISSION_HISTORY_VIEWED") return false;
@@ -203,7 +213,13 @@ function installOwnerPanelRoutes(app, { db }) {
         return timestamp(b) - timestamp(a);
       });
       await audit(req, "OWNER_USER_PERMISSION_HISTORY_VIEWED", "user", { id, count: events.length });
-      return res.json({ userId: id, count: events.length, events, note: "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted." });
+      const truncated = permissionHistory.truncated || consentHistory.truncated || auditHistory.truncated;
+      return res.json({
+        userId: id, count: events.length, events, truncated,
+        note: truncated
+          ? "History is partial because at least one source reached the per-query limit. Missing records are not proof that consent was granted."
+          : "Only records present in configured history/audit collections are included; missing history is not proof that consent was granted."
+      });
     } catch (e) { next(e); }
   });
 
