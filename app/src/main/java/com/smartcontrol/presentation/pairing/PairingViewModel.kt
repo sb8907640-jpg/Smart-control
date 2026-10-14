@@ -42,19 +42,20 @@ class PairingViewModel @Inject constructor(
         awaitClose { auth.removeAuthStateListener(listener) }
     }.distinctUntilChanged()
 
-    // Show the link from either side: this account as a receiver or as a controller.
-    val pairing = authUid.flatMapLatest { uid ->
+    val localPairing = authUid.flatMapLatest { uid ->
         if (uid.isNullOrBlank()) flowOf(null)
-        else combine(
-            repository.observePairing(),
-            repository.observeControlledDevice()
-        ) { localPairing, controlledDevice -> localPairing ?: controlledDevice }
+        else repository.observePairing()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val controlledDevices = authUid.flatMapLatest { uid ->
         if (uid.isNullOrBlank()) flowOf(emptyList())
         else repository.observeControlledDevices()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Compatibility summary for consumers that need a single representative link.
+    val pairing = combine(localPairing, controlledDevices) { local, controlled ->
+        local ?: controlled.firstOrNull()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _state = MutableStateFlow(PairingUiState())
     val state = _state.asStateFlow()
 
