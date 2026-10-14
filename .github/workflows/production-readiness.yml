@@ -74,6 +74,8 @@ jobs:
         run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "NODE_PATH=$NODE_PATH node functions/firestore-rules.test.js"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
+      - name: Test production readiness preflight validator
+        run: node --test scripts/production-readiness-preflight.test.js
       - name: Enforce production configuration gate
         continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
