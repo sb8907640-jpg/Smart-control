@@ -240,7 +240,7 @@ async function configuredOwnerMatches(request) {
 }
 
 async function requireOwnerOrSuperAdmin(request) {
-  requireAdmin(request);
+  await requireAdmin(request);
   const claims = request.auth.token || {};
   const role = normalizeRole(claims.role);
   if (role === "SUPER_ADMIN" || await configuredOwnerMatches(request)) {
@@ -271,7 +271,7 @@ async function findAuthUser(identifier) {
 }
 
 exports.listOwnerUsers = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const result = [];
   let pageToken;
   do {
@@ -302,7 +302,7 @@ exports.listOwnerUsers = onCall(async (request) => {
 });
 
 exports.updateOwnerUser = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
   if (!uid) throw new HttpsError("invalid-argument", "User ID is required.");
 
@@ -487,7 +487,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
 
 
 exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const root = typeof request.data?.root === "string" ? request.data.root : "";
   if (!/^0x[0-9a-fA-F]{64}$/.test(root)) {
     throw new HttpsError("invalid-argument", "A 32-byte audit root is required.");
