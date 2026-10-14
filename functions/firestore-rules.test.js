@@ -151,6 +151,21 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { CAMERA: false }
+      });
+    });
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "disabled-camera"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now()
+    }));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
