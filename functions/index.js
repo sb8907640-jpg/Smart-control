@@ -262,6 +262,9 @@ exports.updateOwnerUser = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
   const actorRole = normalizeRole(request.auth.token?.role);
+  if (action === "set" && uid === request.auth.uid && role !== actorRole) {
+    throw new HttpsError("permission-denied", "You cannot change your own role.");
+  }
   if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
     throw new HttpsError("permission-denied", "Insufficient role authority.");
   }
