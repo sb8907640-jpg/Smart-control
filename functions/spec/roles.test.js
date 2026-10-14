@@ -16,8 +16,10 @@ test("role list contains all supported role identifiers", () => {
   ]);
 });
 
-test("SUPER_ADMIN can assign any role", () => {
-  for (const role of ROLES) assert.equal(canManageRole("SUPER_ADMIN", role), true);
+test("SUPER_ADMIN can assign all roles except allowlist-managed OWNER", () => {
+  for (const role of ROLES) {
+    assert.equal(canManageRole("SUPER_ADMIN", role), role !== "OWNER");
+  }
 });
 
 test("OWNER cannot assign OWNER or SUPER_ADMIN", () => {
