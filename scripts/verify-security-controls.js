@@ -15,6 +15,7 @@ const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentat
 const consentScreen = read("app/src/main/java/com/smartcontrol/presentation/consent/ConsentScreen.kt");
 const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
 const functionsIndex = read("functions/index.js");
+const billing = read("functions/billing.js");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
@@ -170,6 +171,13 @@ check("Role hierarchy and self-promotion protections are tested",
     read("functions/spec/roles.test.js").includes("blocks self-promotion") &&
     functionsIndex.includes("await requireOwner(request)"),
   "Owner account sync awaits allowlist authorization and role changes are covered by unit tests.");
+
+check("Razorpay refunds call the provider and await confirmed processing",
+  billing.includes("/refund") &&
+    billing.includes('status: processed ? "REFUNDED" : "REFUND_PENDING"') &&
+    billing.includes('eventName === "refund.processed"') &&
+    billing.includes('eventName === "refund.failed"'),
+  "A live refund is not recorded as complete until the provider reports it processed.");
 
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
