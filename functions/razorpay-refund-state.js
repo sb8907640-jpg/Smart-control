@@ -21,17 +21,31 @@ function reconcileProcessedRefund(current, refundIdValue, refundAmountValue) {
   if (processedIds.includes(refundId)) {
     return {
       duplicate: true,
+      alreadyReflected: false,
       refundedAmountMinor: refundedBeforeMinor,
       fullyRefunded: current?.status === "REFUNDED",
       processedRefundIds: processedIds
     };
   }
+  const proposedRefundedAmountMinor = refundedBeforeMinor + refundAmountMinor;
+  const providerCumulativeMinor = Number(current?.razorpayCumulativeRefundedAmountMinor || 0);
+  if (Number.isSafeInteger(providerCumulativeMinor) &&
+      providerCumulativeMinor >= proposedRefundedAmountMinor) {
+    return {
+      duplicate: false,
+      alreadyReflected: true,
+      refundedAmountMinor: refundedBeforeMinor,
+      fullyRefunded: refundedBeforeMinor >= amountMinor,
+      processedRefundIds: [...processedIds, refundId]
+    };
+  }
   if (refundAmountMinor > amountMinor - refundedBeforeMinor) {
     throw new TypeError("Refund amount exceeds the remaining refundable balance.");
   }
-  const refundedAmountMinor = refundedBeforeMinor + refundAmountMinor;
+  const refundedAmountMinor = proposedRefundedAmountMinor;
   return {
     duplicate: false,
+    alreadyReflected: false,
     refundedAmountMinor,
     fullyRefunded: refundedAmountMinor === amountMinor,
     processedRefundIds: [...processedIds, refundId]
