@@ -23,13 +23,17 @@ function extractRazorpayWebhookEvent(event) {
   const orderId = String(
     entity.order_id || (isRefundEvent ? "" : entity.id) || ""
   ).trim();
+  const refundRequestId = isRefundEvent
+    ? String(entity.notes?.smartcontrolRefundRequestId || "").trim()
+    : "";
   return {
     supported: true,
     eventName,
     isRefundEvent,
     entity,
     razorpayPaymentId,
-    orderId
+    orderId,
+    refundRequestId
   };
 }
 
