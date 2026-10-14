@@ -27,7 +27,8 @@ async function main() {
 
   try {
     const normal = env.authenticatedContext("normal-user");
-    const owner = env.authenticatedContext("owner-user", { admin: true, role: "OWNER" });
+    const owner = env.authenticatedContext("owner-user", { admin: true, owner: true, role: "OWNER" });
+    const adminOnly = env.authenticatedContext("admin-only", { admin: true, role: "ADMIN" });
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
@@ -81,6 +82,14 @@ async function main() {
 
     await assertSucceeds(setDoc(doc(owner.firestore(), "pairingCodes", "c".repeat(48)), {
       deviceUid: "owner-user",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertFails(setDoc(doc(adminOnly.firestore(), "pairingCodes", "g".repeat(48)), {
+      deviceUid: "admin-only",
       expiresAt: 253402300799000,
       createdAt: now,
       expiryMinutes: 0,
