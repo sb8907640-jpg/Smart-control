@@ -18,6 +18,24 @@ android {
         create("lite") { dimension = "distribution"; versionNameSuffix = "-lite"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"LITE\"") }
         create("full") { dimension = "distribution"; buildConfigField("String","SMARTCONTROL_APP_VARIANT","\"FULL\"") }
     }
+    signingConfigs {
+        create("release") {
+            val releaseStoreFile = providers.environmentVariable("SMARTCONTROL_RELEASE_STORE_FILE").orNull
+            val releaseStorePassword = providers.environmentVariable("SMARTCONTROL_RELEASE_STORE_PASSWORD").orNull
+            val releaseKeyAlias = providers.environmentVariable("SMARTCONTROL_RELEASE_KEY_ALIAS").orNull
+            val releaseKeyPassword = providers.environmentVariable("SMARTCONTROL_RELEASE_KEY_PASSWORD").orNull
+
+            if (!releaseStoreFile.isNullOrBlank()) storeFile = file(releaseStoreFile)
+            if (!releaseStorePassword.isNullOrBlank()) storePassword = releaseStorePassword
+            if (!releaseKeyAlias.isNullOrBlank()) keyAlias = releaseKeyAlias
+            if (!releaseKeyPassword.isNullOrBlank()) keyPassword = releaseKeyPassword
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
     defaultConfig {
         applicationId="com.smart.control"
         minSdk=26
