@@ -133,13 +133,36 @@ service cloud.firestore {
     }
 
     match /mediaSessions/{sessionId} {
+      function featureEnabled(featureKey, targetUid) {
+        let globalPath = /databases/$(database)/documents/featurePolicy/global;
+        let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
+        let globalData = exists(globalPath) ? get(globalPath).data : {};
+        let userData = exists(userPath) ? get(userPath).data : {};
+        let expiresAt = userData.get('expiresAtEpochMs', null);
+        return globalData.get('globalFeaturesEnabled', true) == true
+          && globalData.get('globalEnabled', true) == true
+          && globalData.get('featureOverrides', {}).get(featureKey, true) != false
+          && globalData.get('globalFeatureOverrides', {}).get(featureKey, true) != false
+          && userData.get('enabled', true) == true
+          && userData.get('ownerEnabled', true) == true
+          && (expiresAt == null || (expiresAt is int && (expiresAt <= 0 || expiresAt > request.time.toMillis())))
+          && userData.get('featureOverrides', {}).get(featureKey, true) != false;
+      }
+
       // New sessions must start as requests. Approval and signaling are separate
       // participant-authorized updates below; clients cannot pre-create ACTIVE sessions.
+      // Owner policy is enforced by rules as well as the UI, so direct client writes
+      // cannot bypass a disabled global or per-user media capability.
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt', 'reason'])
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
         && request.resource.data.capabilities is list
+        && request.resource.data.capabilities.size() > 0
+        && request.resource.data.capabilities.hasOnly(['CAMERA', 'MICROPHONE', 'SCREEN_SHARING'])
+        && (!request.resource.data.capabilities.hasAny(['CAMERA']) || featureEnabled('CAMERA', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['MICROPHONE']) || featureEnabled('MICROPHONE', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['SCREEN_SHARING']) || featureEnabled('SCREEN_SHARE', request.resource.data.targetDeviceId))
         && request.resource.data.status == 'REQUESTED'
         && request.resource.data.createdAt is int
         && (!request.resource.data.keys().hasAny(['reason'])
