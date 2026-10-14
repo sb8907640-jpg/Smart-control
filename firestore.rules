@@ -247,6 +247,8 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
+        && featureEnabled('FILE_TRANSFER', request.auth.uid)
+        && featureEnabled('FILE_TRANSFER', request.resource.data.receiverDeviceId)
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
         && request.resource.data.status == 'REQUESTED';
@@ -265,13 +267,20 @@ service cloud.firestore {
             request.auth.uid == resource.data.receiverDeviceId
             && resource.data.status == 'REQUESTED'
             && request.resource.data.status in ['APPROVED', 'REJECTED']
+            && (request.resource.data.status == 'REJECTED'
+                || featureEnabled('FILE_TRANSFER', resource.data.receiverDeviceId))
           )
           ||
           (
             request.auth.uid == resource.data.senderDeviceId
             && (
               (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
-              || (resource.data.status == 'APPROVED' && request.resource.data.status == 'UPLOADING')
+              || (
+                resource.data.status == 'APPROVED'
+                && request.resource.data.status == 'UPLOADING'
+                && featureEnabled('FILE_TRANSFER', resource.data.senderDeviceId)
+                && featureEnabled('FILE_TRANSFER', resource.data.receiverDeviceId)
+              )
               || (
                 resource.data.status == 'UPLOADING'
                 && (
