@@ -1036,6 +1036,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           status: fullyRefunded ? "REFUNDED" : "SUCCESS",
           refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
           refundedAmountMinor,
+          razorpayCumulativeRefundedAmountMinor: refundedAmountMinor,
           refundAmountMinor: Number(entity.amount_refunded || refundedAmountMinor),
           ...(fullyRefunded ? {
             pendingRefundAmountMinor: 0,
