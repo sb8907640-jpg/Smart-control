@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSessionStatus
 import com.smartcontrol.domain.spec.FeatureId
@@ -47,6 +48,7 @@ fun MediaSessionPanel(
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
     val context = LocalContext.current
+    val userId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val renderer = remember { SurfaceViewRenderer(context) }
     var pendingStart by remember { mutableStateOf<com.smartcontrol.domain.media.MediaSession?>(null) }
 
@@ -54,6 +56,15 @@ fun MediaSessionPanel(
         pendingStart?.let { current -> if (result != null) viewModel.startPublishing(current, result) }
         pendingStart = null
     }
+    fun capabilitiesEnabled(capabilities: Set<MediaCapability>): Boolean = capabilities.all { capability ->
+        val featureId = when (capability) {
+            MediaCapability.CAMERA -> FeatureId.CAMERA
+            MediaCapability.MICROPHONE -> FeatureId.MICROPHONE
+            MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
+        }
+        featureAccess.isEnabled(featureId, userId)
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         pendingStart?.let { current ->
             if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
@@ -73,15 +84,15 @@ fun MediaSessionPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.CAMERA)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.CAMERA)
+                        enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.CAMERA, userId)
                     ) { Text("Request camera") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.MICROPHONE)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.MICROPHONE)
+                        enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.MICROPHONE, userId)
                     ) { Text("Request mic") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.SCREEN_SHARE)
+                        enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SCREEN_SHARE, userId)
                     ) { Text("Request screen") }
                 }
             } ?: Text("No controlled device is paired on this account.")
@@ -95,8 +106,14 @@ fun MediaSessionPanel(
                 ) {
                     Text("Incoming support request")
                     Text("Capabilities: " + request.capabilities.joinToString())
+                    if (settingsLoaded && !capabilitiesEnabled(request.capabilities)) {
+                        Text("One or more requested capabilities are disabled by Owner policy.", color = MaterialTheme.colorScheme.error)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { viewModel.approve(request.sessionId) }) { Text("Approve") }
+                        Button(
+                            onClick = { viewModel.approve(request.sessionId) },
+                            enabled = settingsLoaded && capabilitiesEnabled(request.capabilities)
+                        ) { Text("Approve") }
                         OutlinedButton(onClick = { viewModel.deny(request.sessionId) }) { Text("Deny") }
                     }
                 }
@@ -107,6 +124,9 @@ fun MediaSessionPanel(
             item {
                 Text("Session: " + current.status)
                 if (current.status == MediaSessionStatus.APPROVED) {
+                    if (settingsLoaded && !capabilitiesEnabled(current.capabilities)) {
+                        Text("Owner policy currently disables one or more session capabilities.", color = MaterialTheme.colorScheme.error)
+                    }
                     Button({
                         pendingStart = current
                         val permissions = buildList {
@@ -117,7 +137,7 @@ fun MediaSessionPanel(
                             if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
                             else { viewModel.startPublishing(current, null); pendingStart = null }
                         } else permissionLauncher.launch(permissions.toTypedArray())
-                    }) { Text("Start sharing (visible)") }
+                    }, enabled = settingsLoaded && capabilitiesEnabled(current.capabilities)) { Text("Start sharing (visible)") }
                 }
                 if (device != null && current.status == MediaSessionStatus.ACTIVE) {
                     WebRtcVideoRenderer(viewModel.eglBase(), renderer, Modifier.fillMaxWidth().height(220.dp))
