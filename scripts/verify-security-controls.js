@@ -174,7 +174,7 @@ check("Role hierarchy and self-promotion protections are tested",
 
 check("Razorpay refunds call the provider and await confirmed processing",
   billing.includes("/refund") &&
-    billing.includes('status: processed ? "REFUNDED" : "REFUND_PENDING"') &&
+    billing.includes('const status = processed ? "REFUNDED" : "REFUND_PENDING"') &&
     billing.includes('eventName === "refund.processed"') &&
     billing.includes('eventName === "refund.failed"'),
   "A live refund is not recorded as complete until the provider reports it processed.");
