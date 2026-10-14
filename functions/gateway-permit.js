@@ -21,11 +21,14 @@ function requireSignedIn(request) {
 async function requireOwner(request) {
   requireSignedIn(request);
   const claims = request.auth.token || {};
-  if (String(claims.role || "").toUpperCase() === "SUPER_ADMIN") return;
+  const role = String(claims.role || "").toUpperCase();
+  if (role === "SUPER_ADMIN") return;
 
   // Check the live private allowlist rather than trusting potentially stale
-  // OWNER claims after an account has been removed.
+  // OWNER claims after an account has been removed. A deployment-provisioned
+  // Owner may bootstrap gateway setup only before the config document exists.
   const snap = await db.doc("ownerAccounts/config").get();
+  if (!snap.exists && (claims.owner === true || role === "OWNER")) return;
   const cfg = snap.exists ? snap.data() || {} : {};
   const email = String(claims.email || "").trim().toLowerCase();
   const phone = String(claims.phone_number || "").trim();
