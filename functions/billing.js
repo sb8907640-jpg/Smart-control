@@ -1035,7 +1035,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         // A failed refund must not leave the payment marked as pending or cancel
         // the subscription. Allow an Owner to retry after checking provider state.
         await paymentDoc.ref.update({
-          status: payment.status === "REFUND_PENDING" ? "SUCCESS" : payment.status,
+          status: ["REFUND_REQUESTED", "REFUND_PENDING"].includes(payment.status) ? "SUCCESS" : payment.status,
           refundFailureId: String(entity.id || ""),
           refundFailedAtEpochMs: now,
           updatedAtEpochMs: now
