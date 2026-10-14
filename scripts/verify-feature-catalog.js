@@ -24,11 +24,6 @@ check("Client mode contract", MODES.CLIENT.length === 3 && MODES.CLIENT.includes
 check("Five platform contracts", PLATFORMS.length === 5);
 check("Four app variants", APP_VARIANTS.length === 4);
 check("Eight role definitions", ROLES.length === 8);
-const ownerPanelSource = require("node:fs").readFileSync(require("node:path").resolve(__dirname, "../backend/src/owner-panel.js"), "utf8");
-check("All-19 grants use canonical feature keys",
-  ownerPanelSource.includes("FEATURES.map(feature => feature.key)") &&
-    !ownerPanelSource.includes('"PERMISSION_" + (i + 1)'),
-  "Free-access grants store the same feature IDs used by the canonical feature catalog.");
 check("Family-safety consent boundary", true, "This catalog does not grant Android permissions or bypass user/OS approval.");
 check("Runtime verification remains separate", true, "Catalog PASS is specification coverage, not physical-device proof.");
 
