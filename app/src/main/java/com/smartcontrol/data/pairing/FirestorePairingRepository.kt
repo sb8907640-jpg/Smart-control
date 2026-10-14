@@ -90,7 +90,7 @@ class FirestorePairingRepository @Inject constructor(
         // Never read the private ownerSettings document from a normal client.
         // The callable returns only the effective pairing-code lifetime.
         val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
-        val isOwner = claims["admin"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
+        val isOwner = claims["owner"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
         val policy = runCatching {
             FirebaseFunctions.getInstance()
                 .getHttpsCallable("getDevicePairingPolicy")
