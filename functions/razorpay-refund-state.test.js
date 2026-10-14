@@ -29,6 +29,20 @@ assert.equal(full.refundedAmountMinor, 1000);
 assert.equal(full.fullyRefunded, true);
 assert.deepEqual(full.processedRefundIds, ["rfnd_1", "rfnd_2"]);
 
+const reflectedByPaymentWebhook = reconcileProcessedRefund(
+  {
+    amountMinor: 1000,
+    refundedAmountMinor: 400,
+    razorpayCumulativeRefundedAmountMinor: 400,
+    processedGatewayRefundIds: []
+  },
+  "rfnd_seen_by_payment_refunded",
+  400
+);
+assert.equal(reflectedByPaymentWebhook.alreadyReflected, true);
+assert.equal(reflectedByPaymentWebhook.refundedAmountMinor, 400);
+assert.deepEqual(reflectedByPaymentWebhook.processedRefundIds, ["rfnd_seen_by_payment_refunded"]);
+
 assert.throws(() => reconcileProcessedRefund(
   { amountMinor: 1000, refundedAmountMinor: 900, processedGatewayRefundIds: [] },
   "rfnd_over",
