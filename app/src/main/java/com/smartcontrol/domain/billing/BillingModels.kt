@@ -72,7 +72,7 @@ data class Payment(
     val gatewayOrderId: String? = null,
     val gatewayKeyId: String? = null
 ) {
-    enum class Status { CREATED, PENDING, SUCCESS, FAILED, REFUND_PENDING, REFUNDED }
+    enum class Status { CREATED, PENDING, SUCCESS, FAILED, REFUND_REQUESTED, REFUND_PENDING, REFUNDED }
 }
 
 data class PaymentRefundResult(
