@@ -82,7 +82,6 @@ jobs:
       - name: Test production readiness preflight validator
         run: node --test scripts/production-readiness-preflight.test.js
       - name: Enforce production configuration gate
-        continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
 
   backend:
