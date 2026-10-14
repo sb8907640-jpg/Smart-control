@@ -21,7 +21,8 @@ function requireSignedIn(request) {
 async function requireOwner(request) {
   requireSignedIn(request);
   const claims = request.auth.token || {};
-  if (claims.owner === true || String(claims.role || "").toUpperCase() === "OWNER") return;
+  if (claims.owner === true ||
+      ["OWNER", "SUPER_ADMIN"].includes(String(claims.role || "").toUpperCase())) return;
 
   // The existing Owner Accounts screen stores owner identifiers here.
   const snap = await db.doc("ownerAccounts/config").get();
