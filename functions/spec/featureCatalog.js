@@ -14,7 +14,7 @@ const FEATURES = [
   { id: 8, key: "SCREEN_RECORDING", icon: "⏺️", name: "Screen Recording", description: "Record your screen", offline: true, online: true },
   { id: 9, key: "TOUCH_CONTROL", icon: "👆", name: "Touch Control", description: "Touch your screen", offline: "P2P", online: true },
   { id: 10, key: "KEYBOARD_INPUT", icon: "⌨️", name: "Keyboard Input", description: "Type on your device", offline: "P2P", online: true },
-  { id: 11, key: "APP_INSTALL_UNINSTALL", icon: "📦", name: "App Install / Uninstall", description: "Install/uninstall apps", offline: "QUEUE", online: true },
+  { id: 11, key: "APP_INSTALL", icon: "📦", name: "App Install / Uninstall", description: "Install/uninstall apps", offline: "QUEUE", online: true },
   { id: 12, key: "FILE_TRANSFER", icon: "📤", name: "File Transfer", description: "Send and receive files", offline: true, online: true },
   { id: 13, key: "CLIPBOARD_SYNC", icon: "📋", name: "Clipboard Sync", description: "Sync clipboard text", offline: true, online: true },
   { id: 14, key: "FILES_ACCESS", icon: "📁", name: "Files Access", description: "Access files/folders", offline: true, online: true },

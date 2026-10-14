@@ -10,7 +10,8 @@ service firebase.storage {
       allow write: if request.auth != null
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
-        && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
+        // The sender must complete the Firestore APPROVED -> UPLOADING transition first.
+        && transferDoc().data.status == 'UPLOADING';
 
       allow read: if request.auth != null
         && (

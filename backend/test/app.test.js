@@ -465,3 +465,20 @@ test("Owner permission history returns scoped permission, consent, and audit eve
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
   });
 });
+
+test("device list uses active pairing relationships instead of a nonexistent userId field", async () => {
+  const db = makeOwnerTestDb();
+  db.data.devices = new Map([
+    ["child-1", { controllerUid: "owner-1", pairingActive: true }],
+    ["inactive-1", { controllerUid: "owner-1", pairingActive: false }],
+    ["other-1", { controllerUid: "other-user", pairingActive: true, userId: "owner-1" }]
+  ]);
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/devices", {
+      headers: { authorization: "Bearer owner-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.devices.map(device => device.id), ["child-1"]);
+  });
+});

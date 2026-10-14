@@ -2,6 +2,7 @@ package com.smartcontrol.presentation.pairing
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.domain.pairing.PairingCode
 import com.smartcontrol.domain.pairing.PairingRepository
 import com.smartcontrol.domain.pairing.PairedDevice
@@ -10,7 +11,12 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,17 +28,34 @@ data class PairingUiState(
 
 @HiltViewModel
 class PairingViewModel @Inject constructor(
+    private val auth: FirebaseAuth,
     private val repository: PairingRepository
 ) : ViewModel() {
-    // Show the link from either side: this account as a receiver or as a controller.
-    val pairing = combine(
-        repository.observePairing(),
-        repository.observeControlledDevice()
-    ) { localPairing, controlledDevice -> localPairing ?: controlledDevice }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    // Re-subscribe pairing listeners after sign-out/account changes. ViewModels are
+    // activity-scoped, so a one-time currentUser lookup can otherwise retain old links.
+    private val authUid = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid)
+        }
+        auth.addAuthStateListener(listener)
+        trySend(auth.currentUser?.uid)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
 
-    val controlledDevices = repository.observeControlledDevices()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val localPairing = authUid.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(null)
+        else repository.observePairing()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val controlledDevices = authUid.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(emptyList())
+        else repository.observeControlledDevices()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Compatibility summary for consumers that need a single representative link.
+    val pairing = combine(localPairing, controlledDevices) { local, controlled ->
+        local ?: controlled.firstOrNull()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _state = MutableStateFlow(PairingUiState())
     val state = _state.asStateFlow()
 
@@ -54,8 +77,8 @@ class PairingViewModel @Inject constructor(
         }
     }
 
-    fun unpair() = viewModelScope.launch {
-        repository.unpair().onFailure {
+    fun unpair(deviceUid: String? = null) = viewModelScope.launch {
+        repository.unpair(deviceUid).onFailure {
             _state.value = _state.value.copy(error = it.message ?: "Unable to unpair device")
         }
     }

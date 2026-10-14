@@ -179,7 +179,11 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 )
             }
             var running by remember { mutableStateOf(false) }
-            var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
+            var route by remember {
+                mutableStateOf(
+                    if (intent.data?.scheme == "smartcontrol" && intent.data?.host == "pair") "pairing" else "session"
+                )
+            }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
             LaunchedEffect(pendingPairLink) {

@@ -1,6 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+      function featureEnabled(featureKey, targetUid) {
+        let globalPath = /databases/$(database)/documents/featurePolicy/global;
+        let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
+        let globalData = exists(globalPath) ? get(globalPath).data : {};
+        let userData = exists(userPath) ? get(userPath).data : {};
+        let expiresAt = userData.get('expiresAtEpochMs', null);
+        return globalData.get('globalFeaturesEnabled', true) == true
+          && globalData.get('globalEnabled', true) == true
+          && globalData.get('featureOverrides', {}).get(featureKey, true) != false
+          && globalData.get('globalFeatureOverrides', {}).get(featureKey, true) != false
+          && userData.get('enabled', true) == true
+          && userData.get('ownerEnabled', true) == true
+          && (expiresAt == null || (expiresAt is int && (expiresAt <= 0 || expiresAt > request.time.toMillis())))
+          && userData.get('featureOverrides', {}).get(featureKey, true) != false;
+      }
+
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
     }
@@ -115,7 +131,7 @@ service cloud.firestore {
           )
           || (
             request.resource.data.expiryMode == 'NO_EXPIRY'
-            && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
+            && (request.auth.token.get('owner', false) == true || request.auth.token.role == 'OWNER')
           )
         );
       allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
@@ -133,9 +149,29 @@ service cloud.firestore {
     }
 
     match /mediaSessions/{sessionId} {
+      // New sessions must start as requests. Approval and signaling are separate
+      // participant-authorized updates below; clients cannot pre-create ACTIVE sessions.
+      // Owner policy is enforced by rules as well as the UI, so direct client writes
+      // cannot bypass a disabled global or per-user media capability.
       allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt', 'reason'])
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
+        && request.resource.data.capabilities is list
+        && request.resource.data.capabilities.size() > 0
+        && request.resource.data.capabilities.hasOnly(['CAMERA', 'MICROPHONE', 'SCREEN_SHARING', 'LOCATION', 'FILE_TRANSFER', 'REMOTE_CONTROL'])
+        && (!request.resource.data.capabilities.hasAny(['CAMERA']) || featureEnabled('CAMERA', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['MICROPHONE']) || featureEnabled('MICROPHONE', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['SCREEN_SHARING']) || featureEnabled('SCREEN_SHARE', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['LOCATION']) || featureEnabled('LOCATION', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['FILE_TRANSFER']) || featureEnabled('FILE_TRANSFER', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['REMOTE_CONTROL'])
+            || (featureEnabled('TOUCH_CONTROL', request.resource.data.targetDeviceId)
+                && featureEnabled('KEYBOARD_INPUT', request.resource.data.targetDeviceId)))
+        && request.resource.data.status == 'REQUESTED'
+        && request.resource.data.createdAt is int
+        && (!request.resource.data.keys().hasAny(['reason'])
+            || (request.resource.data.reason is string && request.resource.data.reason.size() <= 500))
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
@@ -211,6 +247,8 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
+        && featureEnabled('FILE_TRANSFER', request.auth.uid)
+        && featureEnabled('FILE_TRANSFER', request.resource.data.receiverDeviceId)
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
         && request.resource.data.status == 'REQUESTED';
@@ -229,13 +267,20 @@ service cloud.firestore {
             request.auth.uid == resource.data.receiverDeviceId
             && resource.data.status == 'REQUESTED'
             && request.resource.data.status in ['APPROVED', 'REJECTED']
+            && (request.resource.data.status == 'REJECTED'
+                || featureEnabled('FILE_TRANSFER', resource.data.receiverDeviceId))
           )
           ||
           (
             request.auth.uid == resource.data.senderDeviceId
             && (
               (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
-              || (resource.data.status == 'APPROVED' && request.resource.data.status == 'UPLOADING')
+              || (
+                resource.data.status == 'APPROVED'
+                && request.resource.data.status == 'UPLOADING'
+                && featureEnabled('FILE_TRANSFER', resource.data.senderDeviceId)
+                && featureEnabled('FILE_TRANSFER', resource.data.receiverDeviceId)
+              )
               || (
                 resource.data.status == 'UPLOADING'
                 && (
@@ -313,7 +358,9 @@ service cloud.firestore {
       );
 
       match /sharedLocation/{locationId} {
-        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && (request.resource.data.sharingActive == false || featureEnabled('LOCATION', uid));
         allow read: if request.auth != null
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
@@ -321,7 +368,9 @@ service cloud.firestore {
       }
 
       match /statusAlerts/{alertId} {
-        allow create: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && featureEnabled('SOS_ALERTS', uid);
         allow read: if request.auth != null
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);

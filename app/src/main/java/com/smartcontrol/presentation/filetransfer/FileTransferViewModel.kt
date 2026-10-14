@@ -13,9 +13,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -29,11 +34,26 @@ class FileTransferViewModel @Inject constructor(
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
 
-    val controlledDevice = pairingRepository.observeControlledDevice()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    // These ViewModels survive route changes. Rebind Firestore listeners whenever
+    // the signed-in account changes so one user's devices/transfers never remain visible.
+    private val authUid = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid)
+        }
+        auth.addAuthStateListener(listener)
+        trySend(auth.currentUser?.uid)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
 
-    val incoming = repository.observeIncoming(auth.currentUser?.uid.orEmpty())
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val controlledDevice = authUid.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(null)
+        else pairingRepository.observeControlledDevice()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val incoming = authUid.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(emptyList())
+        else repository.observeIncoming(uid)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
@@ -60,6 +80,18 @@ class FileTransferViewModel @Inject constructor(
             _hasPendingUpload.value = true
         } else {
             pendingTransferPrefs.edit().clear().apply()
+        }
+
+        viewModelScope.launch {
+            authUid.collect { activeUid ->
+                val ownerUid = pendingTransferPrefs.getString("owner_uid", null)
+                if (activeUid.isNullOrBlank() || activeUid != ownerUid) {
+                    pendingTransferId = null
+                    pendingUri = null
+                    _hasPendingUpload.value = false
+                    pendingTransferPrefs.edit().clear().apply()
+                }
+            }
         }
     }
 

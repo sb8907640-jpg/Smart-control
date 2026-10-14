@@ -7,7 +7,7 @@
   "scripts": {
     "deploy": "firebase deploy --only functions",
     "deploy:all": "firebase deploy --only functions,firestore:rules",
-    "check": "node --check index.js && node --check billing.js && node --check gateway-permit.js && node --check ice-servers.js && node --check firestore-rules.test.js"
+    "check": "node --check index.js && node --check billing.js && node --check gateway-permit.js && node --check ice-servers.js && node --check spec/roles.js && node --check firestore-rules.test.js && node --test spec/roles.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0",

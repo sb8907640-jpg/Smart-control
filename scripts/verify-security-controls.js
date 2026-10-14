@@ -15,6 +15,7 @@ const fileTransferViewModel = read("app/src/main/java/com/smartcontrol/presentat
 const consentScreen = read("app/src/main/java/com/smartcontrol/presentation/consent/ConsentScreen.kt");
 const mainActivity = read("app/src/main/java/com/smartcontrol/MainActivity.kt");
 const functionsIndex = read("functions/index.js");
+const billing = read("functions/billing.js");
 
 check("AES-256-GCM", /AES-256-GCM/.test(policy) && /createCipheriv/.test(policy), "Authenticated AES-256-GCM policy exists.");
 check("2FA + OTP", /Mobile OTP/.test(policy) && /2FA/.test(policy), "Google/Mobile OTP plus deployment-controlled 2FA/MFA.");
@@ -153,6 +154,36 @@ check("Payment secrets remain outside generic owner settings editor",
   ownerAdmin.includes("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above") &&
     ownerAdmin.includes("legacyGatewaySecretKeys"),
   "Generic configuration editor blocks legacy payment secret keys; gateway changes use the dedicated secure panel.");
+
+check("Media sessions require REQUESTED status and Owner feature policy",
+  firestoreRules.includes("request.resource.data.status == 'REQUESTED'") &&
+    firestoreRules.includes("featureEnabled('CAMERA', request.resource.data.targetDeviceId)") &&
+    firestoreRules.includes("request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt', 'reason'])"),
+  "A client cannot create an already-active session or bypass a disabled target capability.");
+
+check("File transfer creation respects Owner policy and uploads require UPLOADING",
+  firestoreRules.includes("featureEnabled('FILE_TRANSFER', request.resource.data.receiverDeviceId)") &&
+    storageRules.includes("transferDoc().data.status == 'UPLOADING'"),
+  "Both participants must have transfer access enabled, and Storage rejects writes before the upload state transition.");
+
+check("Location and SOS writes respect Owner policy without blocking stop/ack",
+  firestoreRules.includes("featureEnabled('LOCATION', uid)") &&
+    firestoreRules.includes("featureEnabled('SOS_ALERTS', uid)") &&
+    firestoreRules.includes("request.resource.data.sharingActive == false"),
+  "Disabling a feature blocks new data collection while users can still stop sharing and acknowledge existing alerts.");
+
+check("Role hierarchy and self-promotion protections are tested",
+  read("functions/spec/roles.js").includes("function canManageUser") &&
+    read("functions/spec/roles.test.js").includes("blocks self-promotion") &&
+    functionsIndex.includes("await requireOwner(request)"),
+  "Owner account sync awaits allowlist authorization and role changes are covered by unit tests.");
+
+check("Razorpay refunds call the provider and await confirmed processing",
+  billing.includes("/refund") &&
+    billing.includes('const status = processed ? "REFUNDED" : "REFUND_PENDING"') &&
+    billing.includes('eventName === "refund.processed"') &&
+    billing.includes('eventName === "refund.failed"'),
+  "A live refund is not recorded as complete until the provider reports it processed.");
 
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);

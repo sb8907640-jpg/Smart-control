@@ -57,9 +57,20 @@ class AuthViewModel @Inject constructor(
             return
         }
         _state.value = _state.value.copy(loading = true, error = null)
-        repository.sendOtp(activity, phone,
+        repository.sendOtp(
+            activity,
+            phone,
             onCodeSent = { id -> _state.value = _state.value.copy(loading = false, verificationId = id) },
-            onFailure = { e -> _state.value = _state.value.copy(loading = false, error = e.message ?: "OTP failed.") }
+            onFailure = { e -> _state.value = _state.value.copy(loading = false, error = e.message ?: "OTP failed.") },
+            onAutoVerified = { credential ->
+                viewModelScope.launch {
+                    _state.value = _state.value.copy(loading = true, error = null)
+                    repository.signInWithPhoneCredential(credential).onFailure {
+                        _state.value = _state.value.copy(error = it.message ?: "Automatic phone verification failed.")
+                    }
+                    _state.value = _state.value.copy(loading = false)
+                }
+            }
         )
     }
 

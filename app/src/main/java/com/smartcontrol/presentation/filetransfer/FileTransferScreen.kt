@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -39,14 +40,22 @@ fun FileTransferScreen(
     var pendingDownloadId by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            runCatching {
+        uri?.let { selectedUri ->
+            val persisted = runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    selectedUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
-            viewModel.uploadSelectedFile(it)
+            if (persisted.isSuccess) {
+                viewModel.uploadSelectedFile(selectedUri)
+            } else {
+                Toast.makeText(
+                    context,
+                    "This file provider cannot preserve access. Choose a file from a provider that supports persistent access.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->

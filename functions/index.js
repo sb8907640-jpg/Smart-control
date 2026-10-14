@@ -5,7 +5,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
-const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
+const { ROLES, normalizeRole, canManageUser } = require("./spec/roles");
 
 initializeApp();
 const db = getFirestore();
@@ -57,7 +57,7 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   }
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  const isOwner = claims.owner === true || normalizeRole(claims.role) === "OWNER";
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -208,6 +208,41 @@ function requireAdmin(request) {
   }
 }
 
+function normalizeOwnerPhone(value) {
+  const digits = String(value || "").trim().replace(/\D/g, "");
+  return digits ? `+${digits}` : "";
+}
+
+async function isOwnerIdentity(request) {
+  const claims = request.auth?.token || {};
+  if (claims.owner === true || normalizeRole(claims.role) === "OWNER") return true;
+
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = normalizeOwnerPhone(claims.phone_number);
+  const envEmails = String(process.env.OWNER_EMAILS || "")
+    .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const envMobiles = String(process.env.OWNER_MOBILE_NUMBERS || "")
+    .split(",").map(normalizeOwnerPhone).filter(Boolean);
+  if ((email && envEmails.includes(email)) || (phone && envMobiles.includes(phone))) return true;
+
+  const snapshot = await db.collection("ownerAccounts").doc("config").get();
+  const config = snapshot.exists ? snapshot.data() || {} : {};
+  const configuredEmails = Array.isArray(config.emails)
+    ? config.emails.map((value) => String(value).trim().toLowerCase()) : [];
+  const configuredMobiles = Array.isArray(config.mobiles)
+    ? config.mobiles.map(normalizeOwnerPhone) : [];
+  return Boolean(
+    (email && configuredEmails.includes(email)) ||
+    (phone && configuredMobiles.includes(phone))
+  );
+}
+
+async function requireOwner(request) {
+  if (!request.auth || !(await isOwnerIdentity(request))) {
+    throw new HttpsError("permission-denied", "Configured Owner identity required.");
+  }
+}
+
 async function findAuthUser(identifier) {
   try {
     if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
@@ -257,23 +292,43 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   const target = await getAuth().getUser(uid);
   const action = typeof request.data?.action === "string" ? request.data.action : "set";
-  const role = normalizeRole(request.data?.role);
-  if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
+  const targetRole = normalizeRole(target.customClaims?.role);
+  const role = action === "set" ? normalizeRole(request.data?.role) : targetRole;
+  if (action === "set" && typeof request.data?.role === "string" &&
+      !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
   const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  if (!canManageUser(request.auth.uid, uid, actorRole, targetRole, role)) {
+    throw new HttpsError(
+      "permission-denied",
+      uid === request.auth.uid
+        ? "You cannot change your own role."
+        : "Insufficient role authority."
+    );
   }
 
   if (action === "set") {
     const access = request.data?.access === true;
-    const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
+    const rawExpiry = request.data?.accessExpiresAtEpochMs;
+    const expiresAtEpochMs = rawExpiry === undefined || rawExpiry === null || rawExpiry === ""
+      ? 0 : Number(rawExpiry);
+    if (!Number.isFinite(expiresAtEpochMs) || expiresAtEpochMs < 0) {
+      throw new HttpsError("invalid-argument", "Access expiry must be a non-negative epoch timestamp.");
+    }
+    if (access && expiresAtEpochMs > 0 && expiresAtEpochMs <= Date.now()) {
+      throw new HttpsError("failed-precondition", "An enabled access grant must expire in the future.");
+    }
     const claims = { ...(target.customClaims || {}), role, access };
     if (role === "SUPER_ADMIN") {
       claims.admin = true;
-    } else if (target.uid !== request.auth.uid) {
+      delete claims.owner;
+    } else if (role === "OWNER") {
+      claims.admin = true;
+      claims.owner = true;
+    } else {
       delete claims.admin;
+      delete claims.owner;
     }
     await getAuth().setCustomUserClaims(uid, claims);
     const updatedAtEpochMs = Date.now();
@@ -330,13 +385,13 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireOwner(request);
 
   const emails = Array.isArray(request.data?.emails)
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
     : [];
   const mobiles = Array.isArray(request.data?.mobiles)
-    ? request.data.mobiles.map(String).map(v => v.trim()).filter(Boolean)
+    ? request.data.mobiles.map(normalizeOwnerPhone).filter(Boolean)
     : [];
 
   const requestedIdentifiers = new Set([...emails, ...mobiles]);
@@ -348,7 +403,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   const previous = currentProfile.exists ? currentProfile.data() : {};
   const previousIdentifiers = new Set([
     ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(v => v.trim().toLowerCase()) : []),
-    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
+    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(normalizeOwnerPhone).filter(Boolean) : [])
   ]);
 
   let granted = 0;
@@ -361,7 +416,12 @@ exports.syncOwnerAccounts = onCall(async (request) => {
       unresolved.push(identifier);
       continue;
     }
-    const claims = { ...(user.customClaims || {}), admin: true };
+    const claims = {
+      ...(user.customClaims || {}),
+      role: "OWNER",
+      owner: true,
+      admin: true
+    };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -372,9 +432,18 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     if (!user || user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
     delete claims.admin;
+    delete claims.owner;
+    if (normalizeRole(claims.role) === "OWNER") claims.role = "USER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...new Set(emails)],
+    mobiles: [...new Set(mobiles)],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
 
   return { ok: true, granted, revoked, unresolved };
 });

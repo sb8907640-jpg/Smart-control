@@ -90,7 +90,7 @@ class FirestorePairingRepository @Inject constructor(
         // Never read the private ownerSettings document from a normal client.
         // The callable returns only the effective pairing-code lifetime.
         val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
-        val isOwner = claims["admin"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
+        val isOwner = claims["owner"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
         val policy = runCatching {
             FirebaseFunctions.getInstance()
                 .getHttpsCallable("getDevicePairingPolicy")
@@ -150,24 +150,42 @@ class FirestorePairingRepository @Inject constructor(
         PairedDevice(deviceUid.first, controllerUid, System.currentTimeMillis(), true, deviceUid.second, deviceUid.third)
     }
 
-    override suspend fun unpair(): Result<Unit> = runCatching {
+    override suspend fun unpair(deviceUid: String?): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         val ownRef = db.collection("devices").document(uid)
         val refs = linkedMapOf<String, com.google.firebase.firestore.DocumentReference>()
 
-        // If this account is the receiving device, unlink its controller.
-        val ownSnapshot = ownRef.get().await()
-        if (!ownSnapshot.getString("controllerUid").isNullOrBlank()) {
-            refs[ownRef.path] = ownRef
-        }
+        if (deviceUid != null) {
+            require(deviceUid.isNotBlank()) { "Choose a paired device to unlink." }
+            val selectedRef = db.collection("devices").document(deviceUid)
+            val selected = selectedRef.get().await()
+            require(selected.exists()) { "Paired device not found." }
 
-        // If this account is the controller, unlink every device it controls too.
-        val controlled = db.collection("devices")
-            .whereEqualTo("controllerUid", uid)
-            .whereEqualTo("pairingActive", true)
-            .get()
-            .await()
-        controlled.documents.forEach { refs[it.reference.path] = it.reference }
+            if (deviceUid == uid) {
+                require(!selected.getString("controllerUid").isNullOrBlank()) {
+                    "This device is not paired to a controller."
+                }
+            } else {
+                require(
+                    selected.getString("controllerUid") == uid &&
+                        selected.getBoolean("pairingActive") == true
+                ) { "You can only unlink a device connected to this controller." }
+            }
+            refs[selectedRef.path] = selectedRef
+        } else {
+            // Backward-compatible bulk unlink for callers that explicitly omit a device.
+            val ownSnapshot = ownRef.get().await()
+            if (!ownSnapshot.getString("controllerUid").isNullOrBlank()) {
+                refs[ownRef.path] = ownRef
+            }
+
+            val controlled = db.collection("devices")
+                .whereEqualTo("controllerUid", uid)
+                .whereEqualTo("pairingActive", true)
+                .get()
+                .await()
+            controlled.documents.forEach { refs[it.reference.path] = it.reference }
+        }
 
         val batch = db.batch()
         refs.values.forEach { ref ->

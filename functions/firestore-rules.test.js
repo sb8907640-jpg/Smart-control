@@ -7,6 +7,7 @@ const {
 } = require("@firebase/rules-unit-testing");
 const {
   doc,
+  getDoc,
   setDoc,
   updateDoc,
   runTransaction
@@ -25,7 +26,8 @@ async function main() {
 
   try {
     const normal = env.authenticatedContext("normal-user");
-    const owner = env.authenticatedContext("owner-user", { admin: true, role: "OWNER" });
+    const admin = env.authenticatedContext("admin-user", { admin: true, role: "ADMIN" });
+    const owner = env.authenticatedContext("owner-user", { admin: true, owner: true, role: "OWNER" });
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
@@ -51,6 +53,14 @@ async function main() {
 
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "b".repeat(48)), {
       deviceUid: "normal-user",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertFails(setDoc(doc(admin.firestore(), "pairingCodes", "9".repeat(48)), {
+      deviceUid: "admin-user",
       expiresAt: 253402300799000,
       createdAt: now,
       expiryMinutes: 0,
@@ -93,6 +103,25 @@ async function main() {
     }));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
+      for (const id of ["controlled-a", "controlled-b"]) {
+        await setDoc(doc(ctx.firestore(), "devices", id), {
+          controllerUid: "controller-user",
+          pairingToken: "f".repeat(48),
+          pairedAt: Date.now(),
+          pairingActive: true
+        });
+      }
+    });
+    await assertSucceeds(updateDoc(doc(controller.firestore(), "devices", "controlled-a"), {
+      controllerUid: null,
+      pairingActive: false
+    }));
+    const untouchedDevice = await getDoc(doc(controller.firestore(), "devices", "controlled-b"));
+    if (!untouchedDevice.exists() || untouchedDevice.data().pairingActive !== true) {
+      throw new Error("Unpairing one device unexpectedly changed another linked device.");
+    }
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
         controllerUid: "media-controller",
         pairingActive: true,
@@ -103,6 +132,21 @@ async function main() {
     const mediaController = env.authenticatedContext("media-controller");
     const mediaTarget = env.authenticatedContext("media-target");
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "forged-active-session"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "ACTIVE",
+      createdAt: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "preseeded-signaling"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now(),
+      answerSdp: "must-not-be-client-seeded"
+    }));
     await assertSucceeds(setDoc(sessionRef, {
       controllerUid: "media-controller",
       targetDeviceId: "media-target",
@@ -116,6 +160,53 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { CAMERA: false, LOCATION: false, SOS_ALERTS: false }
+      });
+      await setDoc(doc(ctx.firestore(), "devices", "media-target", "statusAlerts", "existing-alert"), {
+        alertId: "existing-alert",
+        deviceId: "media-target",
+        type: "TEST",
+        message: "Test alert",
+        createdAtEpochMs: Date.now(),
+        acknowledged: false
+      });
+    });
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "disabled-camera"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "current"), {
+      deviceId: "media-target",
+      latitude: 1,
+      longitude: 2,
+      accuracyMeters: 10,
+      capturedAtEpochMs: Date.now(),
+      sharingActive: true
+    }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "current"), {
+      sharingActive: false,
+      stoppedAtEpochMs: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "blocked-alert"), {
+      alertId: "blocked-alert",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Disabled by policy",
+      createdAtEpochMs: Date.now(),
+      acknowledged: false
+    }));
+    await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "existing-alert"), {
+      acknowledged: true,
+      acknowledgedBy: "media-target"
+    }));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
@@ -126,6 +217,23 @@ async function main() {
       status: "REQUESTED"
     }));
     await assertSucceeds(setDoc(doc(controller.firestore(), "fileTransfers", "paired-transfer"), {
+      senderDeviceId: "controller-user",
+      receiverDeviceId: "target-user",
+      fileName: "file.txt",
+      mimeType: "text/plain",
+      sizeBytes: 10,
+      createdAtEpochMs: Date.now(),
+      status: "REQUESTED"
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "target-user"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { FILE_TRANSFER: false }
+      });
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "disabled-feature-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "target-user",
       fileName: "file.txt",

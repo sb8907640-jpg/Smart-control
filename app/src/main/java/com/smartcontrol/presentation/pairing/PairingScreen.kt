@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.google.firebase.auth.FirebaseAuth
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
@@ -42,10 +41,10 @@ fun PairingScreen(
     initialToken: String? = null,
     viewModel: PairingViewModel = hiltViewModel()
 ) {
-    val pairing by viewModel.pairing.collectAsState()
+    val localPairing by viewModel.localPairing.collectAsState()
+    val controlledDevices by viewModel.controlledDevices.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val deepLinkToken = remember(initialToken, context) {
         (initialToken ?: (context as? Activity)?.intent?.data?.getQueryParameter("token"))
             ?.trim()
@@ -80,14 +79,33 @@ fun PairingScreen(
         Text("Device Pairing", style = MaterialTheme.typography.headlineSmall)
         Text("Generate a temporary pairing token or open a shared smartcontrol://pair link. Pairing still requires an explicit user action.")
 
-        if (pairing != null) {
-            Text(
-                if (pairing!!.controllerUid == currentUid) "Paired device: " + pairing!!.deviceUid
-                else "Paired controller: " + pairing!!.controllerUid
-            )
-            Text("Sender role: " + pairing!!.senderRole + " • Receiver role: " + pairing!!.receiverRole)
-            OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
-                Text("Unpair device")
+        if (controlledDevices.isNotEmpty()) {
+            Text("Devices linked to this controller", style = MaterialTheme.typography.titleMedium)
+            controlledDevices.forEach { device ->
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Device ID: " + device.deviceUid)
+                    Text("Sender role: " + device.senderRole + " • Receiver role: " + device.receiverRole)
+                    OutlinedButton(
+                        onClick = { viewModel.unpair(device.deviceUid) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Unpair this device")
+                    }
+                }
+            }
+        }
+
+        if (localPairing != null) {
+            Text("This device is paired to controller: " + localPairing!!.controllerUid)
+            Text("Sender role: " + localPairing!!.senderRole + " • Receiver role: " + localPairing!!.receiverRole)
+            OutlinedButton(
+                onClick = { viewModel.unpair(localPairing!!.deviceUid) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Unpair this controller")
             }
         } else {
             Text("Who are you? (Sender)")

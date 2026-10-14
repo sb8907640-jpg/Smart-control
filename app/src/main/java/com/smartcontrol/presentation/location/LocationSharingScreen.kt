@@ -13,6 +13,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewModel = hiltViewModel()) {
     val sharing by viewModel.sharing.collectAsState()
     val last by viewModel.lastLocation.collectAsState()
+    val linkedDevice by viewModel.controlledDevice.collectAsState()
+    val remoteLocation by viewModel.remoteLocation.collectAsState()
+    val status by viewModel.status.collectAsState()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (viewModel.hasPermission) viewModel.publishCurrentLocation()
     }
@@ -24,13 +27,30 @@ fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewMode
             else launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }, Modifier.fillMaxWidth()) { Text(if (sharing) "Update shared location" else "Share my location") }
         if (sharing) OutlinedButton({ viewModel.stopSharing() }, Modifier.fillMaxWidth()) { Text("Stop location sharing") }
+        status?.let { Text(it, color = if (it.contains("successfully") || it.contains("stopped")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
         last?.let { location ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("Last shared location", style = MaterialTheme.typography.titleMedium)
+                    Text("My last shared location", style = MaterialTheme.typography.titleMedium)
                     Text("Latitude: ${location.latitude}")
                     Text("Longitude: ${location.longitude}")
                     Text("Accuracy: ${location.accuracyMeters ?: -1f} m")
+                }
+            }
+        }
+        linkedDevice?.let { device ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("Linked device location", style = MaterialTheme.typography.titleMedium)
+                    Text("Device ID: ${device.deviceUid}")
+                    if (remoteLocation != null) {
+                        Text("Latitude: ${remoteLocation!!.latitude}")
+                        Text("Longitude: ${remoteLocation!!.longitude}")
+                        Text("Accuracy: ${remoteLocation!!.accuracyMeters ?: -1f} m")
+                        Text("Shared at (epoch ms): ${remoteLocation!!.capturedAtEpochMs}")
+                    } else {
+                        Text("No active location is shared by this device. The device user must explicitly share location.")
+                    }
                 }
             }
         }
