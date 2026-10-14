@@ -358,7 +358,9 @@ service cloud.firestore {
       );
 
       match /sharedLocation/{locationId} {
-        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && (request.resource.data.sharingActive == false || featureEnabled('LOCATION', uid));
         allow read: if request.auth != null
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
@@ -366,7 +368,9 @@ service cloud.firestore {
       }
 
       match /statusAlerts/{alertId} {
-        allow create: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && featureEnabled('SOS_ALERTS', uid);
         allow read: if request.auth != null
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
