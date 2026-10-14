@@ -98,6 +98,9 @@ class FirestoreOwnerBillingRepository @Inject constructor(
                 ),
                 SetOptions.merge()
             ).await()
+        // Custom claims changed by syncOwnerAccounts are not reflected in the
+        // cached Firebase ID token until it is refreshed.
+        auth.currentUser?.getIdToken(true)?.await()
     }
 
     override fun observePlans(): Flow<List<Plan>> = callbackFlow {
