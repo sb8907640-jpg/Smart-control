@@ -51,15 +51,8 @@ function installOwnerPanelRoutes(app, { db }) {
 
   const normalizeFeatures = (body = {}) => {
     const all19 = body.all19 === true || body.allPermissions === true;
-    const selected = Array.isArray(body.features)
-      ? [...new Set(body.features.map(value => String(value).trim().toUpperCase()).filter(Boolean))]
-      : [];
-    const allowed = new Set(FEATURES.map(feature => feature.key));
-    const invalid = selected.filter(key => !allowed.has(key));
-    if (invalid.length) {
-      throw Object.assign(new Error("Unknown feature keys: " + invalid.join(", ")), { statusCode: 400 });
-    }
-    return { all19, features: all19 ? FEATURES.map(feature => feature.key) : selected };
+    const selected = Array.isArray(body.features) ? body.features.map(String).filter(Boolean) : [];
+    return { all19, features: all19 ? Array.from({ length: 19 }, (_, i) => "PERMISSION_" + (i + 1)) : selected };
   };
 
   const normalizeFreeAccessDates = (body = {}) => {
