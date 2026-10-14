@@ -302,13 +302,24 @@ exports.updateOwnerUser = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
   const actorRole = await effectiveActorRole(request);
-  // A user may retain their current role while editing their own access, but
-  // cannot use the self-edit path to promote themselves to a privileged role.
-  if (uid === request.auth.uid && role !== actorRole) {
-    throw new HttpsError("permission-denied", "You cannot change your own role.");
-  }
-  if (uid !== request.auth.uid && !canManageRole(actorRole, role)) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  if (action === "set") {
+    // A user may not change their own role, and role assignments must obey the
+    // hierarchy. OWNER can be assigned only by the allowlist sync path.
+    if (uid === request.auth.uid && role !== actorRole) {
+      throw new HttpsError("permission-denied", "You cannot change your own role.");
+    }
+    if (uid !== request.auth.uid && !canManageRole(actorRole, role)) {
+      throw new HttpsError("permission-denied", "Insufficient role authority.");
+    }
+  } else if (action === "block" || action === "unblock") {
+    const targetRole = normalizeRole(target.customClaims?.role);
+    if (uid !== request.auth.uid &&
+        actorRole !== "SUPER_ADMIN" &&
+        !canManageRole(actorRole, targetRole)) {
+      throw new HttpsError("permission-denied", "Insufficient role authority to block or unblock this account.");
+    }
+  } else {
+    throw new HttpsError("invalid-argument", "Unsupported user-management action.");
   }
 
   if (action === "set") {
