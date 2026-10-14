@@ -254,11 +254,13 @@ class OwnerAdminViewModel @Inject constructor(
             message = billingRepository.refundPayment(paymentId)
                 .fold(
                     { refund ->
-                        if (refund.status == "REFUND_PENDING" || refund.status == "REFUND_REQUESTED") {
-                            "Refund submitted to Razorpay; awaiting provider confirmation. Amount: ₹" +
-                                (refund.amountMinor / 100.0)
-                        } else {
-                            "Payment refunded: ₹" + (refund.amountMinor / 100.0)
+                        when (refund.status) {
+                            "REFUND_PENDING", "REFUND_REQUESTED" ->
+                                "Refund submitted to Razorpay; awaiting provider confirmation. Amount: ₹" +
+                                    (refund.amountMinor / 100.0)
+                            "REFUNDED" -> "Payment refunded: ₹" + (refund.amountMinor / 100.0)
+                            else -> "Refund status is " + refund.status +
+                                ". Check the payment/provider status before retrying."
                         }
                     },
                     { it.message ?: "Refund failed." }
