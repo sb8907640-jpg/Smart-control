@@ -448,7 +448,9 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
   const payment = snap.data() || {};
-  if (payment.userId !== request.auth.uid && request.auth.token?.admin !== true) {
+  // Checkout verification is restricted to the authenticated payer. Admin
+  // privileges are not needed here; provider webhooks handle asynchronous capture.
+  if (payment.userId !== request.auth.uid) {
     throw new HttpsError("permission-denied", "Payment belongs to another user.");
   }
   if (payment.gatewayProvider !== "RAZORPAY" || payment.gatewayOrderId !== orderId) {
