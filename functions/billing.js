@@ -911,7 +911,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       }
       const refundEntity = event.payload?.refund?.entity || {};
       const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || refundEntity.order_id || (eventName.startsWith("payment.") ? entity.id : "") || "").trim();
+      const orderId = String(entity.order_id || refundEntity.order_id || "").trim();
       const razorpayPaymentId = String(entity.id || refundEntity.payment_id || "").trim();
       if (!orderId && !razorpayPaymentId) {
         res.status(400).send("Razorpay order/payment ID is missing.");
