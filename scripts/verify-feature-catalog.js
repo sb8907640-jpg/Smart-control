@@ -1,4 +1,10 @@
 const { FEATURES, MODES, PLATFORMS, APP_VARIANTS, ROLES, ONLINE_COUNT, OFFLINE_COUNT } = require("../functions/spec/featureCatalog");
+const fs = require("node:fs");
+const path = require("node:path");
+const kotlinCatalog = fs.readFileSync(path.resolve(__dirname, "../app/src/main/java/com/smartcontrol/domain/spec/FeatureCatalog.kt"), "utf8");
+const featureIdBlock = kotlinCatalog.match(/enum class FeatureId\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] || "";
+const androidFeatureIds = new Set(featureIdBlock.match(/[A-Z][A-Z_]+/g) || []);
+const ownerPanelCatalog = fs.readFileSync(path.resolve(__dirname, "../backend/src/owner-panel.js"), "utf8");
 
 const failures = [];
 function check(name, ok, detail = "") {
@@ -11,6 +17,9 @@ console.log("SMART CONTROL — FEATURE / MODE / PLATFORM / ROLE CONTRACT VERIFIC
 check("Exactly 19 features", FEATURES.length === 19, String(FEATURES.length));
 check("Feature IDs are 1..19", FEATURES.every((f, i) => f.id === i + 1));
 check("Feature keys are unique", new Set(FEATURES.map(f => f.key)).size === 19);
+check("Feature keys align with Android enum", FEATURES.every(f => androidFeatureIds.has(f.key)));
+check("Owner catalog uses canonical app-install key",
+  ownerPanelCatalog.includes('key: "APP_INSTALL"') && !ownerPanelCatalog.includes("APP_INSTALL_UNINSTALL"));
 check("Every feature has icon and description", FEATURES.every(f => f.icon && f.description));
 check("Online support is 19/19", ONLINE_COUNT === 19, String(ONLINE_COUNT));
 check("Offline support is 18/19", OFFLINE_COUNT === 18, String(OFFLINE_COUNT));
