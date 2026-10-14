@@ -159,10 +159,15 @@ service cloud.firestore {
         && request.resource.data.targetDeviceId is string
         && request.resource.data.capabilities is list
         && request.resource.data.capabilities.size() > 0
-        && request.resource.data.capabilities.hasOnly(['CAMERA', 'MICROPHONE', 'SCREEN_SHARING'])
+        && request.resource.data.capabilities.hasOnly(['CAMERA', 'MICROPHONE', 'SCREEN_SHARING', 'LOCATION', 'FILE_TRANSFER', 'REMOTE_CONTROL'])
         && (!request.resource.data.capabilities.hasAny(['CAMERA']) || featureEnabled('CAMERA', request.resource.data.targetDeviceId))
         && (!request.resource.data.capabilities.hasAny(['MICROPHONE']) || featureEnabled('MICROPHONE', request.resource.data.targetDeviceId))
         && (!request.resource.data.capabilities.hasAny(['SCREEN_SHARING']) || featureEnabled('SCREEN_SHARE', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['LOCATION']) || featureEnabled('LOCATION', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['FILE_TRANSFER']) || featureEnabled('FILE_TRANSFER', request.resource.data.targetDeviceId))
+        && (!request.resource.data.capabilities.hasAny(['REMOTE_CONTROL'])
+            || (featureEnabled('TOUCH_CONTROL', request.resource.data.targetDeviceId)
+                && featureEnabled('KEYBOARD_INPUT', request.resource.data.targetDeviceId)))
         && request.resource.data.status == 'REQUESTED'
         && request.resource.data.createdAt is int
         && (!request.resource.data.keys().hasAny(['reason'])
