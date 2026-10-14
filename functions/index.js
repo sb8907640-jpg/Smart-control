@@ -309,7 +309,15 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   if (action === "set") {
     const access = request.data?.access === true;
-    const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
+    const rawExpiry = request.data?.accessExpiresAtEpochMs;
+    const expiresAtEpochMs = rawExpiry === undefined || rawExpiry === null || rawExpiry === ""
+      ? 0 : Number(rawExpiry);
+    if (!Number.isFinite(expiresAtEpochMs) || expiresAtEpochMs < 0) {
+      throw new HttpsError("invalid-argument", "Access expiry must be a non-negative epoch timestamp.");
+    }
+    if (access && expiresAtEpochMs > 0 && expiresAtEpochMs <= Date.now()) {
+      throw new HttpsError("failed-precondition", "An enabled access grant must expire in the future.");
+    }
     const claims = { ...(target.customClaims || {}), role, access };
     if (role === "SUPER_ADMIN") {
       claims.admin = true;
