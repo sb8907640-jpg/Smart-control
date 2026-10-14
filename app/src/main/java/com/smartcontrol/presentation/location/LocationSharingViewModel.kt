@@ -14,8 +14,11 @@ import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -30,6 +33,24 @@ class LocationSharingViewModel @Inject constructor(
     val sharing: StateFlow<Boolean> = _sharing
     private val _lastLocation = MutableStateFlow<SharedLocation?>(null)
     val lastLocation: StateFlow<SharedLocation?> = _lastLocation
+
+    init {
+        // Do not show one account's previously shared coordinates after an account switch.
+        viewModelScope.launch {
+            callbackFlow {
+                val listener = FirebaseAuth.AuthStateListener { state ->
+                    trySend(state.currentUser?.uid)
+                }
+                auth.addAuthStateListener(listener)
+                trySend(auth.currentUser?.uid)
+                awaitClose { auth.removeAuthStateListener(listener) }
+            }.distinctUntilChanged().collect {
+                _sharing.value = false
+                _lastLocation.value = null
+            }
+        }
+    }
+
     val hasPermission: Boolean
         get() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
