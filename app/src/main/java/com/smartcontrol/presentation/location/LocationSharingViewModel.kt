@@ -12,6 +12,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.smartcontrol.data.location.FirestoreLocationSharingRepository
 import com.smartcontrol.domain.location.SharedLocation
+import com.smartcontrol.domain.pairing.PairingRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -19,8 +20,12 @@ import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -28,7 +33,8 @@ import kotlinx.coroutines.tasks.await
 class LocationSharingViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: FirestoreLocationSharingRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val pairingRepository: PairingRepository
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
     private val _sharing = MutableStateFlow(false)
@@ -38,17 +44,29 @@ class LocationSharingViewModel @Inject constructor(
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
 
+    private val authUid = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid)
+        }
+        auth.addAuthStateListener(listener)
+        trySend(auth.currentUser?.uid)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
+
+    val controlledDevice = authUid.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(null)
+        else pairingRepository.observeControlledDevice()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val remoteLocation = controlledDevice.flatMapLatest { device ->
+        if (device == null) flowOf(null)
+        else repository.observe(device.deviceUid)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     init {
         // Do not show one account's previously shared coordinates after an account switch.
         viewModelScope.launch {
-            callbackFlow {
-                val listener = FirebaseAuth.AuthStateListener { state ->
-                    trySend(state.currentUser?.uid)
-                }
-                auth.addAuthStateListener(listener)
-                trySend(auth.currentUser?.uid)
-                awaitClose { auth.removeAuthStateListener(listener) }
-            }.distinctUntilChanged().collect {
+            authUid.collect {
                 _sharing.value = false
                 _lastLocation.value = null
                 _status.value = null
