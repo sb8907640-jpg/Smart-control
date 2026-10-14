@@ -77,8 +77,25 @@ async function requireAdmin(request) {
   } catch (_) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
   }
-  if (user.disabled || user.customClaims?.admin !== true) {
+  const currentClaims = user.customClaims || {};
+  if (user.disabled || currentClaims.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role is no longer active.");
+  }
+  const currentRole = String(currentClaims.role || "").toUpperCase();
+  if (currentRole === "OWNER" || currentClaims.owner === true) {
+    const ownerSnap = await db.doc("ownerAccounts/config").get();
+    const ownerConfig = ownerSnap.exists ? ownerSnap.data() || {} : {};
+    const email = String(user.email || "").trim().toLowerCase();
+    const phone = String(user.phoneNumber || "").trim();
+    const emails = Array.isArray(ownerConfig.emails)
+      ? ownerConfig.emails.map(value => String(value).trim().toLowerCase())
+      : [];
+    const mobiles = Array.isArray(ownerConfig.mobiles)
+      ? ownerConfig.mobiles.map(value => String(value).trim())
+      : [];
+    if (!(email && emails.includes(email)) && !(phone && mobiles.includes(phone))) {
+      throw new HttpsError("permission-denied", "Owner access is no longer active.");
+    }
   }
 }
 
