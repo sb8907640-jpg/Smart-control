@@ -227,7 +227,10 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     try {
       if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
       if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
-      const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
+      const snap = await firestore.collection("devices")
+        .where("controllerUid", "==", req.user.uid)
+        .where("pairingActive", "==", true)
+        .limit(100).get();
       return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
     } catch (error) { next(error); }
   });
@@ -304,7 +307,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         creatorUid: req.user.uid, senderRole, receiverRole, tokenHash, codeHash,
         status: "pending", createdAtEpochMs: now, expiresAtEpochMs
       });
-      const baseUrl = String(process.env.PUBLIC_APP_URL || req.get("origin") || "").replace(/\/$/, "");
+      const baseUrl = String(process.env.PUBLIC_APP_URL || "").trim().replace(/\/$/, "");
       if (!baseUrl || !/^https:\/\//i.test(baseUrl)) {
         await firestore.collection("pairingInvites").doc(tokenHash).delete();
         return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to an HTTPS app URL before generating links." });
