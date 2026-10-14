@@ -304,8 +304,10 @@ exports.updateOwnerUser = onCall(async (request) => {
   const actorRole = await effectiveActorRole(request);
   // A user may retain their current role while editing their own access, but
   // cannot use the self-edit path to promote themselves to a privileged role.
-  if (!canManageRole(actorRole, role) &&
-      !(uid === request.auth.uid && role === actorRole)) {
+  if (uid === request.auth.uid && role !== actorRole) {
+    throw new HttpsError("permission-denied", "You cannot change your own role.");
+  }
+  if (uid !== request.auth.uid && !canManageRole(actorRole, role)) {
     throw new HttpsError("permission-denied", "Insufficient role authority.");
   }
 
@@ -313,7 +315,7 @@ exports.updateOwnerUser = onCall(async (request) => {
     const access = request.data?.access === true;
     const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
     const claims = { ...(target.customClaims || {}), role, access };
-    if (role === "SUPER_ADMIN") {
+    if (role === "SUPER_ADMIN" || role === "ADMIN") {
       claims.admin = true;
     } else if (target.uid !== request.auth.uid) {
       delete claims.admin;
