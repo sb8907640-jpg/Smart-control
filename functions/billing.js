@@ -556,6 +556,9 @@ exports.refundPayment = onCall(
 
     const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
     const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
+    if (Number(payment.amountMinor || 0) > 0 && refundAmountMinor <= 0) {
+      throw new HttpsError("failed-precondition", "Refund amount must be greater than zero.");
+    }
     const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
     const now = Date.now();
     let refundStatus = "REFUNDED";
