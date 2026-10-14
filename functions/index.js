@@ -57,7 +57,7 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   }
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  const isOwner = isOwnerIdentity(claims);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -208,6 +208,16 @@ function requireAdmin(request) {
   }
 }
 
+function isOwnerIdentity(claims = {}) {
+  return claims.owner === true || normalizeRole(claims.role) === "OWNER";
+}
+
+function requireOwner(request) {
+  if (!request.auth || !isOwnerIdentity(request.auth.token || {})) {
+    throw new HttpsError("permission-denied", "Configured Owner identity required.");
+  }
+}
+
 async function findAuthUser(identifier) {
   try {
     if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
@@ -333,7 +343,7 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  requireOwner(request);
 
   const emails = Array.isArray(request.data?.emails)
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
@@ -364,7 +374,12 @@ exports.syncOwnerAccounts = onCall(async (request) => {
       unresolved.push(identifier);
       continue;
     }
-    const claims = { ...(user.customClaims || {}), admin: true };
+    const claims = {
+      ...(user.customClaims || {}),
+      role: "OWNER",
+      owner: true,
+      admin: true
+    };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -375,9 +390,18 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     if (!user || user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
     delete claims.admin;
+    delete claims.owner;
+    if (normalizeRole(claims.role) === "OWNER") claims.role = "USER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...new Set(emails)],
+    mobiles: [...new Set(mobiles)],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
 
   return { ok: true, granted, revoked, unresolved };
 });
