@@ -909,18 +909,38 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
+      const supportedEvents = [
+        "payment.captured", "payment.failed", "payment.refunded",
+        "refund.processed", "refund.failed"
+      ];
+      if (!supportedEvents.includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || entity.id || "").trim();
-      const razorpayPaymentId = String(entity.id || "").trim();
-      if (!orderId) {
-        res.status(400).send("Razorpay order ID is missing.");
+      const isRefundEvent = eventName === "refund.processed" || eventName === "refund.failed";
+      const entity = isRefundEvent
+        ? (event.payload?.refund?.entity || {})
+        : (event.payload?.payment?.entity || event.payload?.order?.entity || {});
+      const razorpayPaymentId = String(isRefundEvent ? entity.payment_id || "" : entity.id || "").trim();
+      const orderId = String(entity.order_id || (isRefundEvent ? "" : entity.id) || "").trim();
+      if (!orderId && !razorpayPaymentId) {
+        res.status(400).send("Razorpay order/payment ID is missing.");
         return;
       }
-      const matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
+      let matches;
+      if (isRefundEvent || eventName === "payment.refunded") {
+        matches = await db.collection("payments")
+          .where("razorpayPaymentId", "==", razorpayPaymentId || orderId).limit(1).get();
+        if (matches.empty) {
+          matches = await db.collection("payments")
+            .where("gatewayReference", "==", razorpayPaymentId || orderId).limit(1).get();
+        }
+        if (matches.empty && orderId) {
+          matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
+        }
+      } else {
+        matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
+      }
       if (matches.empty) {
         res.status(404).send("Payment order not found.");
         return;
@@ -968,6 +988,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           updatedAtEpochMs: now
         });
       } else if (eventName === "payment.refunded") {
+        // amount_refunded is cumulative, so max() makes duplicate delivery idempotent.
         const refundedAmountMinor = Math.max(
           Number(payment.refundedAmountMinor || 0),
           Number(entity.amount_refunded || payment.amountMinor || 0)
@@ -979,7 +1000,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           refundedAmountMinor,
           refundAmountMinor: Number(entity.amount_refunded || refundedAmountMinor),
           pendingRefundAmountMinor: 0,
-          gatewayReference: razorpayPaymentId || null,
+          gatewayReference: razorpayPaymentId || payment.gatewayReference || null,
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
         });
@@ -990,6 +1011,55 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             updatedAtEpochMs: now
           }, { merge: true });
         }
+      } else if (eventName === "refund.processed") {
+        const refundId = String(entity.id || "").trim();
+        const refundAmountMinor = Number(entity.amount || 0);
+        if (!refundId || !razorpayPaymentId || !Number.isSafeInteger(refundAmountMinor) || refundAmountMinor <= 0) {
+          res.status(400).send("Razorpay refund ID, payment ID and positive amount are required.");
+          return;
+        }
+        let fullyRefunded = false;
+        await db.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(paymentDoc.ref);
+          if (!currentSnap.exists) throw new Error("Payment disappeared during refund reconciliation.");
+          const current = currentSnap.data() || {};
+          const processedIds = Array.isArray(current.processedGatewayRefundIds) ? current.processedGatewayRefundIds : [];
+          if (processedIds.includes(refundId)) {
+            fullyRefunded = current.status === "REFUNDED";
+            return;
+          }
+          const refundedAmountMinor = Math.min(
+            Number(current.amountMinor || 0),
+            Number(current.refundedAmountMinor || 0) + refundAmountMinor
+          );
+          fullyRefunded = refundedAmountMinor >= Number(current.amountMinor || 0);
+          tx.update(paymentDoc.ref, {
+            status: fullyRefunded ? "REFUNDED" : "SUCCESS",
+            refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
+            refundedAmountMinor,
+            refundAmountMinor,
+            pendingRefundAmountMinor: 0,
+            gatewayRefundId: refundId,
+            processedGatewayRefundIds: FieldValue.arrayUnion(refundId),
+            refundedAtEpochMs: now,
+            updatedAtEpochMs: now
+          });
+        });
+        if (fullyRefunded && payment.subscriptionId) {
+          await db.collection("subscriptions").doc(payment.subscriptionId).set({
+            status: "CANCELLED",
+            cancelledAtEpochMs: now,
+            updatedAtEpochMs: now
+          }, { merge: true });
+        }
+      } else if (eventName === "refund.failed") {
+        const refundId = String(entity.id || "").trim();
+        await paymentDoc.ref.update({
+          refundStatus: "FAILED",
+          pendingRefundAmountMinor: 0,
+          ...(refundId ? { failedGatewayRefundId: refundId } : {}),
+          updatedAtEpochMs: now
+        });
       }
       res.status(200).json({ ok: true });
     } catch (error) {
