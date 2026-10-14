@@ -376,6 +376,16 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     revoked += 1;
   }
 
+  // Persist the configured owner identifiers. Gateway ownership checks and
+  // future revocation runs read this document, so updating claims alone is not
+  // sufficient.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...new Set(emails)],
+    mobiles: [...new Set(mobiles)],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
+
   return { ok: true, granted, revoked, unresolved };
 });
 
