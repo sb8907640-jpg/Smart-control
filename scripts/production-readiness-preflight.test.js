@@ -24,6 +24,10 @@ const baseEnv = {
   SMARTCONTROL_AUDIT_RPC_URL: "https://rpc.example.test",
   SMARTCONTROL_AUDIT_PRIVATE_KEY: Array.from({ length: 64 }, (_, i) => String(i % 10)).join(""),
   SMARTCONTROL_AUDIT_CONTRACT_ADDRESS: "0x" + "a".repeat(40),
+  ANDROID_RELEASE_KEYSTORE_BASE64: Buffer.from("test-keystore-placeholder").toString("base64"),
+  ANDROID_RELEASE_STORE_PASSWORD: "test-store-password",
+  ANDROID_RELEASE_KEY_ALIAS: "test-key-alias",
+  ANDROID_RELEASE_KEY_PASSWORD: "test-key-password",
   FIREBASE_GOOGLE_SERVICES_JSON: JSON.stringify({
     project_info: { project_id: "smartcontrol-prod" },
     client: [{
