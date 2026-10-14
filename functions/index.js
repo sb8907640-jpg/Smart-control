@@ -135,11 +135,12 @@ exports.verifyParentPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
-  const actual = hashPin(pin, salt);
-  const matches = crypto.timingSafeEqual(
-    Buffer.from(actual, "hex"),
-    Buffer.from(expected, "hex")
-  );
+  const actualBuffer = Buffer.from(hashPin(pin, salt), "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  // Corrupt or legacy records must fail closed instead of throwing a
+  // RangeError from timingSafeEqual when hash lengths differ.
+  const matches = actualBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 
   return { ok: matches };
 });
