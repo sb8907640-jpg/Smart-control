@@ -56,6 +56,10 @@ const missingTurnUser = run({ SMARTCONTROL_TURN_USERNAME: "" });
 assert.notEqual(missingTurnUser.status, 0, "Missing TURN username must block production readiness.");
 assert.match(missingTurnUser.stdout, /MISSING_ENV=SMARTCONTROL_TURN_USERNAME/);
 
+const missingSigningKey = run({ ANDROID_RELEASE_KEYSTORE_BASE64: "" });
+assert.notEqual(missingSigningKey.status, 0, "Missing Android release keystore must block production readiness.");
+assert.match(missingSigningKey.stdout, /MISSING_ENV=ANDROID_RELEASE_KEYSTORE_BASE64/);
+
 const stunOnly = run({ SMARTCONTROL_TURN_URLS: "stun:stun.example.test:3478" });
 assert.notEqual(stunOnly.status, 0, "STUN-only config must not pass production readiness.");
 assert.match(stunOnly.stdout, /INVALID_CONFIG=SMARTCONTROL_TURN_URLS/);
