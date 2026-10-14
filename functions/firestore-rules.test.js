@@ -103,6 +103,21 @@ async function main() {
     const mediaController = env.authenticatedContext("media-controller");
     const mediaTarget = env.authenticatedContext("media-target");
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "forged-active-session"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "ACTIVE",
+      createdAt: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "preseeded-signaling"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now(),
+      answerSdp: "must-not-be-client-seeded"
+    }));
     await assertSucceeds(setDoc(sessionRef, {
       controllerUid: "media-controller",
       targetDeviceId: "media-target",
