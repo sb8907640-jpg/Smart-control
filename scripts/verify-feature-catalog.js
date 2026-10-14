@@ -2,7 +2,7 @@ const { FEATURES, MODES, PLATFORMS, APP_VARIANTS, ROLES, ONLINE_COUNT, OFFLINE_C
 const fs = require("node:fs");
 const path = require("node:path");
 const kotlinCatalog = fs.readFileSync(path.resolve(__dirname, "../app/src/main/java/com/smartcontrol/domain/spec/FeatureCatalog.kt"), "utf8");
-const featureIdBlock = kotlinCatalog.match(/enum class FeatureId\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] || "";
+const featureIdBlock = kotlinCatalog.match(/enum class FeatureId\s*\{([\s\S]*?)\n\}/)?.[1] || "";
 const androidFeatureIds = new Set(featureIdBlock.match(/[A-Z][A-Z_]+/g) || []);
 const ownerPanelCatalog = fs.readFileSync(path.resolve(__dirname, "../backend/src/owner-panel.js"), "utf8");
 
