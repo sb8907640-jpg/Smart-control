@@ -369,6 +369,7 @@ function installOwnerPanelRoutes(app, { db }) {
         id: feature.key, key: feature.key, catalogId: feature.id,
         name: feature.name, description: feature.description,
         enabled: typeof overrides[feature.key] === "boolean" ? overrides[feature.key]
+          : typeof overrides[feature.key]?.enabled === "boolean" ? overrides[feature.key].enabled
           : typeof globalOverrides[feature.key] === "boolean" ? globalOverrides[feature.key]
           : typeof globalOverrides[feature.key]?.enabled === "boolean" ? globalOverrides[feature.key].enabled
           : true
