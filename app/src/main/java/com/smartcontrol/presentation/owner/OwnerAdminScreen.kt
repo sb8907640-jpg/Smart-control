@@ -254,7 +254,7 @@ class OwnerAdminViewModel @Inject constructor(
             message = billingRepository.refundPayment(paymentId)
                 .fold(
                     { refund ->
-                        if (refund.status == "REFUND_PENDING") {
+                        if (refund.status == "REFUND_PENDING" || refund.status == "REFUND_REQUESTED") {
                             "Refund submitted to Razorpay; awaiting provider confirmation. Amount: ₹" +
                                 (refund.amountMinor / 100.0)
                         } else {
