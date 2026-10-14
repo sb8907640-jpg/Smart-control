@@ -14,12 +14,13 @@ assert.equal(captured.orderId, "order_123");
 
 const refundProcessed = extractRazorpayWebhookEvent({
   event: "refund.processed",
-  payload: { refund: { entity: { id: "rfnd_123", payment_id: "pay_123", amount: 250 } } }
+  payload: { refund: { entity: { id: "rfnd_123", payment_id: "pay_123", amount: 250, notes: { smartcontrolRefundRequestId: "req_123" } } } }
 });
 assert.equal(refundProcessed.supported, true);
 assert.equal(refundProcessed.isRefundEvent, true);
 assert.equal(refundProcessed.razorpayPaymentId, "pay_123");
 assert.equal(refundProcessed.orderId, "");
+assert.equal(refundProcessed.refundRequestId, "req_123");
 
 const paymentRefunded = extractRazorpayWebhookEvent({
   event: "payment.refunded",
