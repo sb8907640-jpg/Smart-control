@@ -10,6 +10,7 @@ import com.smartcontrol.domain.billing.Payment
 import com.smartcontrol.domain.billing.Subscription
 import com.smartcontrol.domain.billing.Coupon
 import com.smartcontrol.domain.billing.PayoutRecord
+import com.smartcontrol.domain.billing.PaymentRefundResult
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -41,7 +42,7 @@ interface OwnerBillingRepository {
     suspend fun listPayments(): Result<List<Payment>>
     suspend fun listSubscriptions(): Result<List<Subscription>>
     suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit>
-    suspend fun refundPayment(paymentId: String): Result<Long>
+    suspend fun refundPayment(paymentId: String): Result<PaymentRefundResult>
     suspend fun createCoupon(coupon: Coupon): Result<Unit>
     suspend fun updateCoupon(coupon: Coupon): Result<Unit>
     suspend fun deleteCoupon(code: String): Result<Unit>
@@ -97,6 +98,9 @@ class FirestoreOwnerBillingRepository @Inject constructor(
                 ),
                 SetOptions.merge()
             ).await()
+        // Custom claims changed by syncOwnerAccounts are not reflected in the
+        // cached Firebase ID token until it is refreshed.
+        auth.currentUser?.getIdToken(true)?.await()
     }
 
     override fun observePlans(): Flow<List<Plan>> = callbackFlow {
@@ -199,11 +203,15 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         ).await()
     }
 
-    override suspend fun refundPayment(paymentId: String): Result<Long> = runCatching {
+    override suspend fun refundPayment(paymentId: String): Result<PaymentRefundResult> = runCatching {
         check(isAdmin()) { "Admin role required." }
         val data = functions.getHttpsCallable("refundPayment").call(mapOf("paymentId" to paymentId)).await().getData() as? Map<*, *>
             ?: error("Invalid refund response")
-        (data["refundAmountMinor"] as? Number)?.toLong() ?: 0L
+        PaymentRefundResult(
+            amountMinor = (data["refundAmountMinor"] as? Number)?.toLong() ?: 0L,
+            status = data["status"]?.toString() ?: "REFUNDED",
+            refundId = data["refundId"]?.toString()
+        )
     }
 
     override suspend fun createCoupon(coupon: Coupon): Result<Unit> = runCatching {

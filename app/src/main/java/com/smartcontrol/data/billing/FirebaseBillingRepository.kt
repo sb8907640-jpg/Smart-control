@@ -73,7 +73,11 @@ class FirebaseBillingRepository @Inject constructor(
     }
 
     override suspend fun grantFreeAccess(grant: FreeGrant): Result<FreeGrant> =
-        Result.success(grant)
+        Result.failure(
+            UnsupportedOperationException(
+                "Free access grants are Owner-only; use OwnerBillingRepository so the grant is persisted."
+            )
+        )
 
     private fun decodePlan(data: Map<*, *>): Plan? {
         val id = data["id"]?.toString() ?: return null

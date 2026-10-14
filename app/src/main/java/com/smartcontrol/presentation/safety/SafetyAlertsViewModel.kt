@@ -31,6 +31,20 @@ class SafetyAlertsViewModel @Inject constructor(
     }
 
     fun triggerSos() {
+        createAlert(
+            type = "SOS",
+            message = "SOS alert triggered by the signed-in device user."
+        )
+    }
+
+    fun createTestAlert() {
+        createAlert(
+            type = "TEST",
+            message = "Test safety alert created by the signed-in device user."
+        )
+    }
+
+    private fun createAlert(type: String, message: String) {
         val id = deviceId
         if (id.isBlank()) return
         viewModelScope.launch {
@@ -38,15 +52,13 @@ class SafetyAlertsViewModel @Inject constructor(
                 SafetyAlert(
                     UUID.randomUUID().toString(),
                     id,
-                    "SOS",
-                    "SOS alert triggered by the signed-in device user.",
+                    type,
+                    message,
                     System.currentTimeMillis()
                 )
             )
         }
     }
-
-    fun createTestAlert() = triggerSos()
 
     fun acknowledge(alertId: String) {
         viewModelScope.launch { repository.acknowledge(alertId) }

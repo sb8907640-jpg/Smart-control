@@ -12,7 +12,14 @@ service cloud.firestore {
     }
 
     match /ownerAccounts/{document} {
-      allow read, create, update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow read: if request.auth != null && request.auth.token.admin == true;
+      // Owner identity allowlists are server-managed by syncOwnerAccounts.
+      // Admin clients may edit only display/profile metadata, never emails/mobiles.
+      allow create, delete: if false;
+      allow update: if request.auth != null
+        && request.auth.token.admin == true
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'supportWhatsApp', 'hiddenLoginPath', 'updatedAtEpochMs']);
     }
 
     // Client-readable feature policy contains only feature flags and per-user availability.
@@ -56,10 +63,11 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Payment records are created and updated only by trusted server functions.
+      // Client-created SUCCESS records must never be able to impersonate a payment.
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
@@ -71,8 +79,8 @@ service cloud.firestore {
     match /emiSchedule/{scheduleId} {
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // EMI applications are validated and created by the applyEmi callable.
+      allow create, update, delete: if false;
     }
 
     match /coupons/{couponId} {
@@ -115,10 +123,13 @@ service cloud.firestore {
           )
           || (
             request.resource.data.expiryMode == 'NO_EXPIRY'
-            && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
+            && (request.auth.token.owner == true || request.auth.token.role in ['OWNER', 'SUPER_ADMIN'])
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      // Pairing tokens are bearer secrets: direct get is allowed for a supplied
+      // token, but collection listing must never reveal other users' active codes.
+      allow get: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow list: if false;
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
       allow delete: if request.auth != null && (

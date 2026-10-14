@@ -6,7 +6,9 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
+  getDocs,
   setDoc,
   updateDoc,
   runTransaction
@@ -25,9 +27,48 @@ async function main() {
 
   try {
     const normal = env.authenticatedContext("normal-user");
-    const owner = env.authenticatedContext("owner-user", { admin: true, role: "OWNER" });
+    const owner = env.authenticatedContext("owner-user", { admin: true, owner: true, role: "OWNER" });
+    const adminOnly = env.authenticatedContext("admin-only", { admin: true, role: "ADMIN" });
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
+
+    // Financial records must be server-created; a client cannot forge payment
+    // success or manufacture an EMI schedule by writing directly to Firestore.
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      amountMinor: 100,
+      currency: "INR",
+      gateway: "TEST",
+      status: "SUCCESS",
+      createdAtEpochMs: now
+    }));
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-emi"), {
+      paymentId: "forged-payment",
+      userId: "normal-user",
+      tenureMonths: 12,
+      status: "ACTIVE",
+      createdAtEpochMs: now
+    }));
+
+    await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
+
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "ownerAccounts", "config"), {
+        emails: ["owner@example.com"],
+        mobiles: ["+911234567890"],
+        displayName: "Owner"
+      });
+    });
+    await assertFails(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
+      emails: ["attacker@example.com"]
+    }));
+    await assertFails(setDoc(doc(adminOnly.firestore(), "ownerAccounts", "self-created"), {
+      emails: ["admin@example.com"],
+      mobiles: ["+911111111111"]
+    }));
+    await assertSucceeds(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
+      displayName: "Updated Owner"
+    }));
 
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
@@ -59,6 +100,14 @@ async function main() {
 
     await assertSucceeds(setDoc(doc(owner.firestore(), "pairingCodes", "c".repeat(48)), {
       deviceUid: "owner-user",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertFails(setDoc(doc(adminOnly.firestore(), "pairingCodes", "g".repeat(48)), {
+      deviceUid: "admin-only",
       expiresAt: 253402300799000,
       createdAt: now,
       expiryMinutes: 0,

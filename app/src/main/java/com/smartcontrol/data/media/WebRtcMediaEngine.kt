@@ -39,17 +39,20 @@ class WebRtcMediaEngine(
     private val scope: CoroutineScope
 ) {
     private val initialized = AtomicBoolean(false)
+    private val factoryInitialized = AtomicBoolean(false)
     private val peerConnections = mutableMapOf<String, PeerConnection>()
     private val candidateJobs = mutableMapOf<String, Job>()
     private val captures = mutableMapOf<String, List<AutoCloseable>>()
-    private val eglBase: EglBase = EglBase.create()
+    private var eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
 
     fun initialize() {
         if (!initialized.compareAndSet(false, true)) return
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
-        )
+        if (factoryInitialized.compareAndSet(false, true)) {
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
+            )
+        }
         factory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
@@ -114,9 +117,13 @@ class WebRtcMediaEngine(
         candidateJobs.clear()
         if (initialized.get()) {
             factory.dispose()
-            eglBase.release()
-            initialized.set(false)
         }
+        // This engine is a process singleton. A cleared ViewModel may release
+        // it while a later media screen reuses it, so replace the EGL context
+        // instead of keeping a permanently released one.
+        eglBase.release()
+        eglBase = EglBase.create()
+        initialized.set(false)
     }
 
     private fun createPeerConnection(sessionId: String, iceServers: List<IceServerConfig>, remoteSink: org.webrtc.VideoSink?): PeerConnection {

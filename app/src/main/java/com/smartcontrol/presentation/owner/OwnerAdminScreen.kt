@@ -252,7 +252,19 @@ class OwnerAdminViewModel @Inject constructor(
     fun refundPayment(paymentId: String) {
         viewModelScope.launch {
             message = billingRepository.refundPayment(paymentId)
-                .fold({ "Payment refunded: ₹" + (it / 100.0) }, { it.message ?: "Refund failed." })
+                .fold(
+                    { refund ->
+                        when (refund.status) {
+                            "REFUND_PENDING", "REFUND_REQUESTED" ->
+                                "Refund submitted to Razorpay; awaiting provider confirmation. Amount: ₹" +
+                                    (refund.amountMinor / 100.0)
+                            "REFUNDED" -> "Payment refunded: ₹" + (refund.amountMinor / 100.0)
+                            else -> "Refund status is " + refund.status +
+                                ". Check the payment/provider status before retrying."
+                        }
+                    },
+                    { it.message ?: "Refund failed." }
+                )
             refreshPaymentData()
         }
     }

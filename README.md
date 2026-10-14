@@ -51,7 +51,7 @@ The Owner panel includes **Permanent Gateway Permit**. The current working provi
    firebase deploy --only functions
    ```
 4. Sign in to the app using the configured Owner account. Open **Owner / Admin Control Panel → Permanent Gateway Permit**, enter the Razorpay display name, Test/Live mode, Key ID, Key Secret and Webhook Secret, then save. The server encrypts the credentials with AES-256-GCM and never returns the secret values to the app.
-5. In the Razorpay dashboard, configure a webhook to the deployed `razorpayWebhook` function URL and enable `payment.captured`, `payment.failed`, and `payment.refunded`. Use the same webhook secret in the Owner panel.
+5. In the Razorpay dashboard, configure a webhook to the deployed `razorpayWebhook` function URL and enable `payment.captured`, `payment.failed`, `payment.refunded`, `refund.processed`, and `refund.failed`. Use the same webhook secret in the Owner panel.
 
 The Android checkout sends only the public Key ID and order details to Razorpay. The backend validates the checkout signature and then fetches the payment from Razorpay to verify order, amount, currency and captured status before activating a subscription. Credential revisions are retained so a pending order can still be verified after the Owner changes gateway credentials.
 

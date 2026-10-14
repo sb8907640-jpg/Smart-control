@@ -57,7 +57,10 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   }
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  const role = normalizeRole(claims.role);
+  // The private allowlist is authoritative for Owner privileges; a stale ID
+  // token must not preserve no-expiry pairing rights after Owner removal.
+  const isOwner = role === "SUPER_ADMIN" || await configuredOwnerMatches(request);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -135,11 +138,12 @@ exports.verifyParentPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
-  const actual = hashPin(pin, salt);
-  const matches = crypto.timingSafeEqual(
-    Buffer.from(actual, "hex"),
-    Buffer.from(expected, "hex")
-  );
+  const actualBuffer = Buffer.from(hashPin(pin, salt), "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  // Corrupt or legacy records must fail closed instead of throwing a
+  // RangeError from timingSafeEqual when hash lengths differ.
+  const matches = actualBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 
   return { ok: matches };
 });
@@ -202,10 +206,68 @@ exports.stopSessionWithPin = onCall(async (request) => {
 });
 
 
-function requireAdmin(request) {
+async function requireAdmin(request) {
   if (!request.auth || request.auth.token?.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
   }
+  // Custom claims are embedded in ID tokens and can remain stale after an
+  // Owner is removed. Confirm the current server-side claim before privileged work.
+  let currentUser;
+  try {
+    currentUser = await getAuth().getUser(request.auth.uid);
+  } catch (_) {
+    throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+  const currentClaims = currentUser.customClaims || {};
+  if (currentUser.disabled || currentClaims.admin !== true) {
+    throw new HttpsError("permission-denied", "Firebase admin role is no longer active.");
+  }
+  const currentRole = normalizeRole(currentClaims.role);
+  if ((currentRole === "OWNER" || currentClaims.owner === true) &&
+      !await configuredOwnerMatches(request)) {
+    throw new HttpsError("permission-denied", "Owner access is no longer active.");
+  }
+}
+
+async function configuredOwnerMatches(request) {
+  if (!request.auth) return false;
+  const claims = request.auth.token || {};
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = String(claims.phone_number || "").trim();
+  const snap = await db.collection("ownerAccounts").doc("config").get();
+  if (!snap.exists) {
+    // Allow a deployment-provisioned OWNER claim to seed the first allowlist.
+    // Once the config exists, the live list becomes authoritative for revocation.
+    return claims.owner === true || normalizeRole(claims.role) === "OWNER";
+  }
+  const cfg = snap.data() || {};
+  const emails = Array.isArray(cfg.emails)
+    ? cfg.emails.map(value => String(value).trim().toLowerCase())
+    : [];
+  const mobiles = Array.isArray(cfg.mobiles)
+    ? cfg.mobiles.map(value => String(value).trim())
+    : [];
+  return Boolean((email && emails.includes(email)) || (phone && mobiles.includes(phone)));
+}
+
+async function requireOwnerOrSuperAdmin(request) {
+  await requireAdmin(request);
+  const claims = request.auth.token || {};
+  const role = normalizeRole(claims.role);
+  if (role === "SUPER_ADMIN" || await configuredOwnerMatches(request)) {
+    return;
+  }
+  throw new HttpsError("permission-denied", "Only a configured Owner or Super Admin may manage owner accounts.");
+}
+
+async function effectiveActorRole(request) {
+  const claims = request.auth?.token || {};
+  const role = normalizeRole(claims.role);
+  if (role === "SUPER_ADMIN") return role;
+  if (await configuredOwnerMatches(request)) return "OWNER";
+  // OWNER claims may remain in a cached ID token after allowlist removal.
+  if (role === "OWNER" || claims.owner === true) return "USER";
+  return role;
 }
 
 async function findAuthUser(identifier) {
@@ -220,7 +282,7 @@ async function findAuthUser(identifier) {
 }
 
 exports.listOwnerUsers = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const result = [];
   let pageToken;
   do {
@@ -251,7 +313,7 @@ exports.listOwnerUsers = onCall(async (request) => {
 });
 
 exports.updateOwnerUser = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
   if (!uid) throw new HttpsError("invalid-argument", "User ID is required.");
 
@@ -261,16 +323,40 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  const actorRole = await effectiveActorRole(request);
+  if (action === "set") {
+    // A user may not change their own role, and role assignments must obey the
+    // hierarchy. OWNER is managed only through the verified allowlist sync path.
+    const existingTargetRole = normalizeRole(target.customClaims?.role);
+    if (uid === request.auth.uid && role !== actorRole) {
+      throw new HttpsError("permission-denied", "You cannot change your own role.");
+    }
+    if (uid !== request.auth.uid && existingTargetRole === "OWNER" && role !== "OWNER") {
+      throw new HttpsError("permission-denied", "Owner roles must be changed through the Owner allowlist.");
+    }
+    if (uid !== request.auth.uid && actorRole !== "SUPER_ADMIN" &&
+        !canManageRole(actorRole, existingTargetRole)) {
+      throw new HttpsError("permission-denied", "Insufficient authority over the target account's current role.");
+    }
+    if (uid !== request.auth.uid && !canManageRole(actorRole, role)) {
+      throw new HttpsError("permission-denied", "Insufficient role authority.");
+    }
+  } else if (action === "block" || action === "unblock") {
+    const targetRole = normalizeRole(target.customClaims?.role);
+    if (uid !== request.auth.uid &&
+        actorRole !== "SUPER_ADMIN" &&
+        !canManageRole(actorRole, targetRole)) {
+      throw new HttpsError("permission-denied", "Insufficient role authority to block or unblock this account.");
+    }
+  } else {
+    throw new HttpsError("invalid-argument", "Unsupported user-management action.");
   }
 
   if (action === "set") {
     const access = request.data?.access === true;
     const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
     const claims = { ...(target.customClaims || {}), role, access };
-    if (role === "SUPER_ADMIN") {
+    if (role === "SUPER_ADMIN" || role === "ADMIN") {
       claims.admin = true;
     } else if (target.uid !== request.auth.uid) {
       delete claims.admin;
@@ -330,7 +416,7 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireOwnerOrSuperAdmin(request);
 
   const emails = Array.isArray(request.data?.emails)
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
@@ -354,14 +440,26 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedUsers = new Map();
 
+  // Resolve every requested identity before changing any claims or allowlist
+  // data. A partially valid list must not revoke existing owners on a failed save.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
-    const claims = { ...(user.customClaims || {}), admin: true };
+    if (!user) unresolved.push(identifier);
+    else resolvedUsers.set(identifier, user);
+  }
+  if (unresolved.length > 0) {
+    return { ok: false, granted: 0, revoked: 0, unresolved };
+  }
+
+  for (const identifier of requestedIdentifiers) {
+    const user = resolvedUsers.get(identifier);
+    const claims = { ...(user.customClaims || {}) };
+    const currentRole = normalizeRole(claims.role);
+    claims.admin = true;
+    claims.owner = true;
+    claims.role = currentRole === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -369,19 +467,38 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   for (const identifier of previousIdentifiers) {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    if (!user) continue;
     const claims = { ...(user.customClaims || {}) };
-    delete claims.admin;
+    const currentRole = normalizeRole(claims.role);
+    delete claims.owner;
+    if (currentRole === "SUPER_ADMIN") {
+      // Do not demote a separately assigned Super Admin when removing an Owner
+      // allowlist entry.
+      claims.admin = true;
+    } else {
+      delete claims.admin;
+      if (currentRole === "OWNER") claims.role = "USER";
+    }
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  // Persist the configured owner identifiers. Gateway ownership checks and
+  // future revocation runs read this document, so updating claims alone is not
+  // sufficient.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...new Set(emails)],
+    mobiles: [...new Set(mobiles)],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
 
   return { ok: true, granted, revoked, unresolved };
 });
 
 
 exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const root = typeof request.data?.root === "string" ? request.data.root : "";
   if (!/^0x[0-9a-fA-F]{64}$/.test(root)) {
     throw new HttpsError("invalid-argument", "A 32-byte audit root is required.");

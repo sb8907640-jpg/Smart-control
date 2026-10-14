@@ -21,17 +21,21 @@ function requireSignedIn(request) {
 async function requireOwner(request) {
   requireSignedIn(request);
   const claims = request.auth.token || {};
-  if (claims.owner === true || String(claims.role || "").toUpperCase() === "OWNER") return;
+  const role = String(claims.role || "").toUpperCase();
+  if (role === "SUPER_ADMIN") return;
 
-  // The existing Owner Accounts screen stores owner identifiers here.
+  // Check the live private allowlist rather than trusting potentially stale
+  // OWNER claims after an account has been removed. A deployment-provisioned
+  // Owner may bootstrap gateway setup only before the config document exists.
   const snap = await db.doc("ownerAccounts/config").get();
+  if (!snap.exists && (claims.owner === true || role === "OWNER")) return;
   const cfg = snap.exists ? snap.data() || {} : {};
   const email = String(claims.email || "").trim().toLowerCase();
   const phone = String(claims.phone_number || "").trim();
   const emails = Array.isArray(cfg.emails) ? cfg.emails.map(v => String(v).trim().toLowerCase()) : [];
   const mobiles = Array.isArray(cfg.mobiles) ? cfg.mobiles.map(v => String(v).trim()) : [];
   if ((email && emails.includes(email)) || (phone && mobiles.includes(phone))) return;
-  throw new HttpsError("permission-denied", "Only a configured Family Suraksha Owner can change the payment gateway.");
+  throw new HttpsError("permission-denied", "Only a currently configured Family Suraksha Owner can change the payment gateway.");
 }
 
 function encryptionKey() {
@@ -107,10 +111,18 @@ exports.savePaymentGatewayPermit = onCall(
     const existing = await CONFIG_REF.get();
     const previous = existing.exists ? existing.data()?.paymentGatewayPermit || {} : {};
     const hasNewCredentials = Boolean(keyId && keySecret && webhookSecret);
-    if (hasNewCredentials && mode === "TEST" && !keyId.startsWith("rzp_test_")) {
+    // Validate the effective credentials, not only newly entered values. Without
+    // this check, switching TEST/LIVE while reusing saved credentials could pair
+    // a test key with LIVE mode (or a live key with TEST mode).
+    const effectiveCredentials = hasNewCredentials
+      ? { keyId, keySecret, webhookSecret }
+      : (previous.encryptedCredentials ? decryptCredentials(previous.encryptedCredentials) : null);
+    if (effectiveCredentials && mode === "TEST" &&
+        !String(effectiveCredentials.keyId || "").startsWith("rzp_test_")) {
       throw new HttpsError("invalid-argument", "Test mode requires a Razorpay test Key ID (rzp_test_…).");
     }
-    if (hasNewCredentials && mode === "LIVE" && !keyId.startsWith("rzp_live_")) {
+    if (effectiveCredentials && mode === "LIVE" &&
+        !String(effectiveCredentials.keyId || "").startsWith("rzp_live_")) {
       throw new HttpsError("invalid-argument", "Live mode requires a Razorpay live Key ID (rzp_live_…).");
     }
     if (enabled && !hasNewCredentials) {

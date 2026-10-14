@@ -4,6 +4,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const paymentWebhookSecret = defineSecret("SMARTCONTROL_PAYMENT_WEBHOOK_SECRET");
 const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
 const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
@@ -63,10 +64,42 @@ function requireAuth(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
 }
 
-function requireAdmin(request) {
+async function requireAdmin(request) {
   requireAuth(request);
   if (request.auth.token?.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+  // Re-check the current custom claim so a cached token cannot retain admin
+  // access after its role has been revoked in Firebase Auth.
+  let user;
+  try {
+    user = await getAuth(app).getUser(request.auth.uid);
+  } catch (_) {
+    throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+  const currentClaims = user.customClaims || {};
+  if (user.disabled || currentClaims.admin !== true) {
+    throw new HttpsError("permission-denied", "Firebase admin role is no longer active.");
+  }
+  const currentRole = String(currentClaims.role || "").toUpperCase();
+  if (currentRole === "OWNER" || currentClaims.owner === true) {
+    const ownerSnap = await db.doc("ownerAccounts/config").get();
+    if (!ownerSnap.exists) {
+      // Permit deployment-provisioned Owners to initialize their first profile.
+      return;
+    }
+    const ownerConfig = ownerSnap.data() || {};
+    const email = String(user.email || "").trim().toLowerCase();
+    const phone = String(user.phoneNumber || "").trim();
+    const emails = Array.isArray(ownerConfig.emails)
+      ? ownerConfig.emails.map(value => String(value).trim().toLowerCase())
+      : [];
+    const mobiles = Array.isArray(ownerConfig.mobiles)
+      ? ownerConfig.mobiles.map(value => String(value).trim())
+      : [];
+    if (!(email && emails.includes(email)) && !(phone && mobiles.includes(phone))) {
+      throw new HttpsError("permission-denied", "Owner access is no longer active.");
+    }
   }
 }
 
@@ -231,7 +264,7 @@ async function incrementCouponUsage(code) {
 }
 
 exports.getPaymentConfig = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   return { config: await readPaymentConfig() };
 });
 
@@ -370,7 +403,7 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gat
 });
 
 exports.verifyPayment = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const reference = String(request.data?.gatewayReference || "").trim();
   if (!paymentId || !reference) {
@@ -415,7 +448,9 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
   const payment = snap.data() || {};
-  if (payment.userId !== request.auth.uid && request.auth.token?.admin !== true) {
+  // Checkout verification is restricted to the authenticated payer. Admin
+  // privileges are not needed here; provider webhooks handle asynchronous capture.
+  if (payment.userId !== request.auth.uid) {
     throw new HttpsError("permission-denied", "Payment belongs to another user.");
   }
   if (payment.gatewayProvider !== "RAZORPAY" || payment.gatewayOrderId !== orderId) {
@@ -529,49 +564,158 @@ exports.applyEmi = onCall(async (request) => {
   return { id: scheduleRef.id };
 });
 
-exports.refundPayment = onCall(async (request) => {
-  requireAdmin(request);
-  const paymentId = String(request.data?.paymentId || "").trim();
-  if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
+exports.refundPayment = onCall(
+  { secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] },
+  async (request) => {
+    await requireAdmin(request);
+    const paymentId = String(request.data?.paymentId || "").trim();
+    if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
 
-  const config = await readPaymentConfig();
-  if (config["payment.refundEnabled"] === "false") {
-    throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    const config = await readPaymentConfig();
+    if (config["payment.refundEnabled"] === "false") {
+      throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    }
+
+    const ref = db.collection("payments").doc(paymentId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
+    const payment = snap.data() || {};
+    if (payment.status !== "SUCCESS") {
+      throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
+    }
+
+    const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
+    if (windowDays > 0 && Date.now() - Number(payment.createdAtEpochMs || 0) > windowDays * 86400000) {
+      throw new HttpsError("failed-precondition", "Refund window has expired.");
+    }
+
+    const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
+    const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
+    if (Number(payment.amountMinor || 0) > 0 && refundAmountMinor <= 0) {
+      throw new HttpsError("failed-precondition", "Refund amount must be greater than zero.");
+    }
+    const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
+    let keyId = "";
+    let keySecret = "";
+    let gatewayPaymentId = "";
+    if (provider === "RAZORPAY" && refundAmountMinor > 0) {
+      const permit = payment.gatewayPermitRevision
+        ? await getActiveGatewayPermit(payment.gatewayPermitRevision)
+        : null;
+      keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+      keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
+      gatewayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
+      if (!keyId || !keySecret || !gatewayPaymentId) {
+        throw new HttpsError("failed-precondition", "Verified Razorpay payment details are missing; no refund was submitted.");
+      }
+    } else if (provider !== "TEST" && refundAmountMinor > 0) {
+      throw new HttpsError("failed-precondition", "Refunds are implemented only for Razorpay and simulated TEST payments.");
+    }
+
+    const now = Date.now();
+    // Claim the refund atomically before contacting the provider. This prevents
+    // concurrent Owner clicks from creating duplicate refunds for one payment.
+    await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(ref);
+      if (!currentSnap.exists) throw new HttpsError("not-found", "Payment not found.");
+      if ((currentSnap.data() || {}).status !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "This payment already has a refund or status change in progress.");
+      }
+      tx.update(ref, {
+        status: "REFUND_REQUESTED",
+        refundAmountMinor,
+        refundRequestedAtEpochMs: now,
+        refundRequestedBy: request.auth.uid,
+        updatedAtEpochMs: now
+      });
+    });
+
+    let refundStatus = "REFUNDED";
+    let refundId = null;
+    if (provider === "RAZORPAY" && refundAmountMinor > 0) {
+      let response;
+      let gatewayRefund;
+      try {
+        response = await fetch(
+          "https://api.razorpay.com/v1/payments/" + encodeURIComponent(gatewayPaymentId) + "/refund",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64"),
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              amount: refundAmountMinor,
+              notes: { smartcontrolPaymentId: paymentId }
+            })
+          }
+        );
+        gatewayRefund = await response.json().catch(() => ({}));
+      } catch (error) {
+        console.error("Razorpay refund request outcome is unknown", error?.message || "unknown error");
+        // Keep REFUND_REQUESTED so the same payment cannot be refunded twice.
+        throw new HttpsError(
+          "unavailable",
+          "Razorpay refund submission could not be confirmed. Check the Razorpay dashboard before retrying."
+        );
+      }
+      if (!response.ok || typeof gatewayRefund.id !== "string") {
+        await db.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(ref);
+          if (currentSnap.exists && currentSnap.get("status") === "REFUND_REQUESTED") {
+            tx.update(ref, {
+              status: "SUCCESS",
+              refundFailureCode: String(gatewayRefund?.error?.code || "REFUND_REJECTED"),
+              refundFailedAtEpochMs: Date.now(),
+              updatedAtEpochMs: Date.now()
+            });
+          }
+        });
+        console.error("Razorpay refund rejected", response.status, gatewayRefund?.error?.code || "unknown error");
+        throw new HttpsError("failed-precondition", "Razorpay rejected the refund. The payment was not marked as refunded.");
+      }
+
+      refundId = gatewayRefund.id;
+      refundStatus = String(gatewayRefund.status || "").toLowerCase() === "processed"
+        ? "REFUNDED"
+        : "REFUND_PENDING";
+    }
+
+    // A webhook may arrive before the API response is persisted. Never overwrite
+    // a terminal REFUNDED/SUCCESS state that the webhook has already established.
+    const finalStatus = await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(ref);
+      if (!currentSnap.exists) throw new HttpsError("not-found", "Payment not found.");
+      const currentStatus = String(currentSnap.get("status") || "");
+      if (currentStatus === "REFUNDED") return "REFUNDED";
+      if (currentStatus === "SUCCESS") return "SUCCESS";
+      if (!["REFUND_REQUESTED", "REFUND_PENDING"].includes(currentStatus)) return currentStatus;
+      tx.update(ref, {
+        status: refundStatus,
+        ...(refundId ? { gatewayRefundId: refundId } : {}),
+        refundAmountMinor,
+        refundedAtEpochMs: refundStatus === "REFUNDED" ? now : null,
+        updatedAtEpochMs: now
+      });
+      return refundStatus;
+    });
+
+    if (finalStatus === "REFUNDED" && payment.subscriptionId) {
+      await db.collection("subscriptions").doc(payment.subscriptionId).set({
+        status: "CANCELLED",
+        cancelledAtEpochMs: now,
+        updatedAtEpochMs: now
+      }, { merge: true });
+    }
+    if (finalStatus === "SUCCESS") {
+      throw new HttpsError("failed-precondition", "Razorpay reported a failed refund; the payment remains successful.");
+    }
+    return { ok: true, status: finalStatus, refundAmountMinor, refundId };
   }
-
-  const ref = db.collection("payments").doc(paymentId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
-  const payment = snap.data() || {};
-  if (payment.status !== "SUCCESS") throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
-
-  const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
-  if (windowDays > 0 && Date.now() - Number(payment.createdAtEpochMs || 0) > windowDays * 86400000) {
-    throw new HttpsError("failed-precondition", "Refund window has expired.");
-  }
-
-  const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
-  const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
-  await ref.update({
-    status: "REFUNDED",
-    refundAmountMinor,
-    refundedAtEpochMs: Date.now(),
-    refundedBy: request.auth.uid,
-    updatedAtEpochMs: Date.now()
-  });
-
-  if (payment.subscriptionId) {
-    await db.collection("subscriptions").doc(payment.subscriptionId).set({
-      status: "CANCELLED",
-      cancelledAtEpochMs: Date.now(),
-      updatedAtEpochMs: Date.now()
-    }, { merge: true });
-  }
-  return { ok: true, refundAmountMinor };
-});
+);
 
 exports.createCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
     throw new HttpsError("invalid-argument", "Coupon code is invalid.");
@@ -600,7 +744,7 @@ exports.createCoupon = onCall(async (request) => {
 });
 
 exports.updateCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   const allowed = ["discountPercent","discountMinor","usageLimit","enabled","expiresAtEpochMs"];
@@ -615,7 +759,7 @@ exports.updateCoupon = onCall(async (request) => {
 });
 
 exports.deleteCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   await db.collection("coupons").doc(code).delete();
@@ -623,21 +767,21 @@ exports.deleteCoupon = onCall(async (request) => {
 });
 
 exports.listPaymentLedger = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("payments").orderBy("createdAtEpochMs", "desc").limit(limit).get();
   return { payments: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.listSubscriptions = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("subscriptions").orderBy("updatedAtEpochMs", "desc").limit(limit).get();
   return { subscriptions: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.updateSubscription = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const id = String(request.data?.subscriptionId || "").trim();
   const action = String(request.data?.action || "").toUpperCase();
   if (!id || !["CANCEL","EXTEND","UPGRADE","DOWNGRADE","PAUSE","RESUME"].includes(action)) {
@@ -671,7 +815,7 @@ exports.updateSubscription = onCall(async (request) => {
 });
 
 exports.getPaymentReport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
@@ -695,7 +839,7 @@ exports.getPaymentReport = onCall(async (request) => {
 });
 
 exports.recordPayout = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const amountMinor = money(request.data?.amountMinor || 0);
   if (amountMinor <= 0) throw new HttpsError("invalid-argument", "Payout amount must be positive.");
   const ref = db.collection("payouts").doc();
@@ -713,7 +857,7 @@ exports.recordPayout = onCall(async (request) => {
 });
 
 exports.listPayouts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const snap = await db.collection("payouts").orderBy("createdAtEpochMs", "desc").limit(500).get();
   return { payouts: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
@@ -742,7 +886,7 @@ exports.getMySubscription = onCall(async (request) => {
 });
 
 exports.duplicatePlan = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const sourceId = String(request.data?.sourcePlanId || "").trim();
   const newId = String(request.data?.newPlanId || "").trim();
   if (!sourceId || !newId) throw new HttpsError("invalid-argument", "Source and new plan IDs are required.");
@@ -771,7 +915,7 @@ exports.getPaymentInvoice = onCall(async (request) => {
 });
 
 exports.getPaymentReportExport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
@@ -829,20 +973,39 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
+      if (![
+        "payment.captured", "payment.failed", "payment.refunded",
+        "refund.processed", "refund.failed"
+      ].includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || entity.id || "").trim();
-      const razorpayPaymentId = String(entity.id || "").trim();
-      if (!orderId) {
-        res.status(400).send("Razorpay order ID is missing.");
-        return;
+      const entity = event.payload?.refund?.entity ||
+        event.payload?.payment?.entity ||
+        event.payload?.order?.entity || {};
+      const orderId = String(entity.order_id || "").trim();
+      const razorpayPaymentId = String(
+        entity.payment_id || (eventName.startsWith("payment.") ? entity.id : "")
+      ).trim();
+
+      // Refund webhooks identify the original payment by payment_id, not order_id.
+      // Resolve that payment first so its stored credential revision supplies the
+      // correct webhook secret; no state is changed until the signature is valid.
+      let matches = null;
+      if (razorpayPaymentId) {
+        matches = await db.collection("payments")
+          .where("razorpayPaymentId", "==", razorpayPaymentId).limit(1).get();
+        if (matches.empty) {
+          matches = await db.collection("payments")
+            .where("gatewayReference", "==", razorpayPaymentId).limit(1).get();
+        }
       }
-      const matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
-      if (matches.empty) {
-        res.status(404).send("Payment order not found.");
+      if ((!matches || matches.empty) && orderId) {
+        matches = await db.collection("payments")
+          .where("gatewayOrderId", "==", orderId).limit(1).get();
+      }
+      if (!matches || matches.empty) {
+        res.status(404).send("Payment record not found for webhook event.");
         return;
       }
       const paymentDoc = matches.docs[0];
@@ -887,10 +1050,12 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           gatewayReference: razorpayPaymentId || null,
           updatedAtEpochMs: now
         });
-      } else if (eventName === "payment.refunded") {
+      } else if (eventName === "payment.refunded" || eventName === "refund.processed") {
         await paymentDoc.ref.update({
           status: "REFUNDED",
-          gatewayReference: razorpayPaymentId || null,
+          ...(eventName === "refund.processed"
+            ? { gatewayRefundId: String(entity.id || ""), refundAmountMinor: Number(entity.amount || payment.refundAmountMinor || payment.amountMinor || 0) }
+            : { gatewayReference: razorpayPaymentId || payment.gatewayReference || null }),
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
         });
@@ -901,6 +1066,15 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             updatedAtEpochMs: now
           }, { merge: true });
         }
+      } else if (eventName === "refund.failed") {
+        // A failed refund must not leave the payment marked as pending or cancel
+        // the subscription. Allow an Owner to retry after checking provider state.
+        await paymentDoc.ref.update({
+          status: ["REFUND_REQUESTED", "REFUND_PENDING"].includes(payment.status) ? "SUCCESS" : payment.status,
+          refundFailureId: String(entity.id || ""),
+          refundFailedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
       }
       res.status(200).json({ ok: true });
     } catch (error) {
