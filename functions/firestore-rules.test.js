@@ -29,6 +29,24 @@ async function main() {
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
+    // Financial records must be server-created; a client cannot forge payment
+    // success or manufacture an EMI schedule by writing directly to Firestore.
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      amountMinor: 100,
+      currency: "INR",
+      gateway: "TEST",
+      status: "SUCCESS",
+      createdAtEpochMs: now
+    }));
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-emi"), {
+      paymentId: "forged-payment",
+      userId: "normal-user",
+      tenureMonths: 12,
+      status: "ACTIVE",
+      createdAtEpochMs: now
+    }));
+
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
