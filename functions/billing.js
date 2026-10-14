@@ -9,6 +9,7 @@ const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
 const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 const razorpayWebhookSecret = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 const gatewayPermit = require("./gateway-permit");
+const { extractRazorpayWebhookEvent } = require("./razorpay-webhook-utils");
 const getActiveGatewayPermit = gatewayPermit.getActiveGatewayPermit;
 const gatewayEncryptionKey = gatewayPermit.gatewayEncryptionKey;
 exports.savePaymentGatewayPermit = gatewayPermit.savePaymentGatewayPermit;
@@ -953,21 +954,12 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // Parse only to locate the payment's credential revision; no state changes
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
-      const eventName = String(event.event || "");
-      const supportedEvents = [
-        "payment.captured", "payment.failed", "payment.refunded",
-        "refund.processed", "refund.failed"
-      ];
-      if (!supportedEvents.includes(eventName)) {
+      const webhookEvent = extractRazorpayWebhookEvent(event);
+      if (!webhookEvent.supported) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const isRefundEvent = eventName === "refund.processed" || eventName === "refund.failed";
-      const entity = isRefundEvent
-        ? (event.payload?.refund?.entity || {})
-        : (event.payload?.payment?.entity || event.payload?.order?.entity || {});
-      const razorpayPaymentId = String(isRefundEvent ? entity.payment_id || "" : entity.id || "").trim();
-      const orderId = String(entity.order_id || (isRefundEvent ? "" : entity.id) || "").trim();
+      const { eventName, isRefundEvent, entity, razorpayPaymentId, orderId } = webhookEvent;
       if (!orderId && !razorpayPaymentId) {
         res.status(400).send("Razorpay order/payment ID is missing.");
         return;
