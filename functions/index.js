@@ -208,7 +208,7 @@ function requireAdmin(request) {
 }
 
 function normalizeOwnerPhone(value) {
-  const digits = String(value || "").trim().replace(/\\D/g, "");
+  const digits = String(value || "").trim().replace(/\D/g, "");
   return digits ? `+${digits}` : "";
 }
 
