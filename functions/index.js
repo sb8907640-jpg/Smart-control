@@ -57,7 +57,11 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   }
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  const role = normalizeRole(claims.role);
+  const isOwner = claims.owner === true ||
+    role === "OWNER" ||
+    role === "SUPER_ADMIN" ||
+    await configuredOwnerMatches(request);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
