@@ -905,18 +905,21 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
+      if (!["payment.captured", "payment.failed", "payment.refunded", "refund.processed", "refund.failed"].includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
+      const refundEntity = event.payload?.refund?.entity || {};
       const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || entity.id || "").trim();
-      const razorpayPaymentId = String(entity.id || "").trim();
-      if (!orderId) {
-        res.status(400).send("Razorpay order ID is missing.");
+      const orderId = String(entity.order_id || refundEntity.order_id || (eventName.startsWith("payment.") ? entity.id : "") || "").trim();
+      const razorpayPaymentId = String(entity.id || refundEntity.payment_id || "").trim();
+      if (!orderId && !razorpayPaymentId) {
+        res.status(400).send("Razorpay order/payment ID is missing.");
         return;
       }
-      const matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
+      const matches = orderId
+        ? await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get()
+        : await db.collection("payments").where("razorpayPaymentId", "==", razorpayPaymentId).limit(1).get();
       if (matches.empty) {
         res.status(404).send("Payment order not found.");
         return;
@@ -938,7 +941,30 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         return;
       }
       const now = Date.now();
-      if (eventName === "payment.captured") {
+      if (eventName === "refund.processed") {
+        await paymentDoc.ref.update({
+          status: "REFUNDED",
+          gatewayRefundId: refundEntity.id || payment.gatewayRefundId || null,
+          gatewayRefundStatus: "processed",
+          refundedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
+        if (payment.subscriptionId) {
+          await db.collection("subscriptions").doc(payment.subscriptionId).set({
+            status: "CANCELLED",
+            cancelledAtEpochMs: now,
+            updatedAtEpochMs: now
+          }, { merge: true });
+        }
+      } else if (eventName === "refund.failed") {
+        await paymentDoc.ref.update({
+          status: payment.status === "REFUND_PENDING" ? "SUCCESS" : payment.status,
+          gatewayRefundId: refundEntity.id || payment.gatewayRefundId || null,
+          gatewayRefundStatus: "failed",
+          refundFailureAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
+      } else if (eventName === "payment.captured") {
         if (Number(entity.amount || payment.amountMinor) !== Number(payment.amountMinor) ||
             String(entity.currency || payment.currency).toUpperCase() !== String(payment.currency || "INR").toUpperCase()) {
           res.status(400).send("Razorpay amount/currency mismatch.");
@@ -967,6 +993,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         await paymentDoc.ref.update({
           status: "REFUNDED",
           gatewayReference: razorpayPaymentId || null,
+          gatewayRefundStatus: "processed",
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
         });
