@@ -54,8 +54,8 @@ class PairingViewModel @Inject constructor(
         }
     }
 
-    fun unpair() = viewModelScope.launch {
-        repository.unpair().onFailure {
+    fun unpair(deviceUid: String? = null) = viewModelScope.launch {
+        repository.unpair(deviceUid).onFailure {
             _state.value = _state.value.copy(error = it.message ?: "Unable to unpair device")
         }
     }
