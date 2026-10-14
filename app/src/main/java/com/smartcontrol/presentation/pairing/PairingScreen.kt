@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.google.firebase.auth.FirebaseAuth
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
@@ -46,7 +45,6 @@ fun PairingScreen(
     val controlledDevices by viewModel.controlledDevices.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val deepLinkToken = remember(initialToken, context) {
         (initialToken ?: (context as? Activity)?.intent?.data?.getQueryParameter("token"))
             ?.trim()
