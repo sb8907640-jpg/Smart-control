@@ -56,10 +56,11 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Payment records are created and updated only by trusted server functions.
+      // Client-created SUCCESS records must never be able to impersonate a payment.
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
@@ -71,8 +72,8 @@ service cloud.firestore {
     match /emiSchedule/{scheduleId} {
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // EMI applications are validated and created by the applyEmi callable.
+      allow create, update, delete: if false;
     }
 
     match /coupons/{couponId} {
