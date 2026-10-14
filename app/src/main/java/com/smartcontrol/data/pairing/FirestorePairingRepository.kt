@@ -96,16 +96,22 @@ class FirestorePairingRepository @Inject constructor(
                 .await()
                 .getData() as? Map<*, *>
         }.getOrNull()
-        // Use the server's live allowlist decision instead of cached custom
-        // claims, which may remain stale after an Owner is removed.
-        val isOwner = policy?.get("isOwner") as? Boolean == true
+        // Require both the server's live allowlist decision and the current
+        // token's Owner claim for NO_EXPIRY. This fails closed after revocation
+        // and lets older Owner accounts keep a short-lived code until their
+        // Owner profile sync refreshes the custom claims.
+        val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
+        val hasOwnerClaim = claims["owner"] == true ||
+            claims["role"]?.toString()?.uppercase() in setOf("OWNER", "SUPER_ADMIN")
+        val serverSaysOwner = policy?.get("isOwner") as? Boolean == true
+        val isOwner = serverSaysOwner && hasOwnerClaim
+        val configuredExpiry = (policy?.get("expiryMinutes") as? Number)?.toLong()
+            ?: DEFAULT_PUBLIC_EXPIRY_MINUTES
         val expiryMinutes = if (isOwner) {
             NO_EXPIRY_MINUTES
         } else {
-            (policy?.get("expiryMinutes") as? Number)
-                ?.toLong()
-                ?.coerceIn(1L, 60L)
-                ?: DEFAULT_PUBLIC_EXPIRY_MINUTES
+            (if (serverSaysOwner) DEFAULT_PUBLIC_EXPIRY_MINUTES else configuredExpiry)
+                .coerceIn(1L, 60L)
         }
         val expires = if (expiryMinutes == NO_EXPIRY_MINUTES) {
             Long.MAX_VALUE
