@@ -392,13 +392,21 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedUsers = new Map();
 
+  // Resolve every requested identity before changing any claims or allowlist
+  // data. A partially valid list must not revoke existing owners on a failed save.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+    if (!user) unresolved.push(identifier);
+    else resolvedUsers.set(identifier, user);
+  }
+  if (unresolved.length > 0) {
+    return { ok: false, granted: 0, revoked: 0, unresolved };
+  }
+
+  for (const identifier of requestedIdentifiers) {
+    const user = resolvedUsers.get(identifier);
     const claims = { ...(user.customClaims || {}) };
     const currentRole = normalizeRole(claims.role);
     claims.admin = true;
