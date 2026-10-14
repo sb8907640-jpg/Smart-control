@@ -377,7 +377,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
     : [];
   const mobiles = Array.isArray(request.data?.mobiles)
-    ? request.data.mobiles.map(String).map(v => v.trim()).filter(Boolean)
+    ? request.data.mobiles.map(normalizeOwnerPhone).filter(Boolean)
     : [];
 
   const requestedIdentifiers = new Set([...emails, ...mobiles]);
@@ -389,7 +389,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   const previous = currentProfile.exists ? currentProfile.data() : {};
   const previousIdentifiers = new Set([
     ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(v => v.trim().toLowerCase()) : []),
-    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
+    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(normalizeOwnerPhone).filter(Boolean) : [])
   ]);
 
   let granted = 0;
