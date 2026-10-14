@@ -235,14 +235,19 @@ async function configuredOwnerMatches(request) {
   const email = String(claims.email || "").trim().toLowerCase();
   const phone = String(claims.phone_number || "").trim();
   const snap = await db.collection("ownerAccounts").doc("config").get();
-  const cfg = snap.exists ? snap.data() || {} : {};
+  if (!snap.exists) {
+    // Allow a deployment-provisioned OWNER claim to seed the first allowlist.
+    // Once the config exists, the live list becomes authoritative for revocation.
+    return claims.owner === true || normalizeRole(claims.role) === "OWNER";
+  }
+  const cfg = snap.data() || {};
   const emails = Array.isArray(cfg.emails)
     ? cfg.emails.map(value => String(value).trim().toLowerCase())
     : [];
   const mobiles = Array.isArray(cfg.mobiles)
     ? cfg.mobiles.map(value => String(value).trim())
     : [];
-  return (email && emails.includes(email)) || (phone && mobiles.includes(phone));
+  return Boolean((email && emails.includes(email)) || (phone && mobiles.includes(phone)));
 }
 
 async function requireOwnerOrSuperAdmin(request) {
