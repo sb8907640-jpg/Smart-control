@@ -1037,8 +1037,10 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
           refundedAmountMinor,
           refundAmountMinor: Number(entity.amount_refunded || refundedAmountMinor),
-          pendingRefundAmountMinor: 0,
-          refundRequestId: FieldValue.delete(),
+          ...(fullyRefunded ? {
+            pendingRefundAmountMinor: 0,
+            refundRequestId: FieldValue.delete()
+          } : {}),
           gatewayReference: razorpayPaymentId || payment.gatewayReference || null,
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
