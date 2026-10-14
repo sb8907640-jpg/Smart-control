@@ -10,7 +10,7 @@ const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 const razorpayWebhookSecret = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 const gatewayPermit = require("./gateway-permit");
 const { extractRazorpayWebhookEvent } = require("./razorpay-webhook-utils");
-const { reconcileProcessedRefund } = require("./razorpay-refund-state");
+const { reconcileProcessedRefund, matchesPendingRefund } = require("./razorpay-refund-state");
 const getActiveGatewayPermit = gatewayPermit.getActiveGatewayPermit;
 const gatewayEncryptionKey = gatewayPermit.gatewayEncryptionKey;
 exports.savePaymentGatewayPermit = gatewayPermit.savePaymentGatewayPermit;
@@ -624,7 +624,7 @@ exports.refundPayment = onCall(
             headers: { "Authorization": authHeader, "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: refundAmountMinor,
-              notes: { smartcontrolPaymentId: paymentId, requestedBy: request.auth.uid }
+              notes: { smartcontrolPaymentId: paymentId, smartcontrolRefundRequestId: refundRequestId, requestedBy: request.auth.uid }
             })
           }
         );
@@ -960,7 +960,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const { eventName, isRefundEvent, entity, razorpayPaymentId, orderId } = webhookEvent;
+      const { eventName, isRefundEvent, entity, razorpayPaymentId, orderId, refundRequestId } = webhookEvent;
       if (!orderId && !razorpayPaymentId) {
         res.status(400).send("Razorpay order/payment ID is missing.");
         return;
@@ -1065,13 +1065,16 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           const reconciliation = reconcileProcessedRefund(current, refundId, refundAmountMinor);
           fullyRefunded = reconciliation.fullyRefunded;
           if (reconciliation.duplicate) return;
+          const clearReservation = fullyRefunded || matchesPendingRefund(current, refundId, refundRequestId);
           tx.update(paymentDoc.ref, {
             status: fullyRefunded ? "REFUNDED" : "SUCCESS",
-            refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
+            refundStatus: fullyRefunded ? "PROCESSED" : clearReservation ? "PARTIALLY_REFUNDED" : String(current.refundStatus || "PARTIALLY_REFUNDED"),
             refundedAmountMinor: reconciliation.refundedAmountMinor,
             refundAmountMinor,
-            pendingRefundAmountMinor: 0,
-            refundRequestId: FieldValue.delete(),
+            ...(clearReservation ? {
+              pendingRefundAmountMinor: 0,
+              refundRequestId: FieldValue.delete()
+            } : {}),
             gatewayRefundId: refundId,
             processedGatewayRefundIds: FieldValue.arrayUnion(refundId),
             refundedAtEpochMs: now,
@@ -1087,12 +1090,22 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         }
       } else if (eventName === "refund.failed") {
         const refundId = String(entity.id || "").trim();
-        await paymentDoc.ref.update({
-          refundStatus: "FAILED",
-          pendingRefundAmountMinor: 0,
-          refundRequestId: FieldValue.delete(),
-          ...(refundId ? { failedGatewayRefundId: refundId } : {}),
-          updatedAtEpochMs: now
+        await db.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(paymentDoc.ref);
+          if (!currentSnap.exists) return;
+          const current = currentSnap.data() || {};
+          const hasPendingReservation = Number(current.pendingRefundAmountMinor || 0) > 0;
+          const matchingReservation = matchesPendingRefund(current, refundId, refundRequestId);
+          const patch = {
+            ...(refundId ? { failedGatewayRefundId: refundId } : {}),
+            updatedAtEpochMs: now
+          };
+          if (!hasPendingReservation || matchingReservation) {
+            patch.refundStatus = "FAILED";
+            patch.pendingRefundAmountMinor = 0;
+            patch.refundRequestId = FieldValue.delete();
+          }
+          tx.update(paymentDoc.ref, patch);
         });
       }
       res.status(200).json({ ok: true });
