@@ -6,7 +6,9 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
+  getDocs,
   setDoc,
   updateDoc,
   runTransaction
@@ -46,6 +48,8 @@ async function main() {
       status: "ACTIVE",
       createdAtEpochMs: now
     }));
+
+    await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
 
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
