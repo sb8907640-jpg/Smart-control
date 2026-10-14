@@ -21,10 +21,10 @@ function requireSignedIn(request) {
 async function requireOwner(request) {
   requireSignedIn(request);
   const claims = request.auth.token || {};
-  if (claims.owner === true ||
-      ["OWNER", "SUPER_ADMIN"].includes(String(claims.role || "").toUpperCase())) return;
+  if (String(claims.role || "").toUpperCase() === "SUPER_ADMIN") return;
 
-  // The existing Owner Accounts screen stores owner identifiers here.
+  // Check the live private allowlist rather than trusting potentially stale
+  // OWNER claims after an account has been removed.
   const snap = await db.doc("ownerAccounts/config").get();
   const cfg = snap.exists ? snap.data() || {} : {};
   const email = String(claims.email || "").trim().toLowerCase();
@@ -32,7 +32,7 @@ async function requireOwner(request) {
   const emails = Array.isArray(cfg.emails) ? cfg.emails.map(v => String(v).trim().toLowerCase()) : [];
   const mobiles = Array.isArray(cfg.mobiles) ? cfg.mobiles.map(v => String(v).trim()) : [];
   if ((email && emails.includes(email)) || (phone && mobiles.includes(phone))) return;
-  throw new HttpsError("permission-denied", "Only a configured Family Suraksha Owner can change the payment gateway.");
+  throw new HttpsError("permission-denied", "Only a currently configured Family Suraksha Owner can change the payment gateway.");
 }
 
 function encryptionKey() {
