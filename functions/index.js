@@ -56,8 +56,7 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Sign in before generating a pairing code.");
   }
 
-  const claims = request.auth.token || {};
-  const isOwner = isOwnerIdentity(claims);
+  const isOwner = await isOwnerIdentity(request);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -208,12 +207,37 @@ function requireAdmin(request) {
   }
 }
 
-function isOwnerIdentity(claims = {}) {
-  return claims.owner === true || normalizeRole(claims.role) === "OWNER";
+function normalizeOwnerPhone(value) {
+  const digits = String(value || "").trim().replace(/\\D/g, "");
+  return digits ? `+${digits}` : "";
 }
 
-function requireOwner(request) {
-  if (!request.auth || !isOwnerIdentity(request.auth.token || {})) {
+async function isOwnerIdentity(request) {
+  const claims = request.auth?.token || {};
+  if (claims.owner === true || normalizeRole(claims.role) === "OWNER") return true;
+
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = normalizeOwnerPhone(claims.phone_number);
+  const envEmails = String(process.env.OWNER_EMAILS || "")
+    .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const envMobiles = String(process.env.OWNER_MOBILE_NUMBERS || "")
+    .split(",").map(normalizeOwnerPhone).filter(Boolean);
+  if ((email && envEmails.includes(email)) || (phone && envMobiles.includes(phone))) return true;
+
+  const snapshot = await db.collection("ownerAccounts").doc("config").get();
+  const config = snapshot.exists ? snapshot.data() || {} : {};
+  const configuredEmails = Array.isArray(config.emails)
+    ? config.emails.map((value) => String(value).trim().toLowerCase()) : [];
+  const configuredMobiles = Array.isArray(config.mobiles)
+    ? config.mobiles.map(normalizeOwnerPhone) : [];
+  return Boolean(
+    (email && configuredEmails.includes(email)) ||
+    (phone && configuredMobiles.includes(phone))
+  );
+}
+
+async function requireOwner(request) {
+  if (!request.auth || !(await isOwnerIdentity(request))) {
     throw new HttpsError("permission-denied", "Configured Owner identity required.");
   }
 }
