@@ -164,7 +164,15 @@ async function main() {
       await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
         enabled: true,
         ownerEnabled: true,
-        featureOverrides: { CAMERA: false }
+        featureOverrides: { CAMERA: false, LOCATION: false, SOS_ALERTS: false }
+      });
+      await setDoc(doc(ctx.firestore(), "devices", "media-target", "statusAlerts", "existing-alert"), {
+        alertId: "existing-alert",
+        deviceId: "media-target",
+        type: "TEST",
+        message: "Test alert",
+        createdAtEpochMs: Date.now(),
+        acknowledged: false
       });
     });
     await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "disabled-camera"), {
@@ -173,6 +181,30 @@ async function main() {
       capabilities: ["CAMERA"],
       status: "REQUESTED",
       createdAt: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "current"), {
+      deviceId: "media-target",
+      latitude: 1,
+      longitude: 2,
+      accuracyMeters: 10,
+      capturedAtEpochMs: Date.now(),
+      sharingActive: true
+    }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "current"), {
+      sharingActive: false,
+      stoppedAtEpochMs: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "blocked-alert"), {
+      alertId: "blocked-alert",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Disabled by policy",
+      createdAtEpochMs: Date.now(),
+      acknowledged: false
+    }));
+    await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "existing-alert"), {
+      acknowledged: true,
+      acknowledgedBy: "media-target"
     }));
 
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
