@@ -304,9 +304,17 @@ exports.updateOwnerUser = onCall(async (request) => {
   const actorRole = await effectiveActorRole(request);
   if (action === "set") {
     // A user may not change their own role, and role assignments must obey the
-    // hierarchy. OWNER can be assigned only by the allowlist sync path.
+    // hierarchy. OWNER is managed only through the verified allowlist sync path.
+    const existingTargetRole = normalizeRole(target.customClaims?.role);
     if (uid === request.auth.uid && role !== actorRole) {
       throw new HttpsError("permission-denied", "You cannot change your own role.");
+    }
+    if (uid !== request.auth.uid && existingTargetRole === "OWNER" && role !== "OWNER") {
+      throw new HttpsError("permission-denied", "Owner roles must be changed through the Owner allowlist.");
+    }
+    if (uid !== request.auth.uid && actorRole !== "SUPER_ADMIN" &&
+        !canManageRole(actorRole, existingTargetRole)) {
+      throw new HttpsError("permission-denied", "Insufficient authority over the target account's current role.");
     }
     if (uid !== request.auth.uid && !canManageRole(actorRole, role)) {
       throw new HttpsError("permission-denied", "Insufficient role authority.");
