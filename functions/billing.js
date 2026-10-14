@@ -84,7 +84,11 @@ async function requireAdmin(request) {
   const currentRole = String(currentClaims.role || "").toUpperCase();
   if (currentRole === "OWNER" || currentClaims.owner === true) {
     const ownerSnap = await db.doc("ownerAccounts/config").get();
-    const ownerConfig = ownerSnap.exists ? ownerSnap.data() || {} : {};
+    if (!ownerSnap.exists) {
+      // Permit deployment-provisioned Owners to initialize their first profile.
+      return;
+    }
+    const ownerConfig = ownerSnap.data() || {};
     const email = String(user.email || "").trim().toLowerCase();
     const phone = String(user.phoneNumber || "").trim();
     const emails = Array.isArray(ownerConfig.emails)
