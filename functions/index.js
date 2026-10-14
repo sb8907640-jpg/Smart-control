@@ -206,9 +206,20 @@ exports.stopSessionWithPin = onCall(async (request) => {
 });
 
 
-function requireAdmin(request) {
+async function requireAdmin(request) {
   if (!request.auth || request.auth.token?.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+  // Custom claims are embedded in ID tokens and can remain stale after an
+  // Owner is removed. Confirm the current server-side claim before privileged work.
+  let currentUser;
+  try {
+    currentUser = await getAuth().getUser(request.auth.uid);
+  } catch (_) {
+    throw new HttpsError("permission-denied", "Firebase admin role required.");
+  }
+  if (currentUser.disabled || currentUser.customClaims?.admin !== true) {
+    throw new HttpsError("permission-denied", "Firebase admin role is no longer active.");
   }
 }
 
