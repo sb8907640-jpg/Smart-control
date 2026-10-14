@@ -8,6 +8,15 @@ plugins {
 if (file("google-services.json").exists()) apply(plugin="com.google.gms.google-services")
 val googleWebClientId = providers.gradleProperty("SMARTCONTROL_GOOGLE_WEB_CLIENT_ID").orElse("").map { it.ifBlank { "969691895574-9f7jujuf7irm6hktusvdtp0uik96cqke.apps.googleusercontent.com" } }.get()
 val apiBaseUrl = providers.gradleProperty("SMARTCONTROL_API_BASE_URL").orElse("").get()
+val releaseStoreFile = providers.environmentVariable("SMARTCONTROL_RELEASE_KEYSTORE_PATH").orNull.orEmpty()
+val releaseStorePassword = providers.environmentVariable("SMARTCONTROL_RELEASE_STORE_PASSWORD").orNull.orEmpty()
+val releaseKeyAlias = providers.environmentVariable("SMARTCONTROL_RELEASE_KEY_ALIAS").orNull.orEmpty()
+val releaseKeyPassword = providers.environmentVariable("SMARTCONTROL_RELEASE_KEY_PASSWORD").orNull.orEmpty()
+val releaseSigningConfigured = releaseStoreFile.isNotBlank() &&
+    releaseStorePassword.isNotBlank() &&
+    releaseKeyAlias.isNotBlank() &&
+    releaseKeyPassword.isNotBlank() &&
+    file(releaseStoreFile).isFile
 
 android {
     namespace="com.smartcontrol"
@@ -27,6 +36,23 @@ android {
         testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String","GOOGLE_WEB_CLIENT_ID","\"$googleWebClientId\"")
         buildConfigField("String","SMARTCONTROL_API_BASE_URL","\"$apiBaseUrl\"")
+    }
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
     buildFeatures { compose=true; buildConfig=true }
     compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }

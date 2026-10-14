@@ -126,9 +126,13 @@ jobs:
           name: smart-control-ci-diagnostics
           path: functions-validation.log
 
+      # This workflow compiles release variants for CI, but does not load the
+      # protected release keystore. Never publish those unsigned release APKs.
+      # Signed release APKs are published only by android-apk.yml after apksigner verification.
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: smart-control-apks
-          path: |
-            app/build/outputs/apk/**/*.apk
+          name: smart-control-debug-apks
+          path: app/build/outputs/apk/**/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
