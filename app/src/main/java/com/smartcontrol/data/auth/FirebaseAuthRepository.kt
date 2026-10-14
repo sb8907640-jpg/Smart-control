@@ -38,9 +38,15 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
         auth.signInWithCredential(GoogleAuthProvider.getCredential(account.idToken, null)).await().user
             ?: error("Firebase returned no user.")
     }
-    override fun sendOtp(activity: Activity, phoneNumber: String, onCodeSent: (String) -> Unit, onFailure: (Exception) -> Unit) {
+    override fun sendOtp(
+        activity: Activity,
+        phoneNumber: String,
+        onCodeSent: (String) -> Unit,
+        onFailure: (Exception) -> Unit,
+        onAutoVerified: (PhoneAuthCredential) -> Unit
+    ) {
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-            override fun onVerificationCompleted(credential: PhoneAuthCredential) = Unit
+            override fun onVerificationCompleted(credential: PhoneAuthCredential) = onAutoVerified(credential)
             override fun onVerificationFailed(e: FirebaseException) = onFailure(e)
             override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) = onCodeSent(id)
         }
@@ -50,6 +56,9 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
     override suspend fun verifyOtp(verificationId: String, code: String): Result<FirebaseUser> = runCatching {
         auth.signInWithCredential(PhoneAuthProvider.getCredential(verificationId, code)).await().user
             ?: error("Firebase returned no user.")
+    }
+    override suspend fun signInWithPhoneCredential(credential: PhoneAuthCredential): Result<FirebaseUser> = runCatching {
+        auth.signInWithCredential(credential).await().user ?: error("Firebase returned no user.")
     }
     override fun signOut() = auth.signOut()
 }
