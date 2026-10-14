@@ -610,6 +610,7 @@ exports.refundPayment = onCall(
     });
     if (!lockedPayment) throw new HttpsError("aborted", "Payment status changed; reload and retry.");
 
+    let providerRequestStarted = false;
     try {
       const permit = await getActiveGatewayPermit(lockedPayment.gatewayPermitRevision);
       const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
@@ -618,6 +619,7 @@ exports.refundPayment = onCall(
         throw new Error("Razorpay server credentials are not configured.");
       }
       const authHeader = "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64");
+      providerRequestStarted = true;
       const response = await fetch(
         "https://api.razorpay.com/v1/payments/" + encodeURIComponent(gatewayPaymentId) + "/refund",
         {
@@ -670,20 +672,27 @@ exports.refundPayment = onCall(
       }
       return { ok: true, provider, status: processed ? "REFUNDED" : "REFUND_PENDING", refundAmountMinor, gatewayRefundId: result.id };
     } catch (error) {
-      await db.runTransaction(async (tx) => {
-        const current = await tx.get(ref);
-        if (current.exists && current.data()?.refundRequestId === refundRequestId && current.data()?.status === "REFUND_PENDING") {
-          tx.update(ref, {
-            status: "SUCCESS",
-            refundRequestId: FieldValue.delete(),
-            refundError: "PROVIDER_REFUND_REQUEST_FAILED",
-            updatedAtEpochMs: Date.now()
-          });
-        }
-      }).catch(() => {});
+      // Before any provider request, it is safe to release the local reservation.
+      // After sending the request, keep REFUND_PENDING on ambiguous failures so a
+      // retry cannot accidentally submit a duplicate refund.
+      if (!providerRequestStarted) {
+        await db.runTransaction(async (tx) => {
+          const current = await tx.get(ref);
+          if (current.exists && current.data()?.refundRequestId === refundRequestId && current.data()?.status === "REFUND_PENDING") {
+            tx.update(ref, {
+              status: "SUCCESS",
+              refundRequestId: FieldValue.delete(),
+              refundError: "PROVIDER_REFUND_REQUEST_FAILED",
+              updatedAtEpochMs: Date.now()
+            });
+          }
+        }).catch(() => {});
+      }
       if (error instanceof HttpsError) throw error;
       console.error("Razorpay refund request failed", error?.message || "unknown error");
-      throw new HttpsError("unavailable", "Razorpay refund request could not be confirmed. Check the provider dashboard before retrying.");
+      throw new HttpsError("unavailable", providerRequestStarted
+        ? "Razorpay refund outcome is uncertain. Payment is held in REFUND_PENDING; reconcile it in the provider dashboard before retrying."
+        : "Razorpay refund request could not be prepared. No provider refund was submitted.");
     }
   }
 );
