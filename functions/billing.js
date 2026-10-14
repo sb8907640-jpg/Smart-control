@@ -591,6 +591,22 @@ exports.refundPayment = onCall(
         throw new HttpsError("failed-precondition", "The captured Razorpay payment or refund credentials are missing.");
       }
 
+      // Claim the refund atomically before calling the provider to prevent double refunds
+      // when two administrators click Refund at the same time.
+      await db.runTransaction(async (tx) => {
+        const currentSnap = await tx.get(ref);
+        const currentPayment = currentSnap.exists ? currentSnap.data() || {} : {};
+        if (currentPayment.status !== "SUCCESS") {
+          throw new HttpsError("failed-precondition", "Payment is no longer eligible for refund.");
+        }
+        tx.update(ref, {
+          status: "REFUND_PENDING",
+          refundAmountMinor,
+          refundRequestedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
+      });
+
       const authHeader = "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64");
       const response = await fetch(
         "https://api.razorpay.com/v1/payments/" + encodeURIComponent(razorpayPaymentId) + "/refund",
@@ -605,13 +621,19 @@ exports.refundPayment = onCall(
       );
       const refund = await response.json().catch(() => ({}));
       if (!response.ok || typeof refund.id !== "string") {
+        await ref.update({
+          gatewayRefundStatus: "unknown",
+          refundErrorHttpStatus: response.status,
+          updatedAtEpochMs: Date.now()
+        });
         console.error("Razorpay refund request failed", response.status);
-        throw new HttpsError("unavailable", "Razorpay could not create the refund. No local refund was recorded.");
+        throw new HttpsError("unavailable", "Razorpay refund status is uncertain. The payment is locked against duplicate refunds pending reconciliation.");
       }
 
       const gatewayRefundStatus = String(refund.status || "pending").toLowerCase();
       if (gatewayRefundStatus === "failed") {
         await ref.update({
+          status: "SUCCESS",
           gatewayRefundId: refund.id,
           gatewayRefundStatus,
           refundFailureAtEpochMs: now,
