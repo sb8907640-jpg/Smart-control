@@ -65,7 +65,21 @@ class SafetyAlertsViewModel @Inject constructor(
         }
     }
 
-    fun createTestAlert() = triggerSos()
+    fun createTestAlert() {
+        val id = deviceId
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            repository.create(
+                SafetyAlert(
+                    UUID.randomUUID().toString(),
+                    id,
+                    "TEST",
+                    "Test safety alert created by the signed-in device user.",
+                    System.currentTimeMillis()
+                )
+            )
+        }
+    }
 
     fun acknowledge(alertId: String) {
         viewModelScope.launch { repository.acknowledge(alertId) }
