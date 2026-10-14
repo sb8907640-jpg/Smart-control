@@ -218,8 +218,14 @@ async function requireAdmin(request) {
   } catch (_) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
   }
-  if (currentUser.disabled || currentUser.customClaims?.admin !== true) {
+  const currentClaims = currentUser.customClaims || {};
+  if (currentUser.disabled || currentClaims.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role is no longer active.");
+  }
+  const currentRole = normalizeRole(currentClaims.role);
+  if ((currentRole === "OWNER" || currentClaims.owner === true) &&
+      !await configuredOwnerMatches(request)) {
+    throw new HttpsError("permission-denied", "Owner access is no longer active.");
   }
 }
 
