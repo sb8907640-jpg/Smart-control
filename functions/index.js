@@ -58,10 +58,9 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
 
   const claims = request.auth.token || {};
   const role = normalizeRole(claims.role);
-  const isOwner = claims.owner === true ||
-    role === "OWNER" ||
-    role === "SUPER_ADMIN" ||
-    await configuredOwnerMatches(request);
+  // The private allowlist is authoritative for Owner privileges; a stale ID
+  // token must not preserve no-expiry pairing rights after Owner removal.
+  const isOwner = role === "SUPER_ADMIN" || await configuredOwnerMatches(request);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -233,8 +232,7 @@ async function requireOwnerOrSuperAdmin(request) {
   requireAdmin(request);
   const claims = request.auth.token || {};
   const role = normalizeRole(claims.role);
-  if (claims.owner === true || role === "OWNER" || role === "SUPER_ADMIN" ||
-      await configuredOwnerMatches(request)) {
+  if (role === "SUPER_ADMIN" || await configuredOwnerMatches(request)) {
     return;
   }
   throw new HttpsError("permission-denied", "Only a configured Owner or Super Admin may manage owner accounts.");
@@ -244,7 +242,9 @@ async function effectiveActorRole(request) {
   const claims = request.auth?.token || {};
   const role = normalizeRole(claims.role);
   if (role === "SUPER_ADMIN") return role;
-  if (claims.owner === true || await configuredOwnerMatches(request)) return "OWNER";
+  if (await configuredOwnerMatches(request)) return "OWNER";
+  // OWNER claims may remain in a cached ID token after allowlist removal.
+  if (role === "OWNER" || claims.owner === true) return "USER";
   return role;
 }
 
