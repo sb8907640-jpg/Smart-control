@@ -1,6 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+      function featureEnabled(featureKey, targetUid) {
+        let globalPath = /databases/$(database)/documents/featurePolicy/global;
+        let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
+        let globalData = exists(globalPath) ? get(globalPath).data : {};
+        let userData = exists(userPath) ? get(userPath).data : {};
+        let expiresAt = userData.get('expiresAtEpochMs', null);
+        return globalData.get('globalFeaturesEnabled', true) == true
+          && globalData.get('globalEnabled', true) == true
+          && globalData.get('featureOverrides', {}).get(featureKey, true) != false
+          && globalData.get('globalFeatureOverrides', {}).get(featureKey, true) != false
+          && userData.get('enabled', true) == true
+          && userData.get('ownerEnabled', true) == true
+          && (expiresAt == null || (expiresAt is int && (expiresAt <= 0 || expiresAt > request.time.toMillis())))
+          && userData.get('featureOverrides', {}).get(featureKey, true) != false;
+      }
+
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
     }
@@ -133,22 +149,6 @@ service cloud.firestore {
     }
 
     match /mediaSessions/{sessionId} {
-      function featureEnabled(featureKey, targetUid) {
-        let globalPath = /databases/$(database)/documents/featurePolicy/global;
-        let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
-        let globalData = exists(globalPath) ? get(globalPath).data : {};
-        let userData = exists(userPath) ? get(userPath).data : {};
-        let expiresAt = userData.get('expiresAtEpochMs', null);
-        return globalData.get('globalFeaturesEnabled', true) == true
-          && globalData.get('globalEnabled', true) == true
-          && globalData.get('featureOverrides', {}).get(featureKey, true) != false
-          && globalData.get('globalFeatureOverrides', {}).get(featureKey, true) != false
-          && userData.get('enabled', true) == true
-          && userData.get('ownerEnabled', true) == true
-          && (expiresAt == null || (expiresAt is int && (expiresAt <= 0 || expiresAt > request.time.toMillis())))
-          && userData.get('featureOverrides', {}).get(featureKey, true) != false;
-      }
-
       // New sessions must start as requests. Approval and signaling are separate
       // participant-authorized updates below; clients cannot pre-create ACTIVE sessions.
       // Owner policy is enforced by rules as well as the UI, so direct client writes
