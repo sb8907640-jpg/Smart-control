@@ -890,20 +890,39 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
+      if (![
+        "payment.captured", "payment.failed", "payment.refunded",
+        "refund.processed", "refund.failed"
+      ].includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || entity.id || "").trim();
-      const razorpayPaymentId = String(entity.id || "").trim();
-      if (!orderId) {
-        res.status(400).send("Razorpay order ID is missing.");
-        return;
+      const entity = event.payload?.refund?.entity ||
+        event.payload?.payment?.entity ||
+        event.payload?.order?.entity || {};
+      const orderId = String(entity.order_id || "").trim();
+      const razorpayPaymentId = String(
+        entity.payment_id || (eventName.startsWith("payment.") ? entity.id : "")
+      ).trim();
+
+      // Refund webhooks identify the original payment by payment_id, not order_id.
+      // Resolve that payment first so its stored credential revision supplies the
+      // correct webhook secret; no state is changed until the signature is valid.
+      let matches = null;
+      if (razorpayPaymentId) {
+        matches = await db.collection("payments")
+          .where("razorpayPaymentId", "==", razorpayPaymentId).limit(1).get();
+        if (matches.empty) {
+          matches = await db.collection("payments")
+            .where("gatewayReference", "==", razorpayPaymentId).limit(1).get();
+        }
       }
-      const matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
-      if (matches.empty) {
-        res.status(404).send("Payment order not found.");
+      if ((!matches || matches.empty) && orderId) {
+        matches = await db.collection("payments")
+          .where("gatewayOrderId", "==", orderId).limit(1).get();
+      }
+      if (!matches || matches.empty) {
+        res.status(404).send("Payment record not found for webhook event.");
         return;
       }
       const paymentDoc = matches.docs[0];
@@ -948,10 +967,12 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           gatewayReference: razorpayPaymentId || null,
           updatedAtEpochMs: now
         });
-      } else if (eventName === "payment.refunded") {
+      } else if (eventName === "payment.refunded" || eventName === "refund.processed") {
         await paymentDoc.ref.update({
           status: "REFUNDED",
-          gatewayReference: razorpayPaymentId || null,
+          ...(eventName === "refund.processed"
+            ? { gatewayRefundId: String(entity.id || ""), refundAmountMinor: Number(entity.amount || payment.refundAmountMinor || payment.amountMinor || 0) }
+            : { gatewayReference: razorpayPaymentId || payment.gatewayReference || null }),
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
         });
@@ -962,6 +983,15 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             updatedAtEpochMs: now
           }, { merge: true });
         }
+      } else if (eventName === "refund.failed") {
+        // A failed refund must not leave the payment marked as pending or cancel
+        // the subscription. Allow an Owner to retry after checking provider state.
+        await paymentDoc.ref.update({
+          status: payment.status === "REFUND_PENDING" ? "SUCCESS" : payment.status,
+          refundFailureId: String(entity.id || ""),
+          refundFailedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
       }
       res.status(200).json({ ok: true });
     } catch (error) {
