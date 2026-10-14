@@ -7,11 +7,16 @@ import com.smartcontrol.domain.media.IceCandidateModel
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSignalingRepository
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.Camera2Enumerator
@@ -39,8 +44,11 @@ class WebRtcMediaEngine(
     private val scope: CoroutineScope
 ) {
     private val initialized = AtomicBoolean(false)
-    private val peerConnections = mutableMapOf<String, PeerConnection>()
-    private val candidateJobs = mutableMapOf<String, Job>()
+    private val peerConnections = ConcurrentHashMap<String, PeerConnection>()
+    private val candidateJobs = ConcurrentHashMap<String, Job>()
+    private val renegotiationJobs = ConcurrentHashMap<String, Job>()
+    private val reconnectJobs = ConcurrentHashMap<String, Job>()
+    private val offererSessions = ConcurrentHashMap.newKeySet<String>()
     private val captures = mutableMapOf<String, List<AutoCloseable>>()
     private val eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
@@ -58,7 +66,7 @@ class WebRtcMediaEngine(
 
     suspend fun publish(sessionId: String, capabilities: Set<MediaCapability>, mediaProjectionData: Intent?, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
         initialize()
-        val pc = createPeerConnection(sessionId, iceServers, null)
+        val pc = createPeerConnection(sessionId, iceServers, null, isOfferer = true)
         val resources = mutableListOf<AutoCloseable>()
         if (MediaCapability.MICROPHONE in capabilities) {
             val audio = factory.createAudioSource(MediaConstraints())
@@ -80,13 +88,15 @@ class WebRtcMediaEngine(
         val offer = createOffer(pc)
         pc.setLocalDescriptionAwait(offer)
         signaling.writeOffer(sessionId, offer.description).getOrThrow()
-        waitForAnswerAndCandidates(sessionId, pc)
+        val initialAnswerSdp = waitForAnswerAndCandidates(sessionId, pc)
         signaling.markActive(sessionId).getOrThrow()
+        offererSessions += sessionId
+        observeAnswerRestarts(sessionId, pc, initialAnswerSdp)
     }
 
     suspend fun view(sessionId: String, remoteVideoSink: org.webrtc.VideoSink? = null, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
         initialize()
-        val pc = createPeerConnection(sessionId, iceServers, remoteVideoSink)
+        val pc = createPeerConnection(sessionId, iceServers, remoteVideoSink, isOfferer = false)
         val session = signaling.observeSession(sessionId).filterNotNull().first { !it.offerSdp.isNullOrBlank() }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.OFFER, session.offerSdp!!))
         val answer = createAnswer(pc)
@@ -94,12 +104,16 @@ class WebRtcMediaEngine(
         signaling.writeAnswer(sessionId, answer.description).getOrThrow()
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
         signaling.markActive(sessionId).getOrThrow()
+        observeOfferRestarts(sessionId, pc, session.offerSdp!!)
     }
 
     suspend fun stop(sessionId: String) {
         signaling.stopSession(sessionId)
         captures.remove(sessionId)?.forEach { runCatching { it.close() } }
         candidateJobs.remove(sessionId)?.cancel()
+        renegotiationJobs.remove(sessionId)?.cancel()
+        reconnectJobs.remove(sessionId)?.cancel()
+        offererSessions.remove(sessionId)
         peerConnections.remove(sessionId)?.close()
     }
 
@@ -112,6 +126,11 @@ class WebRtcMediaEngine(
         captures.clear()
         candidateJobs.values.forEach(Job::cancel)
         candidateJobs.clear()
+        renegotiationJobs.values.forEach(Job::cancel)
+        renegotiationJobs.clear()
+        reconnectJobs.values.forEach(Job::cancel)
+        reconnectJobs.clear()
+        offererSessions.clear()
         if (initialized.get()) {
             factory.dispose()
             eglBase.release()
@@ -119,7 +138,7 @@ class WebRtcMediaEngine(
         }
     }
 
-    private fun createPeerConnection(sessionId: String, iceServers: List<IceServerConfig>, remoteSink: org.webrtc.VideoSink?): PeerConnection {
+    private fun createPeerConnection(sessionId: String, iceServers: List<IceServerConfig>, remoteSink: org.webrtc.VideoSink?, isOfferer: Boolean): PeerConnection {
         val config = PeerConnection.RTCConfiguration(iceServers.map { server ->
             PeerConnection.IceServer.builder(server.urls).apply {
                 server.username?.let { setUsername(it) }
@@ -133,7 +152,15 @@ class WebRtcMediaEngine(
             override fun onTrack(transceiver: RtpTransceiver?) { (transceiver?.receiver?.track() as? VideoTrack)?.let { remoteSink?.let(it::addSink) } }
             override fun onAddTrack(receiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) { (receiver?.track() as? VideoTrack)?.let { remoteSink?.let(it::addSink) } }
             override fun onSignalingChange(newState: PeerConnection.SignalingState?) = Unit
-            override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
+            override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState?) {
+                when (newState) {
+                    PeerConnection.IceConnectionState.CONNECTED,
+                    PeerConnection.IceConnectionState.COMPLETED -> reconnectJobs.remove(sessionId)?.cancel()
+                    PeerConnection.IceConnectionState.DISCONNECTED,
+                    PeerConnection.IceConnectionState.FAILED -> if (isOfferer) scheduleIceRestart(sessionId, peerConnections[sessionId])
+                    else -> Unit
+                }
+            }
             override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
             override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState?) = Unit
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
@@ -148,23 +175,87 @@ class WebRtcMediaEngine(
         return pc
     }
 
-    private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
+    private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection): String {
         val session = signaling.observeSession(sessionId).filterNotNull().first { !it.answerSdp.isNullOrBlank() }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp!!))
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
+        return session.answerSdp!!
     }
 
     private suspend fun collectRemoteCandidates(sessionId: String, pc: PeerConnection) {
         signaling.observeRemoteIceCandidates(sessionId).collect { candidate ->
-            pc.addIceCandidate(IceCandidate(candidate.sdpMid, candidate.sdpMLineIndex ?: 0, candidate.candidate))
+            runCatching {
+                pc.addIceCandidate(IceCandidate(candidate.sdpMid, candidate.sdpMLineIndex ?: 0, candidate.candidate))
+            }
         }
     }
 
-    private suspend fun createOffer(pc: PeerConnection) = suspendCancellableCoroutine<SessionDescription> { cont ->
+    private fun observeAnswerRestarts(sessionId: String, pc: PeerConnection, initialSdp: String) {
+        renegotiationJobs[sessionId]?.cancel()
+        renegotiationJobs[sessionId] = scope.launch {
+            signaling.observeSession(sessionId)
+                .map { it?.answerSdp }
+                .filterNotNull()
+                .distinctUntilChanged()
+                .filter { it != initialSdp }
+                .collect { sdp ->
+                    if (peerConnections[sessionId] === pc) {
+                        pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                    }
+                }
+        }
+    }
+
+    private fun observeOfferRestarts(sessionId: String, pc: PeerConnection, initialSdp: String) {
+        renegotiationJobs[sessionId]?.cancel()
+        renegotiationJobs[sessionId] = scope.launch {
+            signaling.observeSession(sessionId)
+                .map { it?.offerSdp }
+                .filterNotNull()
+                .distinctUntilChanged()
+                .filter { it != initialSdp }
+                .collect { sdp ->
+                    if (peerConnections[sessionId] === pc) {
+                        pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.OFFER, sdp))
+                        val answer = createAnswer(pc)
+                        pc.setLocalDescriptionAwait(answer)
+                        signaling.writeAnswer(sessionId, answer.description).getOrThrow()
+                    }
+                }
+        }
+    }
+
+    private fun scheduleIceRestart(sessionId: String, pc: PeerConnection?) {
+        if (pc == null || peerConnections[sessionId] !== pc || sessionId !in offererSessions) return
+        if (reconnectJobs[sessionId]?.isActive == true) return
+        reconnectJobs[sessionId] = scope.launch {
+            repeat(3) { attempt ->
+                delay(if (attempt == 0) 3_000L else 5_000L)
+                if (peerConnections[sessionId] !== pc) return@launch
+                val state = pc.iceConnectionState()
+                if (state == PeerConnection.IceConnectionState.CONNECTED ||
+                    state == PeerConnection.IceConnectionState.COMPLETED
+                ) return@launch
+                try {
+                    val offer = createOffer(pc, iceRestart = true)
+                    pc.setLocalDescriptionAwait(offer)
+                    signaling.writeOffer(sessionId, offer.description).getOrThrow()
+                    return@launch
+                } catch (_: Exception) {
+                    // Retry a bounded number of times; the session remains user-stoppable.
+                }
+            }
+        }
+    }
+
+    private suspend fun createOffer(pc: PeerConnection, iceRestart: Boolean = false) = suspendCancellableCoroutine<SessionDescription> { cont ->
+        val constraints = MediaConstraints().apply {
+            if (iceRestart) mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        }
         pc.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(description: SessionDescription?) { if (description != null) cont.resume(description) else cont.resumeWithException(IllegalStateException("Offer was null")) }
             override fun onCreateFailure(error: String?) { cont.resumeWithException(IllegalStateException(error ?: "Offer creation failed")) }
-        }, MediaConstraints())
+        }, constraints)
     }
 
     private suspend fun createAnswer(pc: PeerConnection) = suspendCancellableCoroutine<SessionDescription> { cont ->
