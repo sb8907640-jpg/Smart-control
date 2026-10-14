@@ -89,9 +89,6 @@ class FirestorePairingRepository @Inject constructor(
 
         // Never read the private ownerSettings document from a normal client.
         // The callable returns only the effective pairing-code lifetime.
-        val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
-        val isOwner = claims["owner"] == true ||
-            claims["role"]?.toString()?.uppercase() in setOf("OWNER", "SUPER_ADMIN")
         val policy = runCatching {
             FirebaseFunctions.getInstance()
                 .getHttpsCallable("getDevicePairingPolicy")
@@ -99,6 +96,9 @@ class FirestorePairingRepository @Inject constructor(
                 .await()
                 .getData() as? Map<*, *>
         }.getOrNull()
+        // Use the server's live allowlist decision instead of cached custom
+        // claims, which may remain stale after an Owner is removed.
+        val isOwner = policy?.get("isOwner") as? Boolean == true
         val expiryMinutes = if (isOwner) {
             NO_EXPIRY_MINUTES
         } else {
