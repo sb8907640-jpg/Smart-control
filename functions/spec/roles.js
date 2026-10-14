@@ -21,7 +21,9 @@ function canManageRole(actorRole, targetRole) {
   const actor = normalizeRole(actorRole);
   const target = normalizeRole(targetRole);
 
-  if (actor === "SUPER_ADMIN") return true;
+  // OWNER is granted only by syncOwnerAccounts after the identity has
+  // been resolved against the private allowlist, never by a generic role edit.
+  if (actor === "SUPER_ADMIN") return target !== "OWNER";
   if (actor === "OWNER") {
     return ["ADMIN", "FINANCE_ADMIN", "LEGAL_ADMIN", "MODERATOR", "SUPPORT", "USER"].includes(target);
   }
