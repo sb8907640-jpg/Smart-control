@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { reconcileProcessedRefund } = require("./razorpay-refund-state");
+const { reconcileProcessedRefund, matchesPendingRefund } = require("./razorpay-refund-state");
 
 const partial = reconcileProcessedRefund(
   { amountMinor: 1000, refundedAmountMinor: 0, processedGatewayRefundIds: [] },
@@ -45,4 +45,21 @@ assert.throws(() => reconcileProcessedRefund(
   100
 ), /Refund ID/);
 
-console.log("Razorpay refund-state tests passed (partial, duplicate, full, over-refund, invalid amount, missing ID).");
+assert.equal(matchesPendingRefund(
+  { pendingRefundAmountMinor: 400, refundRequestId: "req_1" },
+  "rfnd_1",
+  "req_1"
+), true);
+assert.equal(matchesPendingRefund(
+  { pendingRefundAmountMinor: 400, refundRequestId: "req_1" },
+  "rfnd_other",
+  "req_other"
+), false);
+assert.equal(matchesPendingRefund(
+  { pendingRefundAmountMinor: 400, gatewayRefundId: "rfnd_1" },
+  "rfnd_1",
+  ""
+), true);
+assert.equal(matchesPendingRefund({ pendingRefundAmountMinor: 0, refundRequestId: "req_1" }, "rfnd_1", "req_1"), false);
+
+console.log("Razorpay refund-state tests passed (partial, duplicate, full, over-refund, invalid amount, missing ID, pending reservation matching).");
