@@ -560,21 +560,44 @@ exports.refundPayment = onCall(
       throw new HttpsError("failed-precondition", "Refund amount must be greater than zero.");
     }
     const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
-    const now = Date.now();
-    let refundStatus = "REFUNDED";
-    let refundId = null;
-
+    let keyId = "";
+    let keySecret = "";
+    let gatewayPaymentId = "";
     if (provider === "RAZORPAY" && refundAmountMinor > 0) {
       const permit = payment.gatewayPermitRevision
         ? await getActiveGatewayPermit(payment.gatewayPermitRevision)
         : null;
-      const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
-      const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
-      const gatewayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
+      keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+      keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
+      gatewayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
       if (!keyId || !keySecret || !gatewayPaymentId) {
         throw new HttpsError("failed-precondition", "Verified Razorpay payment details are missing; no refund was submitted.");
       }
+    } else if (provider !== "TEST" && refundAmountMinor > 0) {
+      throw new HttpsError("failed-precondition", "Refunds are implemented only for Razorpay and simulated TEST payments.");
+    }
 
+    const now = Date.now();
+    // Claim the refund atomically before contacting the provider. This prevents
+    // concurrent Owner clicks from creating duplicate refunds for one payment.
+    await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(ref);
+      if (!currentSnap.exists) throw new HttpsError("not-found", "Payment not found.");
+      if ((currentSnap.data() || {}).status !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "This payment already has a refund or status change in progress.");
+      }
+      tx.update(ref, {
+        status: "REFUND_REQUESTED",
+        refundAmountMinor,
+        refundRequestedAtEpochMs: now,
+        refundRequestedBy: request.auth.uid,
+        updatedAtEpochMs: now
+      });
+    });
+
+    let refundStatus = "REFUNDED";
+    let refundId = null;
+    if (provider === "RAZORPAY" && refundAmountMinor > 0) {
       let response;
       let gatewayRefund;
       try {
@@ -594,10 +617,25 @@ exports.refundPayment = onCall(
         );
         gatewayRefund = await response.json().catch(() => ({}));
       } catch (error) {
-        console.error("Razorpay refund request failed", error?.message || "unknown error");
-        throw new HttpsError("unavailable", "Razorpay could not be reached; the payment was not marked as refunded.");
+        console.error("Razorpay refund request outcome is unknown", error?.message || "unknown error");
+        // Keep REFUND_REQUESTED so the same payment cannot be refunded twice.
+        throw new HttpsError(
+          "unavailable",
+          "Razorpay refund submission could not be confirmed. Check the Razorpay dashboard before retrying."
+        );
       }
       if (!response.ok || typeof gatewayRefund.id !== "string") {
+        await db.runTransaction(async (tx) => {
+          const currentSnap = await tx.get(ref);
+          if (currentSnap.exists && currentSnap.get("status") === "REFUND_REQUESTED") {
+            tx.update(ref, {
+              status: "SUCCESS",
+              refundFailureCode: String(gatewayRefund?.error?.code || "REFUND_REJECTED"),
+              refundFailedAtEpochMs: Date.now(),
+              updatedAtEpochMs: Date.now()
+            });
+          }
+        });
         console.error("Razorpay refund rejected", response.status, gatewayRefund?.error?.code || "unknown error");
         throw new HttpsError("failed-precondition", "Razorpay rejected the refund. The payment was not marked as refunded.");
       }
@@ -606,28 +644,38 @@ exports.refundPayment = onCall(
       refundStatus = String(gatewayRefund.status || "").toLowerCase() === "processed"
         ? "REFUNDED"
         : "REFUND_PENDING";
-    } else if (provider !== "TEST" && refundAmountMinor > 0) {
-      throw new HttpsError("failed-precondition", "Refunds are implemented only for Razorpay and simulated TEST payments.");
     }
 
-    await ref.update({
-      status: refundStatus,
-      refundAmountMinor,
-      ...(refundId ? { gatewayRefundId: refundId } : {}),
-      refundedAtEpochMs: refundStatus === "REFUNDED" ? now : null,
-      refundRequestedAtEpochMs: now,
-      refundedBy: request.auth.uid,
-      updatedAtEpochMs: now
+    // A webhook may arrive before the API response is persisted. Never overwrite
+    // a terminal REFUNDED/SUCCESS state that the webhook has already established.
+    const finalStatus = await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(ref);
+      if (!currentSnap.exists) throw new HttpsError("not-found", "Payment not found.");
+      const currentStatus = String(currentSnap.get("status") || "");
+      if (currentStatus === "REFUNDED") return "REFUNDED";
+      if (currentStatus === "SUCCESS") return "SUCCESS";
+      if (!["REFUND_REQUESTED", "REFUND_PENDING"].includes(currentStatus)) return currentStatus;
+      tx.update(ref, {
+        status: refundStatus,
+        ...(refundId ? { gatewayRefundId: refundId } : {}),
+        refundAmountMinor,
+        refundedAtEpochMs: refundStatus === "REFUNDED" ? now : null,
+        updatedAtEpochMs: now
+      });
+      return refundStatus;
     });
 
-    if (refundStatus === "REFUNDED" && payment.subscriptionId) {
+    if (finalStatus === "REFUNDED" && payment.subscriptionId) {
       await db.collection("subscriptions").doc(payment.subscriptionId).set({
         status: "CANCELLED",
         cancelledAtEpochMs: now,
         updatedAtEpochMs: now
       }, { merge: true });
     }
-    return { ok: true, status: refundStatus, refundAmountMinor, refundId };
+    if (finalStatus === "SUCCESS") {
+      throw new HttpsError("failed-precondition", "Razorpay reported a failed refund; the payment remains successful.");
+    }
+    return { ok: true, status: finalStatus, refundAmountMinor, refundId };
   }
 );
 
