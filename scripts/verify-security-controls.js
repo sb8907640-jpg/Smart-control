@@ -166,6 +166,12 @@ check("File transfer creation respects Owner policy and uploads require UPLOADIN
     storageRules.includes("transferDoc().data.status == 'UPLOADING'"),
   "Both participants must have transfer access enabled, and Storage rejects writes before the upload state transition.");
 
+check("Location and SOS writes respect Owner policy without blocking stop/ack",
+  firestoreRules.includes("featureEnabled('LOCATION', uid)") &&
+    firestoreRules.includes("featureEnabled('SOS_ALERTS', uid)") &&
+    firestoreRules.includes("request.resource.data.sharingActive == false"),
+  "Disabling a feature blocks new data collection while users can still stop sharing and acknowledge existing alerts.");
+
 check("Role hierarchy and self-promotion protections are tested",
   read("functions/spec/roles.js").includes("function canManageUser") &&
     read("functions/spec/roles.test.js").includes("blocks self-promotion") &&
