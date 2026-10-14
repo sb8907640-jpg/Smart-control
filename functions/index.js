@@ -56,7 +56,8 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Sign in before generating a pairing code.");
   }
 
-  const isOwner = await isOwnerIdentity(request);
+  const claims = request.auth.token || {};
+  const isOwner = claims.owner === true || normalizeRole(claims.role) === "OWNER";
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
