@@ -119,7 +119,10 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      // Pairing tokens are bearer secrets: direct get is allowed for a supplied
+      // token, but collection listing must never reveal other users' active codes.
+      allow get: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow list: if false;
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
       allow delete: if request.auth != null && (
