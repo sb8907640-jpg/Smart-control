@@ -52,6 +52,20 @@ async function main() {
 
     await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
 
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "ownerAccounts", "config"), {
+        emails: ["owner@example.com"],
+        mobiles: ["+911234567890"],
+        displayName: "Owner"
+      });
+    });
+    await assertFails(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
+      emails: ["attacker@example.com"]
+    }));
+    await assertSucceeds(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
+      displayName: "Updated Owner"
+    }));
+
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
