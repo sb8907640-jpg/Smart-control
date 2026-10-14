@@ -7,6 +7,7 @@ const {
 } = require("@firebase/rules-unit-testing");
 const {
   doc,
+  getDoc,
   setDoc,
   updateDoc,
   runTransaction
@@ -91,6 +92,25 @@ async function main() {
       });
       tx.delete(codeRef);
     }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      for (const id of ["controlled-a", "controlled-b"]) {
+        await setDoc(doc(ctx.firestore(), "devices", id), {
+          controllerUid: "controller-user",
+          pairingToken: "f".repeat(48),
+          pairedAt: Date.now(),
+          pairingActive: true
+        });
+      }
+    });
+    await assertSucceeds(updateDoc(doc(controller.firestore(), "devices", "controlled-a"), {
+      controllerUid: null,
+      pairingActive: false
+    }));
+    const untouchedDevice = await getDoc(doc(controller.firestore(), "devices", "controlled-b"));
+    if (!untouchedDevice.exists() || untouchedDevice.data().pairingActive !== true) {
+      throw new Error("Unpairing one device unexpectedly changed another linked device.");
+    }
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
