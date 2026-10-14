@@ -632,14 +632,10 @@ exports.refundPayment = onCall(
 
       const gatewayRefundStatus = String(refund.status || "pending").toLowerCase();
       if (gatewayRefundStatus === "failed") {
-        let alreadyProcessed = false;
-        await db.runTransaction(async (tx) => {
+        const alreadyProcessed = await db.runTransaction(async (tx) => {
           const latestSnap = await tx.get(ref);
           const latest = latestSnap.exists ? latestSnap.data() || {} : {};
-          if (latest.status === "REFUNDED" || latest.gatewayRefundStatus === "processed") {
-            alreadyProcessed = true;
-            return;
-          }
+          if (latest.status === "REFUNDED" || latest.gatewayRefundStatus === "processed") return true;
           tx.update(ref, {
             status: "SUCCESS",
             gatewayRefundId: refund.id,
@@ -647,24 +643,22 @@ exports.refundPayment = onCall(
             refundFailureAtEpochMs: now,
             updatedAtEpochMs: now
           });
+          return false;
         });
         if (alreadyProcessed) return { ok: true, refundAmountMinor, status: "REFUNDED" };
         throw new HttpsError("failed-precondition", "Razorpay rejected the refund.");
       }
 
       const processed = gatewayRefundStatus === "processed";
-      let finalStatus = processed ? "REFUNDED" : "REFUND_PENDING";
-      await db.runTransaction(async (tx) => {
+      const finalStatus = await db.runTransaction(async (tx) => {
         const latestSnap = await tx.get(ref);
         const latest = latestSnap.exists ? latestSnap.data() || {} : {};
         // A fast webhook may confirm the refund before this callable receives its
         // provider response. Never overwrite that completed state with PENDING.
-        if (latest.status === "REFUNDED" || latest.gatewayRefundStatus === "processed") {
-          finalStatus = "REFUNDED";
-          return;
-        }
+        if (latest.status === "REFUNDED" || latest.gatewayRefundStatus === "processed") return "REFUNDED";
+        const status = processed ? "REFUNDED" : "REFUND_PENDING";
         tx.update(ref, {
-          status: finalStatus,
+          status,
           refundAmountMinor,
           gatewayRefundId: refund.id,
           gatewayRefundStatus,
@@ -672,6 +666,7 @@ exports.refundPayment = onCall(
           ...(processed ? { refundedAtEpochMs: now, refundedBy: request.auth.uid } : {}),
           updatedAtEpochMs: now
         });
+        return status;
       });
       if (finalStatus === "REFUNDED" && payment.subscriptionId) {
         await db.collection("subscriptions").doc(payment.subscriptionId).set({
