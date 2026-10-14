@@ -208,6 +208,41 @@ function requireAdmin(request) {
   }
 }
 
+async function configuredOwnerMatches(request) {
+  if (!request.auth) return false;
+  const claims = request.auth.token || {};
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = String(claims.phone_number || "").trim();
+  const snap = await db.collection("ownerAccounts").doc("config").get();
+  const cfg = snap.exists ? snap.data() || {} : {};
+  const emails = Array.isArray(cfg.emails)
+    ? cfg.emails.map(value => String(value).trim().toLowerCase())
+    : [];
+  const mobiles = Array.isArray(cfg.mobiles)
+    ? cfg.mobiles.map(value => String(value).trim())
+    : [];
+  return (email && emails.includes(email)) || (phone && mobiles.includes(phone));
+}
+
+async function requireOwnerOrSuperAdmin(request) {
+  requireAdmin(request);
+  const claims = request.auth.token || {};
+  const role = normalizeRole(claims.role);
+  if (claims.owner === true || role === "OWNER" || role === "SUPER_ADMIN" ||
+      await configuredOwnerMatches(request)) {
+    return;
+  }
+  throw new HttpsError("permission-denied", "Only a configured Owner or Super Admin may manage owner accounts.");
+}
+
+async function effectiveActorRole(request) {
+  const claims = request.auth?.token || {};
+  const role = normalizeRole(claims.role);
+  if (role === "SUPER_ADMIN") return role;
+  if (claims.owner === true || await configuredOwnerMatches(request)) return "OWNER";
+  return role;
+}
+
 async function findAuthUser(identifier) {
   try {
     if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
@@ -261,8 +296,11 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
+  const actorRole = await effectiveActorRole(request);
+  // A user may retain their current role while editing their own access, but
+  // cannot use the self-edit path to promote themselves to a privileged role.
+  if (!canManageRole(actorRole, role) &&
+      !(uid === request.auth.uid && role === actorRole)) {
     throw new HttpsError("permission-denied", "Insufficient role authority.");
   }
 
@@ -330,7 +368,7 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireOwnerOrSuperAdmin(request);
 
   const emails = Array.isArray(request.data?.emails)
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
@@ -361,7 +399,11 @@ exports.syncOwnerAccounts = onCall(async (request) => {
       unresolved.push(identifier);
       continue;
     }
-    const claims = { ...(user.customClaims || {}), admin: true };
+    const claims = { ...(user.customClaims || {}) };
+    const currentRole = normalizeRole(claims.role);
+    claims.admin = true;
+    claims.owner = true;
+    claims.role = currentRole === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -369,9 +411,18 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   for (const identifier of previousIdentifiers) {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    if (!user) continue;
     const claims = { ...(user.customClaims || {}) };
-    delete claims.admin;
+    const currentRole = normalizeRole(claims.role);
+    delete claims.owner;
+    if (currentRole === "SUPER_ADMIN") {
+      // Do not demote a separately assigned Super Admin when removing an Owner
+      // allowlist entry.
+      claims.admin = true;
+    } else {
+      delete claims.admin;
+      if (currentRole === "OWNER") claims.role = "USER";
+    }
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
