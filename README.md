@@ -18,7 +18,7 @@ Before producing an APK artifact, the workflow validates `app/google-services.js
 
 For signed release APKs, configure these GitHub Actions secrets: **ANDROID_RELEASE_KEYSTORE_BASE64**, **ANDROID_RELEASE_STORE_PASSWORD**, **ANDROID_RELEASE_KEY_ALIAS**, and **ANDROID_RELEASE_KEY_PASSWORD**. The keystore secret must contain the Base64-encoded release keystore. The workflow builds debug variants on push/pull-request checks; manual **release** or **all** builds require the release signing secrets and verify the resulting APK signatures before upload. Keep the keystore and passwords private and do not commit them.
 
-The existing Android CI and Production Readiness workflows are unchanged; this workflow only adds a dedicated APK build/download path.
+The main Android CI and Production Readiness workflows also run build, security-rule, and configuration checks. Signed release APKs are distributed only by this workflow after signature verification.
 
 
 ## WebRTC TURN relay configuration
