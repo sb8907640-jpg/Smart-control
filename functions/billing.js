@@ -580,6 +580,37 @@ exports.refundPayment = onCall(
       if (!keyId || !keySecret) {
         throw new HttpsError("failed-precondition", "Razorpay server credentials are not configured; no refund was submitted.");
       }
+      const refundRequestId = crypto.randomUUID();
+      const reserved = await db.runTransaction(async (tx) => {
+        const currentSnap = await tx.get(ref);
+        if (!currentSnap.exists) return false;
+        const current = currentSnap.data() || {};
+        if (current.status !== "SUCCESS" || Number(current.pendingRefundAmountMinor || 0) > 0) return false;
+        tx.update(ref, {
+          refundStatus: "SUBMITTING",
+          pendingRefundAmountMinor: refundAmountMinor,
+          refundRequestId,
+          refundRequestedAtEpochMs: Date.now(),
+          refundRequestedBy: request.auth.uid,
+          updatedAtEpochMs: Date.now()
+        });
+        return true;
+      });
+      if (!reserved) {
+        throw new HttpsError("aborted", "Another refund request has reserved this payment. Refresh its status before retrying.");
+      }
+      const releaseRefundReservation = async (reason) => db.runTransaction(async (tx) => {
+        const currentSnap = await tx.get(ref);
+        if (!currentSnap.exists) return;
+        const current = currentSnap.data() || {};
+        if (current.refundRequestId !== refundRequestId) return;
+        tx.update(ref, {
+          refundStatus: reason,
+          pendingRefundAmountMinor: 0,
+          refundRequestId: FieldValue.delete(),
+          updatedAtEpochMs: Date.now()
+        });
+      });
       const authHeader = "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64");
       let response;
       let result;
@@ -597,12 +628,19 @@ exports.refundPayment = onCall(
         );
         result = await response.json().catch(() => ({}));
       } catch (error) {
-        console.error("Razorpay refund request failed", error?.message || "unknown error");
-        throw new HttpsError("unavailable", "Razorpay could not be reached; the payment record was not marked refunded.");
+        // A transport failure after sending the request has an ambiguous outcome.
+        // Keep the reservation so another admin cannot accidentally submit twice.
+        console.error("Razorpay refund request outcome is uncertain", error?.message || "unknown error");
+        throw new HttpsError("unavailable", "Razorpay refund outcome is uncertain. The payment is reserved as pending; reconcile it in the provider dashboard before retrying.");
       }
-      if (!response.ok || typeof result.id !== "string" || Number(result.amount) !== refundAmountMinor) {
+      if (!response.ok) {
+        await releaseRefundReservation("FAILED");
         console.error("Razorpay refund rejected", response.status, String(result.error?.code || ""));
-        throw new HttpsError("failed-precondition", "Razorpay rejected the refund; the payment record was not marked refunded.");
+        throw new HttpsError("failed-precondition", "Razorpay rejected the refund; the reservation was released.");
+      }
+      if (typeof result.id !== "string" || Number(result.amount) !== refundAmountMinor) {
+        // A success HTTP status with an unrecognizable response is ambiguous.
+        throw new HttpsError("unavailable", "Razorpay returned an unconfirmed refund response. Keep this payment pending and reconcile it in the provider dashboard.");
       }
       gatewayRefundId = result.id;
       gatewayRefundStatus = String(result.status || "pending").toUpperCase();
@@ -631,6 +669,8 @@ exports.refundPayment = onCall(
     await ref.update({
       status: fullyRefunded ? "REFUNDED" : "SUCCESS",
       refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
+      pendingRefundAmountMinor: 0,
+      refundRequestId: FieldValue.delete(),
       refundAmountMinor,
       refundedAmountMinor,
       ...(gatewayRefundId ? { gatewayRefundId } : {}),
