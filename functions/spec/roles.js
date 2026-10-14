@@ -30,4 +30,13 @@ function canManageRole(actorRole, targetRole) {
   return ROLE_LEVEL[actor] > ROLE_LEVEL[target];
 }
 
-module.exports = { ROLES, normalizeRole, canManageRole };
+function canManageUser(actorUid, targetUid, actorRole, currentTargetRole, requestedTargetRole = currentTargetRole) {
+  const actor = normalizeRole(actorRole);
+  const currentTarget = normalizeRole(currentTargetRole);
+  const requestedTarget = normalizeRole(requestedTargetRole);
+
+  if (actorUid === targetUid) return actor === requestedTarget;
+  return canManageRole(actor, currentTarget) && canManageRole(actor, requestedTarget);
+}
+
+module.exports = { ROLES, normalizeRole, canManageRole, canManageUser };
