@@ -31,6 +31,7 @@ function reconcileProcessedRefund(current, refundIdValue, refundAmountValue) {
   const providerCumulativeMinor = Number(current?.razorpayCumulativeRefundedAmountMinor || 0);
   if (Number.isSafeInteger(providerCumulativeMinor) &&
       providerCumulativeMinor > 0 &&
+      refundedBeforeMinor > 0 &&
       providerCumulativeMinor >= refundedBeforeMinor) {
     return {
       duplicate: false,
