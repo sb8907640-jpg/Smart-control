@@ -107,10 +107,18 @@ exports.savePaymentGatewayPermit = onCall(
     const existing = await CONFIG_REF.get();
     const previous = existing.exists ? existing.data()?.paymentGatewayPermit || {} : {};
     const hasNewCredentials = Boolean(keyId && keySecret && webhookSecret);
-    if (hasNewCredentials && mode === "TEST" && !keyId.startsWith("rzp_test_")) {
+    // Validate the effective credentials, not only newly entered values. Without
+    // this check, switching TEST/LIVE while reusing saved credentials could pair
+    // a test key with LIVE mode (or a live key with TEST mode).
+    const effectiveCredentials = hasNewCredentials
+      ? { keyId, keySecret, webhookSecret }
+      : (previous.encryptedCredentials ? decryptCredentials(previous.encryptedCredentials) : null);
+    if (effectiveCredentials && mode === "TEST" &&
+        !String(effectiveCredentials.keyId || "").startsWith("rzp_test_")) {
       throw new HttpsError("invalid-argument", "Test mode requires a Razorpay test Key ID (rzp_test_…).");
     }
-    if (hasNewCredentials && mode === "LIVE" && !keyId.startsWith("rzp_live_")) {
+    if (effectiveCredentials && mode === "LIVE" &&
+        !String(effectiveCredentials.keyId || "").startsWith("rzp_live_")) {
       throw new HttpsError("invalid-argument", "Live mode requires a Razorpay live Key ID (rzp_live_…).");
     }
     if (enabled && !hasNewCredentials) {
