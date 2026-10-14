@@ -86,8 +86,11 @@ fun PairingScreen(
                 else "Paired controller: " + pairing!!.controllerUid
             )
             Text("Sender role: " + pairing!!.senderRole + " • Receiver role: " + pairing!!.receiverRole)
-            OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
-                Text("Unpair device")
+            OutlinedButton(
+                onClick = { viewModel.unpair(pairing!!.deviceUid) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Unpair this device")
             }
         } else {
             Text("Who are you? (Sender)")
