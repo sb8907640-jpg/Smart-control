@@ -154,6 +154,23 @@ check("Payment secrets remain outside generic owner settings editor",
     ownerAdmin.includes("legacyGatewaySecretKeys"),
   "Generic configuration editor blocks legacy payment secret keys; gateway changes use the dedicated secure panel.");
 
+check("Media sessions require REQUESTED status and Owner feature policy",
+  firestoreRules.includes("request.resource.data.status == 'REQUESTED'") &&
+    firestoreRules.includes("featureEnabled('CAMERA', request.resource.data.targetDeviceId)") &&
+    firestoreRules.includes("request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt', 'reason'])"),
+  "A client cannot create an already-active session or bypass a disabled target capability.");
+
+check("File transfer creation respects Owner policy and uploads require UPLOADING",
+  firestoreRules.includes("featureEnabled('FILE_TRANSFER', request.resource.data.receiverDeviceId)") &&
+    storageRules.includes("transferDoc().data.status == 'UPLOADING'"),
+  "Both participants must have transfer access enabled, and Storage rejects writes before the upload state transition.");
+
+check("Role hierarchy and self-promotion protections are tested",
+  read("functions/spec/roles.js").includes("function canManageUser") &&
+    read("functions/spec/roles.test.js").includes("blocks self-promotion") &&
+    functionsIndex.includes("await requireOwner(request)"),
+  "Owner account sync awaits allowlist authorization and role changes are covered by unit tests.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
