@@ -62,6 +62,10 @@ async function main() {
     await assertFails(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
       emails: ["attacker@example.com"]
     }));
+    await assertFails(setDoc(doc(adminOnly.firestore(), "ownerAccounts", "self-created"), {
+      emails: ["admin@example.com"],
+      mobiles: ["+911111111111"]
+    }));
     await assertSucceeds(updateDoc(doc(owner.firestore(), "ownerAccounts", "config"), {
       displayName: "Updated Owner"
     }));
