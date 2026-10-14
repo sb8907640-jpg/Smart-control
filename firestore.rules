@@ -116,7 +116,7 @@ service cloud.firestore {
           )
           || (
             request.resource.data.expiryMode == 'NO_EXPIRY'
-            && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
+            && (request.auth.token.owner == true || request.auth.token.role in ['OWNER', 'SUPER_ADMIN'])
           )
         );
       // Pairing tokens are bearer secrets: direct get is allowed for a supplied
