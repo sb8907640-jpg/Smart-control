@@ -529,46 +529,104 @@ exports.applyEmi = onCall(async (request) => {
   return { id: scheduleRef.id };
 });
 
-exports.refundPayment = onCall(async (request) => {
-  requireAdmin(request);
-  const paymentId = String(request.data?.paymentId || "").trim();
-  if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
+exports.refundPayment = onCall(
+  { secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] },
+  async (request) => {
+    requireAdmin(request);
+    const paymentId = String(request.data?.paymentId || "").trim();
+    if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
 
-  const config = await readPaymentConfig();
-  if (config["payment.refundEnabled"] === "false") {
-    throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    const config = await readPaymentConfig();
+    if (config["payment.refundEnabled"] === "false") {
+      throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    }
+
+    const ref = db.collection("payments").doc(paymentId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
+    const payment = snap.data() || {};
+    if (payment.status !== "SUCCESS") {
+      throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
+    }
+
+    const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
+    if (windowDays > 0 && Date.now() - Number(payment.createdAtEpochMs || 0) > windowDays * 86400000) {
+      throw new HttpsError("failed-precondition", "Refund window has expired.");
+    }
+
+    const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
+    const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
+    const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
+    const now = Date.now();
+    let refundStatus = "REFUNDED";
+    let refundId = null;
+
+    if (provider === "RAZORPAY" && refundAmountMinor > 0) {
+      const permit = payment.gatewayPermitRevision
+        ? await getActiveGatewayPermit(payment.gatewayPermitRevision)
+        : null;
+      const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+      const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
+      const gatewayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
+      if (!keyId || !keySecret || !gatewayPaymentId) {
+        throw new HttpsError("failed-precondition", "Verified Razorpay payment details are missing; no refund was submitted.");
+      }
+
+      let response;
+      let gatewayRefund;
+      try {
+        response = await fetch(
+          "https://api.razorpay.com/v1/payments/" + encodeURIComponent(gatewayPaymentId) + "/refund",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64"),
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              amount: refundAmountMinor,
+              notes: { smartcontrolPaymentId: paymentId }
+            })
+          }
+        );
+        gatewayRefund = await response.json().catch(() => ({}));
+      } catch (error) {
+        console.error("Razorpay refund request failed", error?.message || "unknown error");
+        throw new HttpsError("unavailable", "Razorpay could not be reached; the payment was not marked as refunded.");
+      }
+      if (!response.ok || typeof gatewayRefund.id !== "string") {
+        console.error("Razorpay refund rejected", response.status, gatewayRefund?.error?.code || "unknown error");
+        throw new HttpsError("failed-precondition", "Razorpay rejected the refund. The payment was not marked as refunded.");
+      }
+
+      refundId = gatewayRefund.id;
+      refundStatus = String(gatewayRefund.status || "").toLowerCase() === "processed"
+        ? "REFUNDED"
+        : "REFUND_PENDING";
+    } else if (provider !== "TEST" && refundAmountMinor > 0) {
+      throw new HttpsError("failed-precondition", "Refunds are implemented only for Razorpay and simulated TEST payments.");
+    }
+
+    await ref.update({
+      status: refundStatus,
+      refundAmountMinor,
+      ...(refundId ? { gatewayRefundId: refundId } : {}),
+      refundedAtEpochMs: refundStatus === "REFUNDED" ? now : null,
+      refundRequestedAtEpochMs: now,
+      refundedBy: request.auth.uid,
+      updatedAtEpochMs: now
+    });
+
+    if (refundStatus === "REFUNDED" && payment.subscriptionId) {
+      await db.collection("subscriptions").doc(payment.subscriptionId).set({
+        status: "CANCELLED",
+        cancelledAtEpochMs: now,
+        updatedAtEpochMs: now
+      }, { merge: true });
+    }
+    return { ok: true, status: refundStatus, refundAmountMinor, refundId };
   }
-
-  const ref = db.collection("payments").doc(paymentId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
-  const payment = snap.data() || {};
-  if (payment.status !== "SUCCESS") throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
-
-  const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
-  if (windowDays > 0 && Date.now() - Number(payment.createdAtEpochMs || 0) > windowDays * 86400000) {
-    throw new HttpsError("failed-precondition", "Refund window has expired.");
-  }
-
-  const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
-  const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
-  await ref.update({
-    status: "REFUNDED",
-    refundAmountMinor,
-    refundedAtEpochMs: Date.now(),
-    refundedBy: request.auth.uid,
-    updatedAtEpochMs: Date.now()
-  });
-
-  if (payment.subscriptionId) {
-    await db.collection("subscriptions").doc(payment.subscriptionId).set({
-      status: "CANCELLED",
-      cancelledAtEpochMs: Date.now(),
-      updatedAtEpochMs: Date.now()
-    }, { merge: true });
-  }
-  return { ok: true, refundAmountMinor };
-});
+);
 
 exports.createCoupon = onCall(async (request) => {
   requireAdmin(request);
