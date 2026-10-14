@@ -644,8 +644,13 @@ exports.refundPayment = onCall(
       }
       gatewayRefundId = result.id;
       gatewayRefundStatus = String(result.status || "pending").toUpperCase();
+      if (["FAILED", "REJECTED"].includes(gatewayRefundStatus)) {
+        await releaseRefundReservation("FAILED");
+        throw new HttpsError("failed-precondition", "Razorpay reported a failed refund; the reservation was released.");
+      }
       if (!["PROCESSED", "PENDING"].includes(gatewayRefundStatus)) {
-        throw new HttpsError("failed-precondition", "Razorpay refund is not in a confirmed or pending state; check the provider dashboard.");
+        // Unknown provider states are not safe to retry automatically.
+        throw new HttpsError("unavailable", "Razorpay returned an unknown refund state. Reconcile it in the provider dashboard before retrying.");
       }
       if (gatewayRefundStatus === "PENDING") {
         await ref.update({
@@ -1040,6 +1045,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           refundedAmountMinor,
           refundAmountMinor: Number(entity.amount_refunded || refundedAmountMinor),
           pendingRefundAmountMinor: 0,
+          refundRequestId: FieldValue.delete(),
           gatewayReference: razorpayPaymentId || payment.gatewayReference || null,
           refundedAtEpochMs: now,
           updatedAtEpochMs: now
@@ -1079,6 +1085,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             refundedAmountMinor,
             refundAmountMinor,
             pendingRefundAmountMinor: 0,
+            refundRequestId: FieldValue.delete(),
             gatewayRefundId: refundId,
             processedGatewayRefundIds: FieldValue.arrayUnion(refundId),
             refundedAtEpochMs: now,
@@ -1097,6 +1104,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         await paymentDoc.ref.update({
           refundStatus: "FAILED",
           pendingRefundAmountMinor: 0,
+          refundRequestId: FieldValue.delete(),
           ...(refundId ? { failedGatewayRefundId: refundId } : {}),
           updatedAtEpochMs: now
         });
