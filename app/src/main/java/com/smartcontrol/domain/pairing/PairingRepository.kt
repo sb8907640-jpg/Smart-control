@@ -8,5 +8,5 @@ interface PairingRepository {
     fun observeControlledDevices(): Flow<List<PairedDevice>>
     suspend fun createPairingCode(senderRole: String = "Other", receiverRole: String = "Other"): Result<PairingCode>
     suspend fun claimPairingCode(token: String): Result<PairedDevice>
-    suspend fun unpair(): Result<Unit>
+    suspend fun unpair(deviceUid: String? = null): Result<Unit>
 }
