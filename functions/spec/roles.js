@@ -16,7 +16,7 @@ function normalizeRole(value) {
 
 // Role assignment is deliberately narrower than ordinary admin access.
 // Owner identities are managed through the private owner-account allowlist;
-// only SUPER_ADMIN may assign SUPER_ADMIN or OWNER roles.
+// SUPER_ADMIN may assign privileged roles, but OWNER is allowlist-managed.
 function canManageRole(actorRole, targetRole) {
   const actor = normalizeRole(actorRole);
   const target = normalizeRole(targetRole);
