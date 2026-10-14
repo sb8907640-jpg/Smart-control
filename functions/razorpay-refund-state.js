@@ -38,4 +38,14 @@ function reconcileProcessedRefund(current, refundIdValue, refundAmountValue) {
   };
 }
 
-module.exports = { reconcileProcessedRefund };
+function matchesPendingRefund(current, refundIdValue, requestIdValue) {
+  if (Number(current?.pendingRefundAmountMinor || 0) <= 0) return false;
+  const refundId = String(refundIdValue || "").trim();
+  const requestId = String(requestIdValue || "").trim();
+  return Boolean(
+    (requestId && String(current?.refundRequestId || "") === requestId) ||
+    (refundId && String(current?.gatewayRefundId || "") === refundId)
+  );
+}
+
+module.exports = { reconcileProcessedRefund, matchesPendingRefund };
