@@ -194,6 +194,23 @@ async function main() {
       status: "REQUESTED"
     }));
 
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "target-user"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { FILE_TRANSFER: false }
+      });
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "disabled-feature-transfer"), {
+      senderDeviceId: "controller-user",
+      receiverDeviceId: "target-user",
+      fileName: "file.txt",
+      mimeType: "text/plain",
+      sizeBytes: 10,
+      createdAtEpochMs: Date.now(),
+      status: "REQUESTED"
+    }));
+
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
     console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
   } finally {
