@@ -381,7 +381,15 @@ exports.verifyPayment = onCall(async (request) => {
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
   const payment = snap.data() || {};
-  if (payment.status === "REFUNDED") throw new HttpsError("failed-precondition", "Refunded payment cannot be verified.");
+  if (payment.status === "REFUNDED" || payment.status === "REFUND_PENDING") {
+    throw new HttpsError("failed-precondition", "Refunded or refund-pending payment cannot be verified.");
+  }
+  if (payment.status === "SUCCESS") {
+    return { ok: true, paymentId, subscriptionId: payment.subscriptionId || null, alreadyVerified: true };
+  }
+  if (payment.status !== "PENDING") {
+    throw new HttpsError("failed-precondition", "Only pending test payments can be verified.");
+  }
   if (normalizeGateway(payment.gatewayProvider || payment.gateway) !== "TEST") {
     throw new HttpsError("failed-precondition", "Manual reference verification is disabled for real gateways. Use the provider's cryptographic/server verification flow.");
   }
@@ -421,8 +429,14 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
   if (payment.gatewayProvider !== "RAZORPAY" || payment.gatewayOrderId !== orderId) {
     throw new HttpsError("failed-precondition", "Razorpay order does not match this payment.");
   }
-  if (payment.status === "REFUNDED") {
-    throw new HttpsError("failed-precondition", "Refunded payment cannot be verified.");
+  if (payment.status === "REFUNDED" || payment.status === "REFUND_PENDING") {
+    throw new HttpsError("failed-precondition", "Refunded or refund-pending payment cannot be verified.");
+  }
+  if (payment.status === "SUCCESS") {
+    return { ok: true, paymentId, subscriptionId: payment.subscriptionId || null, alreadyVerified: true };
+  }
+  if (payment.status !== "PENDING") {
+    throw new HttpsError("failed-precondition", "Only pending Razorpay payments can be verified.");
   }
   const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
   const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
@@ -503,6 +517,9 @@ exports.applyEmi = onCall(async (request) => {
     throw new HttpsError("not-found", "Payment not found.");
   }
   const payment = paymentSnap.data();
+  if (payment.status !== "SUCCESS") {
+    throw new HttpsError("failed-precondition", "EMI can only be scheduled for a successful payment.");
+  }
   if (String(payment.paymentMethod || "").toUpperCase() !== "EMI") {
     throw new HttpsError("failed-precondition", "EMI can only be applied to an EMI payment.");
   }
