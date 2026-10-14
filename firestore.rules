@@ -133,9 +133,15 @@ service cloud.firestore {
     }
 
     match /mediaSessions/{sessionId} {
+      // New sessions must start as requests. Approval and signaling are separate
+      // participant-authorized updates below; clients cannot pre-create ACTIVE sessions.
       allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt'])
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
+        && request.resource.data.capabilities is list
+        && request.resource.data.status == 'REQUESTED'
+        && request.resource.data.createdAt is int
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
