@@ -10,6 +10,7 @@ const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 const razorpayWebhookSecret = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 const gatewayPermit = require("./gateway-permit");
 const { extractRazorpayWebhookEvent } = require("./razorpay-webhook-utils");
+const { reconcileProcessedRefund } = require("./razorpay-refund-state");
 const getActiveGatewayPermit = gatewayPermit.getActiveGatewayPermit;
 const gatewayEncryptionKey = gatewayPermit.gatewayEncryptionKey;
 exports.savePaymentGatewayPermit = gatewayPermit.savePaymentGatewayPermit;
@@ -1061,20 +1062,13 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           const currentSnap = await tx.get(paymentDoc.ref);
           if (!currentSnap.exists) throw new Error("Payment disappeared during refund reconciliation.");
           const current = currentSnap.data() || {};
-          const processedIds = Array.isArray(current.processedGatewayRefundIds) ? current.processedGatewayRefundIds : [];
-          if (processedIds.includes(refundId)) {
-            fullyRefunded = current.status === "REFUNDED";
-            return;
-          }
-          const refundedAmountMinor = Math.min(
-            Number(current.amountMinor || 0),
-            Number(current.refundedAmountMinor || 0) + refundAmountMinor
-          );
-          fullyRefunded = refundedAmountMinor >= Number(current.amountMinor || 0);
+          const reconciliation = reconcileProcessedRefund(current, refundId, refundAmountMinor);
+          fullyRefunded = reconciliation.fullyRefunded;
+          if (reconciliation.duplicate) return;
           tx.update(paymentDoc.ref, {
             status: fullyRefunded ? "REFUNDED" : "SUCCESS",
             refundStatus: fullyRefunded ? "PROCESSED" : "PARTIALLY_REFUNDED",
-            refundedAmountMinor,
+            refundedAmountMinor: reconciliation.refundedAmountMinor,
             refundAmountMinor,
             pendingRefundAmountMinor: 0,
             refundRequestId: FieldValue.delete(),
