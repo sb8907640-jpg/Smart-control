@@ -15,7 +15,7 @@ function installOwnerPanelRoutes(app, { db }) {
     { id: 8, key: "SCREEN_RECORDING", name: "Screen Recording", description: "Record your screen" },
     { id: 9, key: "TOUCH_CONTROL", name: "Touch Control", description: "Touch control" },
     { id: 10, key: "KEYBOARD_INPUT", name: "Keyboard Input", description: "Keyboard input" },
-    { id: 11, key: "APP_INSTALL_UNINSTALL", name: "App Install / Uninstall", description: "Install/uninstall apps" },
+    { id: 11, key: "APP_INSTALL", name: "App Install / Uninstall", description: "Install/uninstall apps" },
     { id: 12, key: "FILE_TRANSFER", name: "File Transfer", description: "Send and receive files" },
     { id: 13, key: "CLIPBOARD_SYNC", name: "Clipboard Sync", description: "Sync clipboard text" },
     { id: 14, key: "FILES_ACCESS", name: "Files Access", description: "Access files/folders" },
