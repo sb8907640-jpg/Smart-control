@@ -77,8 +77,11 @@ function seedDb() {
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
     pairingCodes: { "JOIN-CODE": { ownerUid: "user-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
-    subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
-    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "INITIATED" } },
+    subscriptions: {
+      "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" },
+      "sub-pending": { userId: "user-1", planId: "plan-1", status: "PENDING_PAYMENT" }
+    },
+    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-pending", amountMinor: 100, status: "INITIATED" } },
     sosAlerts: { "sos-1": { userId: "user-1", status: "TRIGGERED" } },
     freeAccessGrants: { "grant-1": { userId: "user-1", status: "ACTIVE" } }
   });
@@ -190,5 +193,9 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
+  const paymentAfterLegacyVerify = await db.collection("payments").doc("payment-1").get();
+  const subscriptionAfterLegacyVerify = await db.collection("subscriptions").doc("sub-pending").get();
+  assert.equal(paymentAfterLegacyVerify.data().status, "INITIATED", "legacy verification must not mark an unverified payment successful");
+  assert.equal(subscriptionAfterLegacyVerify.data().status, "PENDING_PAYMENT", "legacy verification must not activate a subscription");
   console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned success or an explicitly disabled legacy-payment response.");
 })();
