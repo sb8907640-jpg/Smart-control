@@ -14,6 +14,23 @@ class MemoryFirestore {
     return new MemoryCollection(this, name);
   }
   batch() { return new MemoryBatch(this); }
+  async runTransaction(callback) {
+    const operations = [];
+    const transaction = {
+      get: ref => ref.get(),
+      set(ref, value, options = {}) {
+        operations.push(() => ref.set(value, options));
+        return transaction;
+      },
+      update(ref, value) {
+        operations.push(() => ref.set(value, { merge: true }));
+        return transaction;
+      }
+    };
+    const result = await callback(transaction);
+    for (const operation of operations) await operation();
+    return result;
+  }
 }
 class MemoryBatch {
   constructor(db) { this.db = db; this.ops = []; }
@@ -70,13 +87,16 @@ class MemoryDoc {
 }
 function seedDb() {
   return new MemoryFirestore({
-    users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
+    users: {
+      "user-1": { uid: "user-1", status: "ACTIVE" },
+      "owner-1": { uid: "owner-1", status: "ACTIVE", role: "OWNER" }
+    },
     devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
-    pairingCodes: { "JOIN-CODE": { ownerUid: "user-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
+    pairingCodes: { "JOIN-CODE": { ownerUid: "owner-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
     subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
     payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "VERIFIED" } },
     sosAlerts: { "sos-1": { userId: "user-1", status: "TRIGGERED" } },
