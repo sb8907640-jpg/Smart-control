@@ -316,18 +316,36 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   });
 
   app.get("/api/permissions", async(req,res,next)=>{try{res.json({permissions:await list("permissionGrants",req.catalogUid)});}catch(e){next(e);}});
-  app.get("/api/permissions/status", async(req,res,next)=>{try{const permissions=await list("permissionGrants",req.catalogUid);res.json({status:permissions.some(p=>p.granted)?"PARTIAL":"CONSENT_REQUIRED",permissions});}catch(e){next(e);}});
+  app.get("/api/permissions/status", async(req,res,next)=>{try{const permissions=await list("permissionStates",req.catalogUid);res.json({status:permissions.some(p=>p.granted===true)?"PARTIAL":"CONSENT_REQUIRED",permissions,history:await list("permissionGrants",req.catalogUid)});}catch(e){next(e);}});
   app.get("/api/permissions/logs", async(req,res,next)=>{try{res.json({logs:await list("permissionRequests",req.catalogUid)});}catch(e){next(e);}});
   app.get("/api/permissions/:id", async(req,res,next)=>{try{const s=await firestoreCollection("permissionGrants").doc(req.params.id).get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Permission record not found."});res.json({permission:{id:s.id,...s.data()}});}catch(e){next(e);}});
 
   app.post("/api/permissions/request", async(req,res,next)=>{
     try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionRequests",{userId:req.catalogUid,permission,status:"REQUESTED",requestedAt:now()});await audit(req.catalogUid,"PERMISSION_REQUESTED","permission",{permission,id});res.status(201).json({ok:true,id,status:"REQUESTED"});}catch(e){next(e);}
   });
-  app.post("/api/permissions/grant", requireConsent, async(req,res,next)=>{
-    try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now()});await audit(req.catalogUid,"PERMISSION_GRANTED","permission",{permission,id});res.status(201).json({ok:true,id,status:"GRANTED"});}catch(e){next(e);}
+  app.post("/api/permissions/grant", requireConsentScope(req => req.body?.permission), async(req,res,next)=>{
+    try{
+      const permission=normalizePermission(req.body?.permission);
+      if(!permission)return res.status(400).json({error:"permission is required."});
+      const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now()});
+      await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid,permission)).set({
+        userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now(),updatedAt:now()
+      },{merge:true});
+      await audit(req.catalogUid,"PERMISSION_GRANTED","permission",{permission,id});
+      res.status(201).json({ok:true,id,status:"GRANTED"});
+    }catch(e){next(e);}
   });
   app.post("/api/permissions/revoke", async(req,res,next)=>{
-    try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now()});await audit(req.catalogUid,"PERMISSION_REVOKED","permission",{permission,id});res.status(201).json({ok:true,id,status:"REVOKED"});}catch(e){next(e);}
+    try{
+      const permission=normalizePermission(req.body?.permission);
+      if(!permission)return res.status(400).json({error:"permission is required."});
+      const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now()});
+      await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid,permission)).set({
+        userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now(),updatedAt:now()
+      },{merge:true});
+      await audit(req.catalogUid,"PERMISSION_REVOKED","permission",{permission,id});
+      res.status(201).json({ok:true,id,status:"REVOKED"});
+    }catch(e){next(e);}
   });
   app.post("/api/permissions/allow-all", requireConsent, async(req,res,next)=>{
     try{const features=["LOCATION","NOTIFICATIONS","BATTERY_NETWORK","CAMERA","MICROPHONE","GALLERY","SCREEN_SHARE","SCREEN_RECORDING","TOUCH_CONTROL","KEYBOARD_INPUT","APP_INSTALL_UNINSTALL","FILE_TRANSFER","CLIPBOARD_SYNC","FILES_ACCESS","CONTACTS","SMS","CALL_LOGS","APP_USAGE","SOS_ALERTS"];const batch=db.batch();for(const permission of features){const ref=firestoreCollection("permissionRequests").doc();batch.set(ref,{userId:req.catalogUid,permission,status:"REQUESTED",createdAt:now(),manualSystemConfirmationRequired:true});}await batch.commit();const id=await add("permissionFlows",{userId:req.catalogUid,type:"ALLOW_ALL",status:"USER_CONFIRMATION_REQUIRED",featureCount:features.length});await audit(req.catalogUid,"PERMISSION_ALLOW_ALL_REQUESTED","permissions",{id,featureCount:features.length});res.status(202).json({ok:true,id,status:"USER_CONFIRMATION_REQUIRED",count:features.length});}catch(e){next(e);}
@@ -351,25 +369,31 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   app.get("/api/control/logs",async(req,res,next)=>{try{res.json({logs:await list("controlLogs",req.catalogUid)});}catch(e){next(e);}});
 
   const commandRoutes=[
-    ["/api/control/touch","TOUCH"],["/api/control/keyboard","KEYBOARD"],["/api/control/app/install","APP_INSTALL"],["/api/control/app/uninstall","APP_UNINSTALL"],
-    ["/api/control/file/transfer","FILE_TRANSFER"],["/api/control/clipboard","CLIPBOARD"],["/api/control/screen/share","SCREEN_SHARE"],["/api/control/screen/record","SCREEN_RECORD"],
-    ["/api/control/camera","CAMERA"],["/api/control/mic","MIC"],["/api/control/p2p/start","P2P_START"],["/api/control/p2p/stop","P2P_STOP"]
+    ["/api/control/touch","TOUCH",["TOUCH_CONTROL"]],["/api/control/keyboard","KEYBOARD",["KEYBOARD_INPUT"]],
+    ["/api/control/app/install","APP_INSTALL",["APP_INSTALL_UNINSTALL"]],["/api/control/app/uninstall","APP_UNINSTALL",["APP_INSTALL_UNINSTALL"]],
+    ["/api/control/file/transfer","FILE_TRANSFER",["FILE_TRANSFER"]],["/api/control/clipboard","CLIPBOARD",["CLIPBOARD_SYNC"]],
+    ["/api/control/screen/share","SCREEN_SHARE",["SCREEN_SHARE"]],["/api/control/screen/record","SCREEN_RECORD",["SCREEN_RECORDING"]],
+    ["/api/control/camera","CAMERA",["CAMERA"]],["/api/control/mic","MIC",["MICROPHONE"]],
+    ["/api/control/p2p/start","P2P_START",["CAMERA","MICROPHONE"]],["/api/control/p2p/stop","P2P_STOP",null]
   ];
-  for(const [path,type] of commandRoutes){
-    app.post(path,requireConsent,requireActiveSession,async(req,res,next)=>{
+  for(const [path,type,permissions] of commandRoutes){
+    const consentMiddleware = permissions ? requireFeaturePermission(permissions) : requireConsent;
+    app.post(path,consentMiddleware,requireActiveSession,async(req,res,next)=>{
       try{const commandId=await add("remoteCommands",{controllerUid:req.catalogUid,userId:req.catalogUid,deviceId:req.mediaSession.targetDeviceId||null,sessionId:req.sessionId,commandType:type,payload:req.body?.payload||{},status:"QUEUED",consentId:req.consentId});await audit(req.catalogUid,"REMOTE_COMMAND_QUEUED","remoteCommand",{commandId,type,sessionId:req.sessionId});res.status(202).json({ok:true,accepted:true,commandId,status:"QUEUED"});}catch(e){next(e);}
     });
   }
 
   const dataRoutes=[
-    ["/api/data/location","locationData"],["/api/data/contacts","contacts"],["/api/data/sms","smsLogs"],["/api/data/call-logs","callLogs"],
-    ["/api/data/files","filesAccess"],["/api/data/gallery","galleryData"],["/api/data/app-usage","appUsage"],["/api/data/battery","batteryInfo"]
+    ["/api/data/location","locationData","LOCATION"],["/api/data/contacts","contacts","CONTACTS"],
+    ["/api/data/sms","smsLogs","SMS"],["/api/data/call-logs","callLogs","CALL_LOGS"],
+    ["/api/data/files","filesAccess","FILES_ACCESS"],["/api/data/gallery","galleryData","GALLERY"],
+    ["/api/data/app-usage","appUsage","APP_USAGE"],["/api/data/battery","batteryInfo","BATTERY_NETWORK"]
   ];
-  for(const [path,collection] of dataRoutes){
-    app.get(path,requireConsent,async(req,res,next)=>{try{const data=await list(collection,req.catalogUid);await audit(req.catalogUid,"DATA_READ",collection);res.json({data});}catch(e){next(e);}});
+  for(const [path,collection,permission] of dataRoutes){
+    app.get(path,requireFeaturePermission(permission),async(req,res,next)=>{try{const data=await list(collection,req.catalogUid);await audit(req.catalogUid,"DATA_READ",collection);res.json({data});}catch(e){next(e);}});
   }
-  app.post("/api/data/download",requireConsent,async(req,res,next)=>{try{const id=await add("dataDownloads",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_DOWNLOAD_REQUESTED","dataDownload",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
-  app.post("/api/data/share",requireConsent,async(req,res,next)=>{try{const id=await add("dataShares",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_SHARE_REQUESTED","dataShare",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
+  app.post("/api/data/download",requireFeaturePermission(req => requestedPermissions(req)),async(req,res,next)=>{try{const id=await add("dataDownloads",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_DOWNLOAD_REQUESTED","dataDownload",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
+  app.post("/api/data/share",requireFeaturePermission(req => requestedPermissions(req)),async(req,res,next)=>{try{const id=await add("dataShares",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_SHARE_REQUESTED","dataShare",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
 
   app.get("/api/plans",async(req,res,next)=>{try{const s=await firestoreCollection("plans").where("enabled","==",true).limit(100).get();const plans=s.docs.map(d=>({id:d.id,...d.data()})).filter(plan=>!isOwnerOnlyFreePlan(plan));res.json({plans});}catch(e){next(e);}});
   app.get("/api/plans/:id",async(req,res,next)=>{try{const s=await firestoreCollection("plans").doc(req.params.id).get();if(!s.exists)return res.status(404).json({error:"Plan not found."});const plan={id:s.id,...s.data()};if(plan.enabled!==true||isOwnerOnlyFreePlan(plan))return res.status(404).json({error:"Plan not found."});res.json({plan});}catch(e){next(e);}});
