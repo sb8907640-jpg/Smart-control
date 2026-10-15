@@ -397,9 +397,9 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
     if (!user) continue;
-    if (user.uid === request.auth.uid) {
-      throw new HttpsError("failed-precondition", "Keep your own Owner email or mobile in the configured list.");
-    }
+    // The earlier guard ensures the actor remains represented by at least
+    // one configured email or mobile; removing a secondary alias is safe.
+    if (user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
     if (claims.role === "SUPER_ADMIN") continue;
     delete claims.admin;
