@@ -66,7 +66,6 @@ class RemoteCommandSessionGateTest {
         val gate = RemoteCommandSessionGate { now }
         assertFalse(gate.accept(command(), "session-1", accessibilityEnabled = false).isSuccess)
     }
-}
 
     private fun remoteSession(status: SessionStatus) = RemoteSession(
         request = SessionRequest(
