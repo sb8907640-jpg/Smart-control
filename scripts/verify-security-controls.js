@@ -394,6 +394,17 @@ check("WebRTC initialization can retry after native factory failure",
     mediaEngineInitialize.includes("if (initialized.get()) return"),
   "The engine marks itself initialized only after the native factory is successfully created.");
 
+const microphoneSetup = mediaEngine.slice(
+  mediaEngine.indexOf("if (MediaCapability.MICROPHONE in capabilities)"),
+  mediaEngine.indexOf("if (MediaCapability.CAMERA in capabilities)")
+);
+check("WebRTC disposes the audio source if track creation fails",
+  microphoneSetup.includes("factory.createAudioTrack") &&
+    microphoneSetup.includes("catch (error: Exception)") &&
+    microphoneSetup.includes("audioSource.dispose()") &&
+    microphoneSetup.includes("resources += AutoCloseable"),
+  "A failed microphone-track setup cannot leak its native audio source before the general session cleanup runs.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
