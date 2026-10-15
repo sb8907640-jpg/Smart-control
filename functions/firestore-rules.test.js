@@ -46,6 +46,11 @@ async function main() {
       }
     };
     await assertSucceeds(updateDoc(doc(healthUser.firestore(), "devices/health-user"), healthPayload));
+    const healthNew = env.authenticatedContext("health-new");
+    await assertSucceeds(setDoc(doc(healthNew.firestore(), "devices/health-new"), healthPayload));
+    await assertFails(setDoc(doc(healthNew.firestore(), "devices/health-new"), {
+      ...healthPayload, controllerUid: "attacker"
+    }));
     await assertFails(updateDoc(doc(healthController.firestore(), "devices/health-target"), healthPayload));
     await assertFails(updateDoc(doc(healthUser.firestore(), "devices/health-user"), { controllerUid: "attacker" }));
 
