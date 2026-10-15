@@ -248,7 +248,14 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
       const tokens = snap.docs.map(d => d.data().token).filter(Boolean);
       if (!tokens.length) return res.status(404).json({ error: "No registered FCM tokens." });
       const { getMessaging } = require("firebase-admin/messaging");
-      const result = await getMessaging().sendEachForMulticast({ tokens, notification: { title, body }, data: { source: "smart-control-backend" } });
+      // Use data-only messages so the Android client can verify the signed-in UID
+      // before displaying notification content. A stale token on a shared device
+      // must not let a previous account's message appear under a different account.
+      const result = await getMessaging().sendEachForMulticast({
+        tokens,
+        data: { source: "smart-control-backend", targetUid: uid, title, body },
+        android: { priority: "high" }
+      });
       const invalidCodes = new Set(["messaging/invalid-registration-token", "messaging/registration-token-not-registered"]);
       const cleanup = [];
       result.responses.forEach((response, index) => {
