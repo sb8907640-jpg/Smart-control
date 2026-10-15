@@ -335,8 +335,31 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   app.post("/api/admin/free-access/grant",requireOwnerAdmin,async(req,res,next)=>{try{const userId=String(req.body?.userId||"");if(!userId)return res.status(400).json({error:"userId is required."});const id=await add("freeAccessGrants",{userId,grantedBy:req.catalogUid,reason:String(req.body?.reason||"").slice(0,500),status:"ACTIVE",startsAt:now(),endsAt:req.body?.endsAt||null});await audit(req.catalogUid,"FREE_ACCESS_GRANTED","freeAccessGrant",{id,userId});res.status(201).json({id,status:"ACTIVE"});}catch(e){next(e);}});
   app.post("/api/admin/free-access/edit",requireOwnerAdmin,async(req,res,next)=>{try{const id=String(req.body?.grantId||"");if(!id)return res.status(400).json({error:"grantId is required."});await firestoreCollection("freeAccessGrants").doc(id).set({updatedAt:now(),reason:String(req.body?.reason||"").slice(0,500),endsAt:req.body?.endsAt||null},{merge:true});await audit(req.catalogUid,"FREE_ACCESS_EDITED","freeAccessGrant",{id});res.json({id,status:"UPDATED"});}catch(e){next(e);}});
   app.post("/api/admin/free-access/revoke",requireOwnerAdmin,async(req,res,next)=>{try{const id=String(req.body?.grantId||"");if(!id)return res.status(400).json({error:"grantId is required."});await firestoreCollection("freeAccessGrants").doc(id).set({status:"REVOKED",revokedAt:now(),updatedAt:now()},{merge:true});await audit(req.catalogUid,"FREE_ACCESS_REVOKED","freeAccessGrant",{id});res.json({id,status:"REVOKED"});}catch(e){next(e);}});
-  app.post("/api/admin/user/ban",requireAdmin,async(req,res,next)=>{try{const uid=String(req.body?.userId||"");if(!uid)return res.status(400).json({error:"userId is required."});await firestoreCollection("users").doc(uid).set({status:"BANNED",bannedAt:now(),bannedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"USER_BANNED","user",{uid});res.json({userId:uid,status:"BANNED"});}catch(e){next(e);}});
-  app.post("/api/admin/user/unban",requireAdmin,async(req,res,next)=>{try{const uid=String(req.body?.userId||"");if(!uid)return res.status(400).json({error:"userId is required."});await firestoreCollection("users").doc(uid).set({status:"ACTIVE",unbannedAt:now(),unbannedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"USER_UNBANNED","user",{uid});res.json({userId:uid,status:"ACTIVE"});}catch(e){next(e);}});
+  const changeUserStatus = (status, action) => async (req,res,next) => {
+    try {
+      const uid=String(req.body?.userId||"").trim();
+      if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return res.status(400).json({error:"A valid userId is required."});
+      if(uid===req.catalogUid) return res.status(409).json({error:"You cannot change your own account status."});
+      const ref=firestoreCollection("users").doc(uid);
+      const snap=await ref.get();
+      if(!snap.exists) return res.status(404).json({error:"User not found."});
+      const actorRole=req.user?.owner===true ? "OWNER" : req.user?.admin===true ? "SUPER_ADMIN" : String(req.user?.role||"USER").toUpperCase();
+      const targetRole=String(snap.data()?.role||"USER").toUpperCase();
+      const rank={USER:0,SUPPORT:1,MODERATOR:2,FINANCE_ADMIN:2,LEGAL_ADMIN:2,ADMIN:3,OWNER:4,SUPER_ADMIN:5};
+      if(!(actorRole in rank) || !(targetRole in rank) || rank[targetRole]>=rank[actorRole]) {
+        return res.status(403).json({error:"Insufficient role authority to change this account status."});
+      }
+      const timestamp=now();
+      const fields=status==="BANNED"
+        ? {status,bannedAt:timestamp,bannedBy:req.catalogUid}
+        : {status,unbannedAt:timestamp,unbannedBy:req.catalogUid};
+      await ref.set({...fields,updatedAt:timestamp,updatedBy:req.catalogUid},{merge:true});
+      await audit(req.catalogUid,action,"user",{uid,targetRole});
+      return res.json({userId:uid,status});
+    } catch(e) { next(e); }
+  };
+  app.post("/api/admin/user/ban",requireAdmin,changeUserStatus("BANNED","USER_BANNED"));
+  app.post("/api/admin/user/unban",requireAdmin,changeUserStatus("ACTIVE","USER_UNBANNED"));
   app.post("/api/admin/system/config",requireAdmin,async(req,res,next)=>{try{const values=req.body?.values;if(!values||typeof values!=="object"||Array.isArray(values))return res.status(400).json({error:"values object is required."});await firestoreCollection("systemConfig").doc("current").set({values,updatedAt:now(),updatedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"SYSTEM_CONFIG_UPDATED","systemConfig");res.json({ok:true,status:"UPDATED"});}catch(e){next(e);}});
   app.post("/api/admin/login",requireAdmin,async(req,res)=>res.json({ok:true,uid:req.catalogUid,admin:true}));
 
