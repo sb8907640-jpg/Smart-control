@@ -282,6 +282,7 @@ service cloud.firestore {
     match /devices/{uid} {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
+        && request.resource.data.controllerUid != uid
         && request.resource.data.pairingToken is string
         && request.resource.data.pairedAt is int
         && request.resource.data.pairingActive == true
@@ -308,6 +309,7 @@ service cloud.firestore {
         (
           resource.data.controllerUid == null
           && request.resource.data.controllerUid == request.auth.uid
+          && request.resource.data.controllerUid != uid
           && request.resource.data.pairingActive == true
           && request.resource.data.pairingToken is string
           && request.resource.data.pairedAt is int
