@@ -97,6 +97,21 @@ check("Failed refund event cannot revert a completed refund",
     refundFailedWebhookBlock.includes("latestPayment.gatewayRefundId === refundId"),
   "A refund failure only restores SUCCESS while the same refund remains pending.");
 
+const refundCreatedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.created"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.processed"')
+);
+const refundProcessedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.processed"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.failed"')
+);
+check("Refund webhooks reconcile only the current refund attempt",
+  refundCreatedWebhookBlock.includes("db.runTransaction") &&
+    refundCreatedWebhookBlock.includes("previousGatewayRefundId === refundId") &&
+    refundProcessedWebhookBlock.includes("db.runTransaction") &&
+    refundProcessedWebhookBlock.includes("latestPayment.gatewayRefundId !== refundId"),
+  "Late events from an earlier refund attempt cannot overwrite the active attempt's status.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",
