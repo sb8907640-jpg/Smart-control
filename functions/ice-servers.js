@@ -1,14 +1,34 @@
 const crypto = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
+const { getApps, getApp, initializeApp } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
 
 // Configure this as the shared secret for a TURN server that supports the
 // coturn REST API. It is never included in the Android APK or returned to clients.
 const turnSharedSecret = defineSecret("SMARTCONTROL_TURN_CREDENTIAL");
+const app = getApps().length ? getApp() : initializeApp();
+const db = getFirestore(app);
 
 exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in to establish a secure media session.");
+  }
+
+  const sessionId = String(request.data?.sessionId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
+    throw new HttpsError("invalid-argument", "A valid approved media session is required.");
+  }
+  const sessionSnapshot = await db.collection("mediaSessions").doc(sessionId).get();
+  if (!sessionSnapshot.exists) {
+    throw new HttpsError("not-found", "Media session not found.");
+  }
+  const session = sessionSnapshot.data() || {};
+  if (session.controllerUid !== request.auth.uid && session.targetDeviceId !== request.auth.uid) {
+    throw new HttpsError("permission-denied", "This account is not part of the media session.");
+  }
+  if (!["APPROVED", "ACTIVE"].includes(String(session.status || ""))) {
+    throw new HttpsError("failed-precondition", "TURN credentials are only available for approved or active sessions.");
   }
 
   const turnUrls = String(process.env.SMARTCONTROL_TURN_URLS || "")
