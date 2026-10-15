@@ -1,93 +1,100 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Owner suspension is checked against the server-written profile document,
+    // so an already-issued ID token cannot keep using Firestore after a ban.
+    function accountActive() {
+      return request.auth != null
+        && (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', 'ACTIVE') == 'ACTIVE');
+    }
     match /users/{uid}/emergencyContacts/{contactId} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
+      allow read, create, update, delete: if accountActive() && request.auth.uid == uid;
     }
 
     match /ownerSettings/{document} {
-      allow read: if request.auth != null && request.auth.token.admin == true;
-      allow create, update: if request.auth != null && request.auth.token.admin == true;
-      allow delete: if request.auth != null && request.auth.token.admin == true;
+      allow read: if accountActive() && request.auth.token.admin == true;
+      allow create, update: if accountActive() && request.auth.token.admin == true;
+      allow delete: if accountActive() && request.auth.token.admin == true;
     }
 
     match /ownerAccounts/{document} {
-      allow read, create, update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow read, create, update, delete: if accountActive() && request.auth.token.admin == true;
     }
 
     // Client-readable feature policy contains only feature flags and per-user availability.
     // Private owner settings and payment credentials remain restricted to admin claims.
     match /featurePolicy/{document} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.token.admin == true;
+      allow read: if accountActive();
+      allow create, update: if accountActive() && request.auth.token.admin == true;
       allow delete: if false;
     }
 
     // Per-user feature flags are private to that user and authenticated admins.
     match /featurePolicyUsers/{uid} {
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (
           request.auth.uid == uid
           || request.auth.token.admin == true
           || get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid == request.auth.uid
         );
-      allow create, update: if request.auth != null && request.auth.token.admin == true;
+      allow create, update: if accountActive() && request.auth.token.admin == true;
       allow delete: if false;
     }
 
     match /ownerSettingsHistory/{document} {
-      allow read, create: if request.auth != null && request.auth.token.admin == true;
+      allow read, create: if accountActive() && request.auth.token.admin == true;
       allow update, delete: if false;
     }
 
     match /plans/{planId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow read: if accountActive();
+      allow create, update, delete: if accountActive() && request.auth.token.admin == true;
     }
 
     match /userAccess/{uid} {
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.token.admin == true || request.auth.uid == uid);
-      allow create, update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow create, update, delete: if accountActive() && request.auth.token.admin == true;
     }
 
     match /paymentConfig/{document} {
-      allow read, write: if request.auth != null && request.auth.token.admin == true;
+      allow read, write: if accountActive() && request.auth.token.admin == true;
     }
 
     match /payments/{paymentId} {
       // Payment records are written only by verified server-side gateway flows.
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
       allow create, update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
       allow create, update, delete: if false;
     }
 
     match /emiSchedule/{scheduleId} {
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
       // EMI schedules are derived from server-verified payment records.
       allow create, update, delete: if false;
     }
 
     match /coupons/{couponId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow read: if accountActive();
+      allow write: if accountActive() && request.auth.token.admin == true;
     }
 
     match /payouts/{payoutId} {
-      allow read, write: if request.auth != null && request.auth.token.admin == true;
+      allow read, write: if accountActive() && request.auth.token.admin == true;
     }
 
     match /freeAccessGrants/{grantId} {
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow create, update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow create, update, delete: if accountActive() && request.auth.token.admin == true;
     }
 
     match /parentSecurity/{uid} {
@@ -97,7 +104,7 @@ service cloud.firestore {
     match /pairingCodes/{token} {
       // Client-created codes cannot extend beyond the public maximum or bypass
       // the Owner-only no-expiry policy enforced by the pairing screen.
-      allow create: if request.auth != null
+      allow create: if accountActive()
         && token.size() >= 32
         && request.resource.data.deviceUid == request.auth.uid
         && request.resource.data.expiresAt is int
@@ -118,10 +125,10 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow read: if accountActive() && resource.data.expiresAt > request.time.toMillis();
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
-      allow delete: if request.auth != null && (
+      allow delete: if accountActive() && (
         resource.data.deviceUid == request.auth.uid
         || (
           getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.controllerUid == request.auth.uid
@@ -133,7 +140,7 @@ service cloud.firestore {
     }
 
     match /mediaSessions/{sessionId} {
-      allow create: if request.auth != null
+      allow create: if accountActive()
         && request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt'])
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
@@ -145,12 +152,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
 
       // The receiving device approves the request and publishes the offer SDP.
       // The controller writes the answer SDP. Each side may only write its own signaling field.
-      allow update: if request.auth != null && (
+      allow update: if accountActive() && (
         (
           resource.data.targetDeviceId == request.auth.uid
           && resource.data.controllerUid == request.resource.data.controllerUid
@@ -199,14 +206,14 @@ service cloud.firestore {
           )
         )
       );
-      allow delete: if request.auth != null && resource.data.controllerUid == request.auth.uid;
+      allow delete: if accountActive() && resource.data.controllerUid == request.auth.uid;
 
       match /iceCandidates/{candidateId} {
-        allow create: if request.auth != null
+        allow create: if accountActive()
           && request.resource.data.senderUid == request.auth.uid
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
-        allow read: if request.auth != null
+        allow read: if accountActive()
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
         allow update, delete: if false;
@@ -215,17 +222,17 @@ service cloud.firestore {
 
     match /fileTransfers/{transferId} {
       // A sender may request a transfer only to its currently paired client device.
-      allow create: if request.auth != null
+      allow create: if accountActive()
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
         && request.resource.data.status == 'REQUESTED';
 
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
 
-      allow update: if request.auth != null
+      allow update: if accountActive()
         && resource.data.senderDeviceId == request.resource.data.senderDeviceId
         && resource.data.receiverDeviceId == request.resource.data.receiverDeviceId
         && resource.data.fileName == request.resource.data.fileName
@@ -259,18 +266,18 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if request.auth != null
+      allow delete: if accountActive()
         && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
     }
 
     match /auditLogs/{eventId} {
-      allow create: if request.auth != null
+      allow create: if accountActive()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.deviceId is string
         && request.resource.data.feature is string
         && request.resource.data.action is string
         && request.resource.data.createdAt is int;
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (
           resource.data.userId == request.auth.uid
           || get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.controllerUid == request.auth.uid
@@ -280,7 +287,7 @@ service cloud.firestore {
     }
 
     match /devices/{uid} {
-      allow create: if request.auth != null
+      allow create: if accountActive()
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.controllerUid != uid
         && request.resource.data.pairingToken is string
@@ -292,12 +299,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
         && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
 
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
       // Pairing cannot be forged by editing controllerUid directly. Existing links may
       // only be cleared by either participant; re-pairing requires a valid one-time token.
-      allow update: if request.auth != null && (
+      allow update: if accountActive() && (
         (
           (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid)
           && resource.data.controllerUid is string
@@ -341,19 +348,19 @@ service cloud.firestore {
       );
 
       match /sharedLocation/{locationId} {
-        allow create, update: if request.auth != null && request.auth.uid == uid;
-        allow read: if request.auth != null
+        allow create, update: if accountActive() && request.auth.uid == uid;
+        allow read: if accountActive()
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
-        allow delete: if request.auth != null && request.auth.uid == uid;
+        allow delete: if accountActive() && request.auth.uid == uid;
       }
 
       match /statusAlerts/{alertId} {
-        allow create: if request.auth != null && request.auth.uid == uid;
-        allow read: if request.auth != null
+        allow create: if accountActive() && request.auth.uid == uid;
+        allow read: if accountActive()
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
-        allow update: if request.auth != null
+        allow update: if accountActive()
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedBy'])
