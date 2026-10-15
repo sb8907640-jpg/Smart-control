@@ -36,8 +36,7 @@ fun AppInstallScreen(onBack: () -> Unit) {
                 return@let
             }
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = it
-                type = "application/vnd.android.package-archive"
+                setDataAndType(it, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             runCatching { context.startActivity(intent) }.onFailure {
