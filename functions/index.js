@@ -79,6 +79,66 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   return { isOwner: false, expiryMinutes };
 });
 
+// Claim a pairing token on the server so active tokens cannot be enumerated by
+// arbitrary authenticated clients. The code is consumed atomically with the link.
+exports.claimPairingCode = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in before claiming a pairing code.");
+  }
+  const token = typeof request.data?.token === "string" ? request.data.token.trim() : "";
+  if (!/^[a-fA-F0-9]{48}$/.test(token)) {
+    throw new HttpsError("invalid-argument", "Invalid pairing token.");
+  }
+
+  const controllerUid = request.auth.uid;
+  const codeRef = db.collection("pairingCodes").doc(token);
+  const result = await db.runTransaction(async (transaction) => {
+    const codeSnapshot = await transaction.get(codeRef);
+    if (!codeSnapshot.exists) {
+      throw new HttpsError("not-found", "Pairing token is invalid or already used.");
+    }
+
+    const deviceUid = codeSnapshot.get("deviceUid");
+    const expiresAt = Number(codeSnapshot.get("expiresAt") || 0);
+    if (typeof deviceUid !== "string" || !deviceUid) {
+      throw new HttpsError("failed-precondition", "Pairing token is invalid.");
+    }
+    if (expiresAt <= Date.now()) {
+      throw new HttpsError("deadline-exceeded", "Pairing token has expired.");
+    }
+
+    const allowedRoles = new Set([
+      "Father", "Mother", "Son", "Daughter", "Brother", "Sister",
+      "Husband", "Wife", "Mechanic", "Engineer", "Other"
+    ]);
+    const senderRole = allowedRoles.has(codeSnapshot.get("senderRole"))
+      ? codeSnapshot.get("senderRole") : "Other";
+    const receiverRole = allowedRoles.has(codeSnapshot.get("receiverRole"))
+      ? codeSnapshot.get("receiverRole") : "Other";
+    const deviceRef = db.collection("devices").doc(deviceUid);
+    const deviceSnapshot = await transaction.get(deviceRef);
+    const existingController = deviceSnapshot.get("controllerUid");
+    const pairingActive = deviceSnapshot.get("pairingActive") === true;
+    if (pairingActive && typeof existingController === "string" && existingController) {
+      throw new HttpsError("already-exists", "This device is already paired. Unpair it before linking again.");
+    }
+
+    const pairedAt = Date.now();
+    transaction.set(deviceRef, {
+      controllerUid,
+      pairingToken: token,
+      pairedAt,
+      pairingActive: true,
+      senderRole,
+      receiverRole
+    }, { merge: true });
+    transaction.delete(codeRef);
+    return { deviceUid, controllerUid, pairedAt, senderRole, receiverRole };
+  });
+
+  return { ok: true, ...result };
+});
+
 function validatePin(pin) {
   return typeof pin === "string" && /^\d{4}$/.test(pin);
 }
