@@ -130,6 +130,28 @@ test("protected API rejects requests without bearer authentication", async () =>
   });
 });
 
+test("browser origins require an explicit CORS allowlist", async () => {
+  const previous = process.env.CORS_ORIGIN;
+  delete process.env.CORS_ORIGIN;
+  try {
+    const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
+    await withServer(app, async base => {
+      const browser = await fetch(base + "/api/auth/session", {
+        headers: { authorization: "Bearer test-token", origin: "https://untrusted.example" }
+      });
+      assert.equal(browser.status, 403);
+
+      const nonBrowser = await fetch(base + "/api/auth/session", {
+        headers: { authorization: "Bearer test-token" }
+      });
+      assert.equal(nonBrowser.status, 200);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.CORS_ORIGIN;
+    else process.env.CORS_ORIGIN = previous;
+  }
+});
+
 test("protected API accepts a verified Firebase identity", async () => {
   const app = createApp({ verifyIdToken: async token => {
     assert.equal(token, "test-token");
