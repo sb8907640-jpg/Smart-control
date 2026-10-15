@@ -98,7 +98,10 @@ class WebRtcMediaEngine(
             val failedResources = captures.remove(sessionId) ?: resources
             failedResources.forEach { resource -> runCatching { resource.close() } }
             candidateJobs.remove(sessionId)?.cancel()
-            peerConnections.remove(sessionId)?.close()
+            peerConnections.remove(sessionId)?.let { connection ->
+                runCatching { connection.close() }
+                runCatching { connection.dispose() }
+            }
         }
     }
 
@@ -118,13 +121,19 @@ class WebRtcMediaEngine(
         signaling.stopSession(sessionId)
         captures.remove(sessionId)?.forEach { runCatching { it.close() } }
         candidateJobs.remove(sessionId)?.cancel()
-        peerConnections.remove(sessionId)?.close()
+        peerConnections.remove(sessionId)?.let { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
     }
 
     fun eglBase(): EglBase = eglBase
 
     fun release() {
-        peerConnections.values.forEach { it.close() }
+        peerConnections.values.forEach { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
         peerConnections.clear()
         captures.values.flatten().forEach { runCatching { it.close() } }
         captures.clear()
