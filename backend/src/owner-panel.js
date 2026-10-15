@@ -150,6 +150,10 @@ function installOwnerPanelRoutes(app, { db }) {
     const ref = collection("users").doc(id);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: "User not found." });
+    const targetRole = String(snap.data()?.role || "USER").toUpperCase();
+    if (targetRole === "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Owner accounts cannot change a Super Admin account status." });
+    }
     const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
     const timestamp = now();
     const statusFields = status === "ACTIVE"
