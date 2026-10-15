@@ -78,10 +78,67 @@ check("Pairing codes enforce Owner-only no-expiry",
     firestoreRules.includes("request.auth.token.role == 'OWNER'") &&
     firestoreRules.includes("request.resource.data.expiryMode == 'NO_EXPIRY'"),
   "Non-owner pairing codes are limited to 60 minutes.");
-check("Pairing claim consumes code only with matching atomic device link",
-  firestoreRules.includes("getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid))") &&
-    firestoreRules.includes("pairingToken == token"),
-  "A controller cannot delete a pairing code without the matching linked-device write.");
+check("Pairing tokens are private and claimed by the authenticated server callable",
+  firestoreRules.includes("resource.data.deviceUid == request.auth.uid") &&
+    functionsIndex.includes("exports.claimPairingCode") &&
+    functionsIndex.includes("transaction.delete(codeRef)") &&
+    pairingRepo.includes('getHttpsCallable("claimPairingCode")'),
+  "Clients cannot list/read other devices' pairing tokens; the server validates and consumes a token atomically with the device link.");
+check("Owner sync validates identities and reconciles claims by UID",
+  functionsIndex.includes("const resolvedRequested = new Map()") &&
+    functionsIndex.includes("if (unresolved.length > 0)") &&
+    functionsIndex.includes("const requestedUids = new Set(requestedUsers.keys())") &&
+    functionsIndex.includes("revokedUids.has(user.uid)"),
+  "A bad identifier cannot partially mutate claims, and removing one of a user's identifiers does not revoke the remaining owner account.");
+
+check("Role helpers are exported and self-escalation is blocked",
+  read("functions/spec/roles.js").includes("module.exports = { ROLES, normalizeRole, canManageRole }") &&
+    functionsIndex.includes("You cannot change your own role.") &&
+    functionsIndex.includes("canManageRole(actorRole, currentRole)"),
+  "User-management role checks have defined helpers and prevent self-promotion.");
+
+check("Live Razorpay refunds use the provider and track pending confirmation",
+  read("functions/billing.js").includes("/refund") &&
+    read("functions/billing.js").includes('status: "REFUND_PENDING"') &&
+    read("functions/billing.js").includes("gatewayRefundId"),
+  "A live refund is sent to Razorpay and remains pending until provider confirmation.");
+
+check("Test safety alert is separate from SOS",
+  read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes('"TEST"') &&
+    read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes("This is a test safety alert"),
+  "The test-alert button cannot accidentally create a real SOS alert.");
+
+check("Legacy REST payment endpoints cannot self-activate subscriptions",
+  read("backend/src/catalog-api.js").includes("Legacy payment initiation is disabled") &&
+    read("backend/src/catalog-api.js").includes("Client-supplied payment IDs cannot activate subscriptions") &&
+    read("backend/src/catalog-api.js").includes('["VERIFIED", "SUCCESS"].includes'),
+  "The duplicate REST path fails closed and EMI requests require a verified payment.");
+
+check("REST connect requires an active device pairing",
+  read("backend/src/catalog-api.js").includes("device.controllerUid !== req.catalogUid") &&
+    read("backend/src/catalog-api.js").includes("device.pairingActive !== true"),
+  "A signed-in user cannot connect to an arbitrary device ID.");
+
+check("REST pairing codes are consumed atomically and support lifetime expiry",
+  read("backend/src/catalog-api.js").includes("db.runTransaction") &&
+    read("backend/src/catalog-api.js").includes("data?.expiresAt == null") &&
+    read("backend/src/catalog-api.js").includes('status: "PAIRED"'),
+  "Pairing-code joins are one-time and a null expiry represents a lifetime code.");
+
+check("Payment and EMI ledger records are server-write only",
+  firestoreRules.includes("match /payments/{paymentId}") &&
+    firestoreRules.includes("match /emiSchedule/{scheduleId}") &&
+    read("functions/billing.js").includes("exports.createPayment") &&
+    read("functions/billing.js").includes("exports.applyEmi"),
+  "Clients cannot forge payment/EMI ledger rows; trusted billing callables own creation.");
+
+check("Device pairing is server-only while health snapshots remain available",
+  firestoreRules.includes("function validHealth(health)") &&
+    firestoreRules.includes("request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health'])") &&
+    !firestoreRules.includes("get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken))") &&
+    functionsIndex.includes("exports.claimPairingCode"),
+  "Device clients can publish validated health state, but cannot create/re-pair links directly.");
+
 check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),

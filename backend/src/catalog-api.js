@@ -67,11 +67,75 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     return active;
   };
 
+  const normalizePermission = value => String(value || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  const permissionStateId = (uid, permission) => String(uid) + "_" + normalizePermission(permission);
+  const getActiveConsent = async uid => {
+    const consents = (await list("consentLogs", uid, 500))
+      .filter(consent => consent.granted === true)
+      .filter(consent => consent.expiresAt == null ||
+        (Number.isFinite(Number(consent.expiresAt)) && Number(consent.expiresAt) > now()))
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    return consents[0] || null;
+  };
+  const consentCovers = (consent, permission) => {
+    const scopes = Array.isArray(consent?.scope) ? consent.scope.map(normalizePermission) : [];
+    const normalized = normalizePermission(permission);
+    return scopes.includes("ALL") || scopes.includes(normalized);
+  };
+  const requestedPermissions = req => {
+    const scope = req.body?.scope;
+    if (Array.isArray(scope)) return scope.map(normalizePermission).filter(Boolean);
+    if (typeof scope === "string") return [normalizePermission(scope)].filter(Boolean);
+    if (scope && typeof scope === "object") {
+      return Object.entries(scope).filter(([, enabled]) => enabled === true).map(([key]) => normalizePermission(key)).filter(Boolean);
+    }
+    return [];
+  };
   const requireConsent = async (req, res, next) => {
     try {
-      const snap = await firestoreCollection("consentLogs").where("userId", "==", req.catalogUid).where("granted", "==", true).limit(1).get();
-      if (snap.empty) return res.status(403).json({ error: "Active user consent is required." });
-      req.consentId = snap.docs[0].id;
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      next();
+    } catch (e) { next(e); }
+  };
+  const requireConsentScope = scopeResolver => async (req, res, next) => {
+    try {
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      const raw = typeof scopeResolver === "function" ? scopeResolver(req) : scopeResolver;
+      const scopes = (Array.isArray(raw) ? raw : [raw]).map(normalizePermission).filter(Boolean);
+      if (!scopes.length) return res.status(400).json({ error: "A consent scope is required." });
+      if (!scopes.every(scope => consentCovers(consent, scope))) {
+        return res.status(403).json({ error: "Consent does not cover the requested feature." });
+      }
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      next();
+    } catch (e) { next(e); }
+  };
+  const requireFeaturePermission = scopeResolver => async (req, res, next) => {
+    try {
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      const raw = typeof scopeResolver === "function" ? scopeResolver(req) : scopeResolver;
+      const scopes = (Array.isArray(raw) ? raw : [raw]).map(normalizePermission).filter(Boolean);
+      if (!scopes.length) return res.status(400).json({ error: "A feature scope is required." });
+      if (!scopes.every(scope => consentCovers(consent, scope))) {
+        return res.status(403).json({ error: "Consent does not cover the requested feature." });
+      }
+      for (const scope of scopes) {
+        const permissionSnap = await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid, scope)).get();
+        const permission = permissionSnap.exists ? permissionSnap.data() : null;
+        if (!permission || permission.userId !== req.catalogUid ||
+            permission.permission !== scope || permission.granted !== true) {
+          return res.status(403).json({ error: "The required permission has not been granted or was revoked." });
+        }
+      }
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      req.requiredPermissions = scopes;
       next();
     } catch (e) { next(e); }
   };
@@ -148,16 +212,47 @@ function installCatalogRoutes(app, { db, requireAuth }) {
 
   app.post("/api/link/join", async (req,res,next) => {
     try {
-      const code=String(req.body?.code||"").trim().toUpperCase();
-      if(!code) return res.status(400).json({error:"Pairing code is required."});
-      const ref=firestoreCollection("pairingCodes").doc(code);
-      const snap=await ref.get(); const data=snap.exists?snap.data():null;
-      if(!data||data.status!=="PENDING"||Number(data.expiresAt)<now()) return res.status(404).json({error:"Pairing code is invalid or expired."});
-      await ref.set({clientUid:req.catalogUid,status:"PAIRED",pairedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(req.catalogUid).set({controllerUid:data.ownerUid,pairingActive:true,updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{code});
-      res.json({ok:true,ownerUid:data.ownerUid});
-    }catch(e){next(e);}
+      const code = String(req.body?.code || "").trim().toUpperCase();
+      if (!code) return res.status(400).json({ error: "Pairing code is required." });
+      const codeRef = firestoreCollection("pairingCodes").doc(code);
+      const deviceRef = firestoreCollection("devices").doc(req.catalogUid);
+      const ownerUid = await db.runTransaction(async transaction => {
+        const snap = await transaction.get(codeRef);
+        const data = snap.exists ? snap.data() : null;
+        const expiry = data?.expiresAt == null ? null : Number(data.expiresAt);
+        if (!data || data.status !== "PENDING" ||
+            (expiry !== null && (!Number.isFinite(expiry) || expiry <= now()))) {
+          const error = new Error("Pairing code is invalid or expired.");
+          error.statusCode = 404;
+          throw error;
+        }
+        if (data.ownerUid === req.catalogUid) {
+          const error = new Error("A device cannot join its own pairing code.");
+          error.statusCode = 400;
+          throw error;
+        }
+        const deviceSnap = await transaction.get(deviceRef);
+        const deviceData = deviceSnap.exists ? deviceSnap.data() : {};
+        if (deviceData.pairingActive === true && deviceData.controllerUid) {
+          const error = new Error("This device is already paired. Unpair it before linking again.");
+          error.statusCode = 409;
+          throw error;
+        }
+        transaction.set(codeRef, {
+          clientUid: req.catalogUid,
+          status: "PAIRED",
+          pairedAt: now()
+        }, { merge: true });
+        transaction.set(deviceRef, {
+          controllerUid: data.ownerUid,
+          pairingActive: true,
+          updatedAt: now()
+        }, { merge: true });
+        return data.ownerUid;
+      });
+      await audit(req.catalogUid, "LINK_JOINED", "pairingCode", { code });
+      return res.json({ ok: true, ownerUid });
+    } catch (e) { next(e); }
   });
 
   app.post("/api/link/share", async(req,res,next)=>{
@@ -174,8 +269,14 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef = firestoreCollection("devices").doc(deviceId);
+      const deviceSnap = await deviceRef.get();
+      const device = deviceSnap.exists ? deviceSnap.data() : null;
+      if (!device || device.controllerUid !== req.catalogUid || device.pairingActive !== true) {
+        return res.status(403).json({ error: "An active pairing with this device is required before connecting." });
+      }
       const id=await add("connections",{userId:req.catalogUid,deviceId,status:"CONNECTED",connectedAt:now(),lastSeenAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({controllerUid:req.catalogUid,connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"CONNECTED","device",{deviceId,connectionId:id});
       res.status(201).json({ok:true,status:"CONNECTED",deviceId,connectionId:id});
     }catch(e){next(e);}
@@ -215,18 +316,36 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   });
 
   app.get("/api/permissions", async(req,res,next)=>{try{res.json({permissions:await list("permissionGrants",req.catalogUid)});}catch(e){next(e);}});
-  app.get("/api/permissions/status", async(req,res,next)=>{try{const permissions=await list("permissionGrants",req.catalogUid);res.json({status:permissions.some(p=>p.granted)?"PARTIAL":"CONSENT_REQUIRED",permissions});}catch(e){next(e);}});
+  app.get("/api/permissions/status", async(req,res,next)=>{try{const permissions=await list("permissionStates",req.catalogUid);res.json({status:permissions.some(p=>p.granted===true)?"PARTIAL":"CONSENT_REQUIRED",permissions,history:await list("permissionGrants",req.catalogUid)});}catch(e){next(e);}});
   app.get("/api/permissions/logs", async(req,res,next)=>{try{res.json({logs:await list("permissionRequests",req.catalogUid)});}catch(e){next(e);}});
   app.get("/api/permissions/:id", async(req,res,next)=>{try{const s=await firestoreCollection("permissionGrants").doc(req.params.id).get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Permission record not found."});res.json({permission:{id:s.id,...s.data()}});}catch(e){next(e);}});
 
   app.post("/api/permissions/request", async(req,res,next)=>{
     try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionRequests",{userId:req.catalogUid,permission,status:"REQUESTED",requestedAt:now()});await audit(req.catalogUid,"PERMISSION_REQUESTED","permission",{permission,id});res.status(201).json({ok:true,id,status:"REQUESTED"});}catch(e){next(e);}
   });
-  app.post("/api/permissions/grant", requireConsent, async(req,res,next)=>{
-    try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now()});await audit(req.catalogUid,"PERMISSION_GRANTED","permission",{permission,id});res.status(201).json({ok:true,id,status:"GRANTED"});}catch(e){next(e);}
+  app.post("/api/permissions/grant", requireConsentScope(req => req.body?.permission), async(req,res,next)=>{
+    try{
+      const permission=normalizePermission(req.body?.permission);
+      if(!permission)return res.status(400).json({error:"permission is required."});
+      const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now()});
+      await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid,permission)).set({
+        userId:req.catalogUid,permission,granted:true,source:"USER_CONFIRMATION",consentId:req.consentId,grantedAt:now(),updatedAt:now()
+      },{merge:true});
+      await audit(req.catalogUid,"PERMISSION_GRANTED","permission",{permission,id});
+      res.status(201).json({ok:true,id,status:"GRANTED"});
+    }catch(e){next(e);}
   });
   app.post("/api/permissions/revoke", async(req,res,next)=>{
-    try{const permission=String(req.body?.permission||"").trim();if(!permission)return res.status(400).json({error:"permission is required."});const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now()});await audit(req.catalogUid,"PERMISSION_REVOKED","permission",{permission,id});res.status(201).json({ok:true,id,status:"REVOKED"});}catch(e){next(e);}
+    try{
+      const permission=normalizePermission(req.body?.permission);
+      if(!permission)return res.status(400).json({error:"permission is required."});
+      const id=await add("permissionGrants",{userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now()});
+      await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid,permission)).set({
+        userId:req.catalogUid,permission,granted:false,source:"USER_REVOCATION",revokedAt:now(),updatedAt:now()
+      },{merge:true});
+      await audit(req.catalogUid,"PERMISSION_REVOKED","permission",{permission,id});
+      res.status(201).json({ok:true,id,status:"REVOKED"});
+    }catch(e){next(e);}
   });
   app.post("/api/permissions/allow-all", requireConsent, async(req,res,next)=>{
     try{const features=["LOCATION","NOTIFICATIONS","BATTERY_NETWORK","CAMERA","MICROPHONE","GALLERY","SCREEN_SHARE","SCREEN_RECORDING","TOUCH_CONTROL","KEYBOARD_INPUT","APP_INSTALL_UNINSTALL","FILE_TRANSFER","CLIPBOARD_SYNC","FILES_ACCESS","CONTACTS","SMS","CALL_LOGS","APP_USAGE","SOS_ALERTS"];const batch=db.batch();for(const permission of features){const ref=firestoreCollection("permissionRequests").doc();batch.set(ref,{userId:req.catalogUid,permission,status:"REQUESTED",createdAt:now(),manualSystemConfirmationRequired:true});}await batch.commit();const id=await add("permissionFlows",{userId:req.catalogUid,type:"ALLOW_ALL",status:"USER_CONFIRMATION_REQUIRED",featureCount:features.length});await audit(req.catalogUid,"PERMISSION_ALLOW_ALL_REQUESTED","permissions",{id,featureCount:features.length});res.status(202).json({ok:true,id,status:"USER_CONFIRMATION_REQUIRED",count:features.length});}catch(e){next(e);}
@@ -250,32 +369,67 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   app.get("/api/control/logs",async(req,res,next)=>{try{res.json({logs:await list("controlLogs",req.catalogUid)});}catch(e){next(e);}});
 
   const commandRoutes=[
-    ["/api/control/touch","TOUCH"],["/api/control/keyboard","KEYBOARD"],["/api/control/app/install","APP_INSTALL"],["/api/control/app/uninstall","APP_UNINSTALL"],
-    ["/api/control/file/transfer","FILE_TRANSFER"],["/api/control/clipboard","CLIPBOARD"],["/api/control/screen/share","SCREEN_SHARE"],["/api/control/screen/record","SCREEN_RECORD"],
-    ["/api/control/camera","CAMERA"],["/api/control/mic","MIC"],["/api/control/p2p/start","P2P_START"],["/api/control/p2p/stop","P2P_STOP"]
+    ["/api/control/touch","TOUCH",["TOUCH_CONTROL"]],["/api/control/keyboard","KEYBOARD",["KEYBOARD_INPUT"]],
+    ["/api/control/app/install","APP_INSTALL",["APP_INSTALL_UNINSTALL"]],["/api/control/app/uninstall","APP_UNINSTALL",["APP_INSTALL_UNINSTALL"]],
+    ["/api/control/file/transfer","FILE_TRANSFER",["FILE_TRANSFER"]],["/api/control/clipboard","CLIPBOARD",["CLIPBOARD_SYNC"]],
+    ["/api/control/screen/share","SCREEN_SHARE",["SCREEN_SHARE"]],["/api/control/screen/record","SCREEN_RECORD",["SCREEN_RECORDING"]],
+    ["/api/control/camera","CAMERA",["CAMERA"]],["/api/control/mic","MIC",["MICROPHONE"]],
+    ["/api/control/p2p/start","P2P_START",["CAMERA","MICROPHONE"]],["/api/control/p2p/stop","P2P_STOP",null]
   ];
-  for(const [path,type] of commandRoutes){
-    app.post(path,requireConsent,requireActiveSession,async(req,res,next)=>{
+  for(const [path,type,permissions] of commandRoutes){
+    const consentMiddleware = permissions ? requireFeaturePermission(permissions) : requireConsent;
+    app.post(path,consentMiddleware,requireActiveSession,async(req,res,next)=>{
       try{const commandId=await add("remoteCommands",{controllerUid:req.catalogUid,userId:req.catalogUid,deviceId:req.mediaSession.targetDeviceId||null,sessionId:req.sessionId,commandType:type,payload:req.body?.payload||{},status:"QUEUED",consentId:req.consentId});await audit(req.catalogUid,"REMOTE_COMMAND_QUEUED","remoteCommand",{commandId,type,sessionId:req.sessionId});res.status(202).json({ok:true,accepted:true,commandId,status:"QUEUED"});}catch(e){next(e);}
     });
   }
 
   const dataRoutes=[
-    ["/api/data/location","locationData"],["/api/data/contacts","contacts"],["/api/data/sms","smsLogs"],["/api/data/call-logs","callLogs"],
-    ["/api/data/files","filesAccess"],["/api/data/gallery","galleryData"],["/api/data/app-usage","appUsage"],["/api/data/battery","batteryInfo"]
+    ["/api/data/location","locationData","LOCATION"],["/api/data/contacts","contacts","CONTACTS"],
+    ["/api/data/sms","smsLogs","SMS"],["/api/data/call-logs","callLogs","CALL_LOGS"],
+    ["/api/data/files","filesAccess","FILES_ACCESS"],["/api/data/gallery","galleryData","GALLERY"],
+    ["/api/data/app-usage","appUsage","APP_USAGE"],["/api/data/battery","batteryInfo","BATTERY_NETWORK"]
   ];
-  for(const [path,collection] of dataRoutes){
-    app.get(path,requireConsent,async(req,res,next)=>{try{const data=await list(collection,req.catalogUid);await audit(req.catalogUid,"DATA_READ",collection);res.json({data});}catch(e){next(e);}});
+  for(const [path,collection,permission] of dataRoutes){
+    app.get(path,requireFeaturePermission(permission),async(req,res,next)=>{try{const data=await list(collection,req.catalogUid);await audit(req.catalogUid,"DATA_READ",collection);res.json({data});}catch(e){next(e);}});
   }
-  app.post("/api/data/download",requireConsent,async(req,res,next)=>{try{const id=await add("dataDownloads",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_DOWNLOAD_REQUESTED","dataDownload",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
-  app.post("/api/data/share",requireConsent,async(req,res,next)=>{try{const id=await add("dataShares",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_SHARE_REQUESTED","dataShare",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
+  app.post("/api/data/download",requireFeaturePermission(req => requestedPermissions(req)),async(req,res,next)=>{try{const id=await add("dataDownloads",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_DOWNLOAD_REQUESTED","dataDownload",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
+  app.post("/api/data/share",requireFeaturePermission(req => requestedPermissions(req)),async(req,res,next)=>{try{const id=await add("dataShares",{userId:req.catalogUid,scope:req.body?.scope||{},status:"REQUESTED",consentId:req.consentId});await audit(req.catalogUid,"DATA_SHARE_REQUESTED","dataShare",{id});res.status(201).json({id,status:"REQUESTED"});}catch(e){next(e);}});
 
   app.get("/api/plans",async(req,res,next)=>{try{const s=await firestoreCollection("plans").where("enabled","==",true).limit(100).get();const plans=s.docs.map(d=>({id:d.id,...d.data()})).filter(plan=>!isOwnerOnlyFreePlan(plan));res.json({plans});}catch(e){next(e);}});
   app.get("/api/plans/:id",async(req,res,next)=>{try{const s=await firestoreCollection("plans").doc(req.params.id).get();if(!s.exists)return res.status(404).json({error:"Plan not found."});const plan={id:s.id,...s.data()};if(plan.enabled!==true||isOwnerOnlyFreePlan(plan))return res.status(404).json({error:"Plan not found."});res.json({plan});}catch(e){next(e);}});
   app.post("/api/subscribe",async(req,res,next)=>{try{const planId=String(req.body?.planId||"").trim();if(!planId)return res.status(400).json({error:"planId is required."});const p=await firestoreCollection("plans").doc(planId).get();if(!p.exists||p.data()?.enabled!==true||isOwnerOnlyFreePlan(p.data()))return res.status(404).json({error:"Plan not found."});const plan={id:p.id,...p.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const id=await add("subscriptions",{userId:req.catalogUid,planId,status:"PENDING_PAYMENT",planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms});await audit(req.catalogUid,"SUBSCRIPTION_CREATED","subscription",{id,planId,planDurationUnit:duration.unit});res.status(201).json({id,status:"PENDING_PAYMENT",planId,planDurationValue:duration.value,planDurationUnit:duration.unit});}catch(e){next(e);}});
-  app.post("/api/payment/initiate",async(req,res,next)=>{try{const subscriptionId=String(req.body?.subscriptionId||"");const amountMinor=Number(req.body?.amountMinor||0);if(!subscriptionId||!Number.isFinite(amountMinor)||amountMinor<0)return res.status(400).json({error:"subscriptionId and valid amountMinor are required."});const id=await add("payments",{userId:req.catalogUid,subscriptionId,amountMinor,currency:"INR",provider:String(req.body?.provider||"UNSPECIFIED"),status:"INITIATED"});await audit(req.catalogUid,"PAYMENT_INITIATED","payment",{id});res.status(201).json({paymentId:id,status:"INITIATED"});}catch(e){next(e);}});
-  app.post("/api/payment/verify",async(req,res,next)=>{try{const id=String(req.body?.paymentId||"");if(!id)return res.status(400).json({error:"paymentId is required."});const ref=firestoreCollection("payments").doc(id);const s=await ref.get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Payment not found."});const payment=s.data();const subRef=firestoreCollection("subscriptions").doc(payment.subscriptionId);const subSnap=await subRef.get();if(!subSnap.exists||subSnap.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Subscription not found."});const sub=subSnap.data();const planSnap=await firestoreCollection("plans").doc(sub.planId).get();if(!planSnap.exists||planSnap.data()?.enabled!==true||isOwnerOnlyFreePlan(planSnap.data()))return res.status(400).json({error:"Paid plan is unavailable."});const plan={id:planSnap.id,...planSnap.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const startsAt=now();const expiresAt=calculateExpiry(startsAt,duration);await ref.set({status:"VERIFIED",verifiedAt:startsAt,updatedAt:startsAt},{merge:true});await subRef.set({status:"ACTIVE",startsAt,expiresAt,planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms,updatedAt:startsAt},{merge:true});await audit(req.catalogUid,"PAYMENT_VERIFIED","payment",{id,subscriptionId:payment.subscriptionId});res.json({paymentId:id,status:"VERIFIED",subscriptionStatus:"ACTIVE",startsAt,expiresAt});}catch(e){next(e);}});
-  app.post("/api/emi/apply",async(req,res,next)=>{try{const paymentId=String(req.body?.paymentId||"");const installmentCount=Number(req.body?.installmentCount||0);if(!paymentId||!Number.isInteger(installmentCount)||installmentCount<1||installmentCount>60)return res.status(400).json({error:"paymentId and installmentCount 1-60 are required."});const id=await add("emiApplications",{userId:req.catalogUid,paymentId,installmentCount,status:"PENDING_REVIEW"});await audit(req.catalogUid,"EMI_APPLICATION_CREATED","emi",{id});res.status(201).json({id,status:"PENDING_REVIEW"});}catch(e){next(e);}});
+  app.post("/api/payment/initiate", (_req, res) => {
+    return res.status(503).json({
+      error: "Legacy payment initiation is disabled. Use the trusted Razorpay billing flow that creates a provider order."
+    });
+  });
+  app.post("/api/payment/verify", (_req, res) => {
+    return res.status(409).json({
+      error: "Client-supplied payment IDs cannot activate subscriptions. Verify the provider order, payment, and signature through the trusted billing flow."
+    });
+  });
+  app.post("/api/emi/apply", async (req, res, next) => {
+    try {
+      const paymentId = String(req.body?.paymentId || "").trim();
+      const installmentCount = Number(req.body?.installmentCount || 0);
+      if (!paymentId || !Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 60) {
+        return res.status(400).json({ error: "paymentId and installmentCount 1-60 are required." });
+      }
+      const paymentSnap = await firestoreCollection("payments").doc(paymentId).get();
+      if (!paymentSnap.exists || paymentSnap.data()?.userId !== req.catalogUid) {
+        return res.status(404).json({ error: "Payment not found." });
+      }
+      const payment = paymentSnap.data() || {};
+      if (!["VERIFIED", "SUCCESS"].includes(String(payment.status || "").toUpperCase())) {
+        return res.status(409).json({ error: "EMI can only be requested for a verified successful payment." });
+      }
+      const id = await add("emiApplications", {
+        userId: req.catalogUid, paymentId, installmentCount, status: "PENDING_REVIEW"
+      });
+      await audit(req.catalogUid, "EMI_APPLICATION_CREATED", "emi", { id });
+      return res.status(201).json({ id, status: "PENDING_REVIEW" });
+    } catch (e) { next(e); }
+  });
   app.get("/api/free-access/status",async(req,res,next)=>{
     try {
       const active = await expireFreeAccessForUser(req.catalogUid);

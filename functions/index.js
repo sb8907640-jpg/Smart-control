@@ -79,6 +79,69 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   return { isOwner: false, expiryMinutes };
 });
 
+// Claim a pairing token on the server so active tokens cannot be enumerated by
+// arbitrary authenticated clients. The code is consumed atomically with the link.
+exports.claimPairingCode = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in before claiming a pairing code.");
+  }
+  const token = typeof request.data?.token === "string" ? request.data.token.trim() : "";
+  if (!/^[a-fA-F0-9]{48}$/.test(token)) {
+    throw new HttpsError("invalid-argument", "Invalid pairing token.");
+  }
+
+  const controllerUid = request.auth.uid;
+  const codeRef = db.collection("pairingCodes").doc(token);
+  const result = await db.runTransaction(async (transaction) => {
+    const codeSnapshot = await transaction.get(codeRef);
+    if (!codeSnapshot.exists) {
+      throw new HttpsError("not-found", "Pairing token is invalid or already used.");
+    }
+
+    const deviceUid = codeSnapshot.get("deviceUid");
+    const expiresAt = Number(codeSnapshot.get("expiresAt") || 0);
+    if (typeof deviceUid !== "string" || !deviceUid) {
+      throw new HttpsError("failed-precondition", "Pairing token is invalid.");
+    }
+    if (deviceUid === controllerUid) {
+      throw new HttpsError("failed-precondition", "A device cannot pair with itself.");
+    }
+    if (expiresAt <= Date.now()) {
+      throw new HttpsError("deadline-exceeded", "Pairing token has expired.");
+    }
+
+    const allowedRoles = new Set([
+      "Father", "Mother", "Son", "Daughter", "Brother", "Sister",
+      "Husband", "Wife", "Mechanic", "Engineer", "Other"
+    ]);
+    const senderRole = allowedRoles.has(codeSnapshot.get("senderRole"))
+      ? codeSnapshot.get("senderRole") : "Other";
+    const receiverRole = allowedRoles.has(codeSnapshot.get("receiverRole"))
+      ? codeSnapshot.get("receiverRole") : "Other";
+    const deviceRef = db.collection("devices").doc(deviceUid);
+    const deviceSnapshot = await transaction.get(deviceRef);
+    const existingController = deviceSnapshot.get("controllerUid");
+    const pairingActive = deviceSnapshot.get("pairingActive") === true;
+    if (pairingActive && typeof existingController === "string" && existingController) {
+      throw new HttpsError("already-exists", "This device is already paired. Unpair it before linking again.");
+    }
+
+    const pairedAt = Date.now();
+    transaction.set(deviceRef, {
+      controllerUid,
+      pairingToken: token,
+      pairedAt,
+      pairingActive: true,
+      senderRole,
+      receiverRole
+    }, { merge: true });
+    transaction.delete(codeRef);
+    return { deviceUid, controllerUid, pairedAt, senderRole, receiverRole };
+  });
+
+  return { ok: true, ...result };
+});
+
 function validatePin(pin) {
   return typeof pin === "string" && /^\d{4}$/.test(pin);
 }
@@ -261,8 +324,18 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
+  const tokenRole = normalizeRole(request.auth.token?.role);
+  // Owner accounts created by syncOwnerAccounts carry admin=true and may still
+  // have a legacy USER role claim. Treat that combination as OWNER, not USER.
+  const actorRole = request.auth.token?.admin === true && tokenRole === "USER"
+    ? "OWNER"
+    : tokenRole;
+  const currentRole = normalizeRole(target.customClaims?.role);
+  if (uid === request.auth.uid && role !== currentRole) {
+    throw new HttpsError("permission-denied", "You cannot change your own role.");
+  }
+  if (uid !== request.auth.uid &&
+      (!canManageRole(actorRole, currentRole) || !canManageRole(actorRole, role))) {
     throw new HttpsError("permission-denied", "Insufficient role authority.");
   }
 
@@ -351,30 +424,67 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
   ]);
 
+  // The caller cannot remove their own last configured Owner identity: this
+  // function deliberately does not revoke the caller's admin claim, so doing
+  // so would otherwise leave a privileged account absent from the Owner list.
+  const caller = await getAuth().getUser(request.auth.uid);
+  const callerIdentifiers = [
+    String(caller.email || "").trim().toLowerCase(),
+    String(caller.phoneNumber || "").trim()
+  ].filter(Boolean);
+  const callerWasConfiguredOwner = callerIdentifiers.some(id => previousIdentifiers.has(id));
+  const callerRemainsConfiguredOwner = callerIdentifiers.some(id => requestedIdentifiers.has(id));
+  if (callerWasConfiguredOwner && !callerRemainsConfiguredOwner) {
+    throw new HttpsError("failed-precondition", "You cannot remove your own last Owner identity. Ask another Owner to update the Owner list.");
+  }
+
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedRequested = new Map();
 
+  // Resolve every requested identifier before mutating any claims. This avoids
+  // a failed Owner Settings save partially granting/revoking administrators.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+    if (!user) unresolved.push(identifier);
+    else resolvedRequested.set(identifier, user);
+  }
+  if (unresolved.length > 0) {
+    return { ok: false, granted: 0, revoked: 0, unresolved };
+  }
+
+  const requestedUsers = new Map([...resolvedRequested.values()].map(user => [user.uid, user]));
+  const requestedUids = new Set(requestedUsers.keys());
+  for (const user of requestedUsers.values()) {
     const claims = { ...(user.customClaims || {}), admin: true };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
 
+  const revokedUids = new Set();
   for (const identifier of previousIdentifiers) {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    // An owner may have both email and mobile identifiers. Do not revoke the
+    // same account merely because one old identifier was removed.
+    if (!user || user.uid === request.auth.uid ||
+        requestedUids.has(user.uid) || revokedUids.has(user.uid)) continue;
     const claims = { ...(user.customClaims || {}) };
     delete claims.admin;
     await getAuth().setCustomUserClaims(user.uid, claims);
+    revokedUids.add(user.uid);
     revoked += 1;
   }
+
+  // Persist the latest owner identifier list. Without this write, later syncs
+  // compare against a stale/empty profile and removed owners may keep admin access.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails,
+    mobiles,
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  });
 
   return { ok: true, granted, revoked, unresolved };
 });

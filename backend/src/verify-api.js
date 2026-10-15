@@ -14,6 +14,23 @@ class MemoryFirestore {
     return new MemoryCollection(this, name);
   }
   batch() { return new MemoryBatch(this); }
+  async runTransaction(callback) {
+    const operations = [];
+    const transaction = {
+      get: ref => ref.get(),
+      set(ref, value, options = {}) {
+        operations.push(() => ref.set(value, options));
+        return transaction;
+      },
+      update(ref, value) {
+        operations.push(() => ref.set(value, { merge: true }));
+        return transaction;
+      }
+    };
+    const result = await callback(transaction);
+    for (const operation of operations) await operation();
+    return result;
+  }
 }
 class MemoryBatch {
   constructor(db) { this.db = db; this.ops = []; }
@@ -70,15 +87,23 @@ class MemoryDoc {
 }
 function seedDb() {
   return new MemoryFirestore({
-    users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
-    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
+    users: {
+      "user-1": { uid: "user-1", status: "ACTIVE" },
+      "owner-1": { uid: "owner-1", status: "ACTIVE", role: "OWNER" }
+    },
+    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", pairingActive: true, targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
+    permissionStates: Object.fromEntries([
+      "LOCATION","NOTIFICATIONS","BATTERY_NETWORK","CAMERA","MICROPHONE","GALLERY",
+      "SCREEN_SHARE","SCREEN_RECORDING","TOUCH_CONTROL","KEYBOARD_INPUT","APP_INSTALL_UNINSTALL",
+      "FILE_TRANSFER","CLIPBOARD_SYNC","FILES_ACCESS","CONTACTS","SMS","CALL_LOGS","APP_USAGE","SOS_ALERTS"
+    ].map(permission => ["user-1_" + permission, { userId: "user-1", permission, granted: true, updatedAt: Date.now() }])),
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
-    pairingCodes: { "JOIN-CODE": { ownerUid: "user-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
+    pairingCodes: { "JOIN-CODE": { ownerUid: "owner-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
     subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
-    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "INITIATED" } },
+    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "VERIFIED" } },
     sosAlerts: { "sos-1": { userId: "user-1", status: "TRIGGERED" } },
     freeAccessGrants: { "grant-1": { userId: "user-1", status: "ACTIVE" } }
   });
@@ -98,7 +123,7 @@ function requestBody(endpoint) {
   if (endpoint.includes("/consent/save")) return { scope: ["CAMERA", "MICROPHONE"], version: "test" };
   if (endpoint.includes("/consent/verify")) return { consentId: "consent-1" };
   if (endpoint.includes("/control/")) return { sessionId: "session-1", payload: { test: true } };
-  if (endpoint.includes("/data/download") || endpoint.includes("/data/share")) return { scope: { test: true } };
+  if (endpoint.includes("/data/download") || endpoint.includes("/data/share")) return { scope: { CONTACTS: true } };
   if (endpoint === "/api/subscribe") return { planId: "plan-1" };
   if (endpoint === "/api/payment/initiate") return { subscriptionId: "sub-1", amountMinor: 100, provider: "TEST" };
   if (endpoint === "/api/payment/verify") return { paymentId: "payment-1" };
@@ -112,6 +137,32 @@ function requestBody(endpoint) {
   if (endpoint.includes("/sos/trigger")) return { message: "integration test", latitude: 0, longitude: 0 };
   if (endpoint.includes("/system/sync")) return { scope: { test: true } };
   return {};
+}
+function permissionsForRoute(route) {
+  const exact = {
+    "POST /api/control/touch": ["TOUCH_CONTROL"],
+    "POST /api/control/keyboard": ["KEYBOARD_INPUT"],
+    "POST /api/control/app/install": ["APP_INSTALL_UNINSTALL"],
+    "POST /api/control/app/uninstall": ["APP_INSTALL_UNINSTALL"],
+    "POST /api/control/file/transfer": ["FILE_TRANSFER"],
+    "POST /api/control/clipboard": ["CLIPBOARD_SYNC"],
+    "POST /api/control/screen/share": ["SCREEN_SHARE"],
+    "POST /api/control/screen/record": ["SCREEN_RECORDING"],
+    "POST /api/control/camera": ["CAMERA"],
+    "POST /api/control/mic": ["MICROPHONE"],
+    "POST /api/control/p2p/start": ["CAMERA", "MICROPHONE"],
+    "GET /api/data/location": ["LOCATION"],
+    "GET /api/data/contacts": ["CONTACTS"],
+    "GET /api/data/sms": ["SMS"],
+    "GET /api/data/call-logs": ["CALL_LOGS"],
+    "GET /api/data/files": ["FILES_ACCESS"],
+    "GET /api/data/gallery": ["GALLERY"],
+    "GET /api/data/app-usage": ["APP_USAGE"],
+    "GET /api/data/battery": ["BATTERY_NETWORK"],
+    "POST /api/data/download": ["CONTACTS"],
+    "POST /api/data/share": ["CONTACTS"]
+  };
+  return exact[route] || [];
 }
 function queryFor(endpoint) {
   if (endpoint.includes("/control/status") || endpoint.includes("/control/live")) return "?sessionId=session-1";
@@ -132,6 +183,10 @@ function queryFor(endpoint) {
   await new Promise(resolve => server.once("listening", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
   const results = [];
+  const expectedSecureRefusals = new Map([
+    ["POST /api/payment/initiate", 503],
+    ["POST /api/payment/verify", 409]
+  ]);
   const planResponse = await fetch(base + "/api/plans", { headers: { authorization: "Bearer integration-token" } });
   assert.equal(planResponse.status, 200);
   const planPayload = await planResponse.json();
@@ -168,6 +223,13 @@ function queryFor(endpoint) {
     for (const route of API) {
       const [method, rawEndpoint] = route.split(" ");
       const endpoint = pathFor(rawEndpoint);
+      const permissionStates = db.data.get("permissionStates") || new Map();
+      db.data.set("permissionStates", permissionStates);
+      for (const permission of permissionsForRoute(route)) {
+        permissionStates.set("user-1_" + permission, {
+          userId: "user-1", permission, granted: true, updatedAt: Date.now()
+        });
+      }
       const url = base + endpoint + queryFor(endpoint);
       const response = await fetch(url, {
         method,
@@ -175,6 +237,14 @@ function queryFor(endpoint) {
         body: method === "GET" ? undefined : JSON.stringify(requestBody(endpoint))
       });
       const body = await response.text();
+      const expectedRefusal = expectedSecureRefusals.get(route);
+      if (expectedRefusal !== undefined) {
+        if (response.status !== expectedRefusal) {
+          throw new Error(route + " expected safe refusal HTTP " + expectedRefusal + " but received HTTP " + response.status + ": " + body.slice(0, 500));
+        }
+        results.push({ route, status: response.status, ok: true, securelyRefused: true });
+        continue;
+      }
       const ok = response.status >= 200 && response.status < 300;
       results.push({ route, status: response.status, ok });
       if (!ok) throw new Error(route + " returned HTTP " + response.status + ": " + body.slice(0, 500));
@@ -184,5 +254,6 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
+  const secureRefusals = results.filter(result => result.securelyRefused).length;
+  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned expected responses (" + secureRefusals + " legacy payment endpoints fail closed; use the trusted billing callable).");
 })();

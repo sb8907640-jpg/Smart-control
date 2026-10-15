@@ -10,6 +10,7 @@ import com.smartcontrol.domain.billing.Payment
 import com.smartcontrol.domain.billing.Subscription
 import com.smartcontrol.domain.billing.Coupon
 import com.smartcontrol.domain.billing.PayoutRecord
+import com.smartcontrol.domain.billing.RefundResult
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -41,7 +42,7 @@ interface OwnerBillingRepository {
     suspend fun listPayments(): Result<List<Payment>>
     suspend fun listSubscriptions(): Result<List<Subscription>>
     suspend fun verifyPayment(paymentId: String, gatewayReference: String): Result<Unit>
-    suspend fun refundPayment(paymentId: String): Result<Long>
+    suspend fun refundPayment(paymentId: String): Result<RefundResult>
     suspend fun createCoupon(coupon: Coupon): Result<Unit>
     suspend fun updateCoupon(coupon: Coupon): Result<Unit>
     suspend fun deleteCoupon(code: String): Result<Unit>
@@ -199,11 +200,15 @@ class FirestoreOwnerBillingRepository @Inject constructor(
         ).await()
     }
 
-    override suspend fun refundPayment(paymentId: String): Result<Long> = runCatching {
+    override suspend fun refundPayment(paymentId: String): Result<RefundResult> = runCatching {
         check(isAdmin()) { "Admin role required." }
         val data = functions.getHttpsCallable("refundPayment").call(mapOf("paymentId" to paymentId)).await().getData() as? Map<*, *>
             ?: error("Invalid refund response")
-        (data["refundAmountMinor"] as? Number)?.toLong() ?: 0L
+        RefundResult(
+            amountMinor = (data["refundAmountMinor"] as? Number)?.toLong()
+                ?: error("Refund amount is missing from the response"),
+            status = data["status"]?.toString() ?: "REFUND_PENDING"
+        )
     }
 
     override suspend fun createCoupon(coupon: Coupon): Result<Unit> = runCatching {

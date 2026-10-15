@@ -26,6 +26,7 @@ fun SafetyAlertsScreen(
     viewModel: SafetyAlertsViewModel = hiltViewModel()
 ) {
     val alerts by viewModel.alerts.collectAsState()
+    val status by viewModel.status.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -73,6 +74,9 @@ fun SafetyAlertsScreen(
                     }
                 }
             }
+        }
+        item {
+            status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
         item {
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {

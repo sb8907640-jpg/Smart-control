@@ -24,6 +24,8 @@ function makeOwnerTestDb() {
     securityEvents: [],
     subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
+    devices: new Map(),
+    pairingCodes: new Map(),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
     freeAccessGrants: new Map(),
     permissionHistory: new Map(),
@@ -31,6 +33,23 @@ function makeOwnerTestDb() {
   };
   return {
     data,
+    async runTransaction(callback) {
+      const operations = [];
+      const transaction = {
+        get: ref => ref.get(),
+        set(ref, value, options = {}) {
+          operations.push(() => ref.set(value, options));
+          return transaction;
+        },
+        update(ref, value) {
+          operations.push(() => ref.set(value, { merge: true }));
+          return transaction;
+        }
+      };
+      const result = await callback(transaction);
+      for (const operation of operations) await operation();
+      return result;
+    },
     collection(name) {
       const rows = data[name] instanceof Map ? data[name] : null;
       return {
@@ -144,6 +163,129 @@ test("protected API accepts a verified Firebase identity", async () => {
     assert.equal(body.uid, "u1");
     assert.equal(body.authenticated, true);
   });
+});
+
+test("pairing codes support lifetime expiry and can only be consumed once", async () => {
+  const db = makeOwnerTestDb();
+  db.data.pairingCodes.set("LIFETIME", { ownerUid: "owner-1", status: "PENDING", expiresAt: null });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const join = () => fetch(base + "/api/link/join", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ code: "LIFETIME" })
+    });
+    const first = await join();
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).ownerUid, "owner-1");
+    const second = await join();
+    assert.equal(second.status, 404);
+  });
+  assert.equal(db.data.pairingCodes.get("LIFETIME").status, "PAIRED");
+  assert.equal(db.data.devices.get("user-1").controllerUid, "owner-1");
+});
+
+test("data reads require matching consent scope and a current permission grant", async () => {
+  const db = makeOwnerTestDb();
+  db.data.consentLogs = new Map([["consent-1", {
+    userId: "user-1", scope: ["CAMERA"], granted: true, createdAt: 100
+  }]]);
+  db.data.permissionStates = new Map([["user-1_CAMERA", {
+    userId: "user-1", permission: "CAMERA", granted: true, updatedAt: 100
+  }]]);
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const getContacts = () => fetch(base + "/api/data/contacts", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.consentLogs.set("consent-1", {
+      userId: "user-1", scope: ["CONTACTS"], granted: true, createdAt: 200
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.permissionStates.set("user-1_CONTACTS", {
+      userId: "user-1", permission: "CONTACTS", granted: false, updatedAt: 300
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.permissionStates.set("user-1_CONTACTS", {
+      userId: "user-1", permission: "CONTACTS", granted: true, updatedAt: 400
+    });
+    assert.equal((await getContacts()).status, 200);
+  });
+});
+
+test("legacy payment routes do not activate a subscription from a client payment ID", async () => {
+  const db = makeOwnerTestDb();
+  await db.collection("subscriptions").doc("sub-1").set({ status: "PENDING_PAYMENT" }, { merge: true });
+  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const initResponse = await fetch(base + "/api/payment/initiate", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ subscriptionId: "sub-1", amountMinor: 1, provider: "TEST" })
+    });
+    assert.equal(initResponse.status, 503);
+    const verifyResponse = await fetch(base + "/api/payment/verify", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ paymentId: "payment-1" })
+    });
+    assert.equal(verifyResponse.status, 409);
+  });
+  assert.equal((await db.collection("payments").doc("payment-1").get()).data().status, "INITIATED");
+  assert.equal((await db.collection("subscriptions").doc("sub-1").get()).data().status, "PENDING_PAYMENT");
+});
+
+test("EMI requests reject unverified payments", async () => {
+  const db = makeOwnerTestDb();
+  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/emi/apply", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ paymentId: "payment-1", installmentCount: 6 })
+    });
+    assert.equal(response.status, 409);
+  });
+});
+
+test("connect rejects devices that are not actively paired to the caller", async () => {
+  const db = makeOwnerTestDb();
+  db.data.devices.set("unpaired-device", {
+    controllerUid: "another-user",
+    pairingActive: false,
+    connectionStatus: "DISCONNECTED"
+  });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/connect", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: "unpaired-device" })
+    });
+    assert.equal(response.status, 403);
+  });
+  assert.equal(db.data.devices.get("unpaired-device").connectionStatus, "DISCONNECTED");
 });
 
 test("plan route fails closed when Firestore is unavailable", async () => {

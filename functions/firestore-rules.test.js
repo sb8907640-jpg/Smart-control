@@ -6,10 +6,13 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
+  getDoc,
+  getDocs,
   setDoc,
   updateDoc,
-  runTransaction
+  deleteDoc
 } = require("firebase/firestore");
 
 const rules = fs.readFileSync(path.join(__dirname, "../firestore.rules"), "utf8");
@@ -65,6 +68,22 @@ async function main() {
       expiryMode: "NO_EXPIRY"
     }));
 
+    const healthDoc = doc(normal.firestore(), "devices", "normal-user");
+    await assertSucceeds(setDoc(healthDoc, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: now,
+        permissions: { camera: true, microphone: false, location: true, notifications: true }
+      }
+    }));
+    await assertSucceeds(updateDoc(healthDoc, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: now + 1,
+        permissions: { camera: true, microphone: false, location: true, notifications: true }
+      }
+    }));
+
     const claimToken = "d".repeat(48);
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "pairingCodes", claimToken), {
@@ -76,21 +95,46 @@ async function main() {
         senderRole: "Mother",
         receiverRole: "Daughter"
       });
+      await setDoc(doc(ctx.firestore(), "devices", "target-user"), {
+        controllerUid: null,
+        pairingActive: false
+      });
     });
-    await assertSucceeds(runTransaction(controller.firestore(), async (tx) => {
-      const codeRef = doc(controller.firestore(), "pairingCodes", claimToken);
-      const snapshot = await tx.get(codeRef);
-      if (!snapshot.exists()) throw new Error("seeded pairing code missing");
-      tx.set(doc(controller.firestore(), "devices", "target-user"), {
-        controllerUid: "controller-user",
-        pairingToken: claimToken,
-        pairedAt: Date.now(),
-        pairingActive: true,
+    // Pairing tokens are private to their creator. A controller must use the
+    // authenticated claimPairingCode callable instead of reading/listing codes.
+    await assertFails(getDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertFails(getDocs(collection(controller.firestore(), "pairingCodes")));
+    await assertFails(updateDoc(doc(controller.firestore(), "devices", "target-user"), {
+      controllerUid: "controller-user",
+      pairingToken: claimToken,
+      pairedAt: now,
+      pairingActive: true,
+      senderRole: "Mother",
+      receiverRole: "Daughter"
+    }));
+    const createToken = "g".repeat(48);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "pairingCodes", createToken), {
+        deviceUid: "new-target",
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        createdAt: Date.now(),
+        expiryMinutes: 10,
+        expiryMode: "PLAN",
         senderRole: "Mother",
         receiverRole: "Daughter"
       });
-      tx.delete(codeRef);
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "devices", "new-target"), {
+      controllerUid: "controller-user",
+      pairingToken: createToken,
+      pairedAt: now,
+      pairingActive: true,
+      senderRole: "Mother",
+      receiverRole: "Daughter"
     }));
+    await assertSucceeds(getDoc(doc(target.firestore(), "pairingCodes", claimToken)));
+    await assertFails(deleteDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertSucceeds(deleteDoc(doc(target.firestore(), "pairingCodes", claimToken)));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
@@ -116,6 +160,22 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      amountMinor: 1,
+      currency: "INR",
+      status: "SUCCESS",
+      gateway: "RAZORPAY"
+    }));
+
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-schedule"), {
+      userId: "normal-user",
+      paymentId: "fake-payment",
+      status: "COMPLETED",
+      tenureMonths: 12,
+      createdAtEpochMs: Date.now()
+    }));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
@@ -136,7 +196,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry/privacy, server-only pairing claims, device health writes, server-only billing records, SDP permissions, and paired-device file transfers.");
   } finally {
     await env.cleanup();
   }

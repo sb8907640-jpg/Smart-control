@@ -13,8 +13,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewModel = hiltViewModel()) {
     val sharing by viewModel.sharing.collectAsState()
     val last by viewModel.lastLocation.collectAsState()
+    val status by viewModel.status.collectAsState()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (viewModel.hasPermission) viewModel.publishCurrentLocation()
+        // Always let the ViewModel surface a clear message when Android denies access.
+        viewModel.publishCurrentLocation()
     }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Location Sharing", style = MaterialTheme.typography.headlineSmall)
@@ -24,6 +26,7 @@ fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewMode
             else launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }, Modifier.fillMaxWidth()) { Text(if (sharing) "Update shared location" else "Share my location") }
         if (sharing) OutlinedButton({ viewModel.stopSharing() }, Modifier.fillMaxWidth()) { Text("Stop location sharing") }
+        status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         last?.let { location ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
