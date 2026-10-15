@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.smartcontrol.MainActivity
+import com.smartcontrol.presentation.consent.CURRENT_LEGAL_CONSENT_VERSION
 import kotlinx.coroutines.*
 import kotlinx.coroutines.tasks.await
 
@@ -22,15 +23,28 @@ class FamilySafetyService : Service() {
     private val db by lazy { FirebaseFirestore.getInstance() }
     private var previous: Map<String, Boolean>? = null
     private var syncing = false
+    private var foregroundStarted = false
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startVisibleForeground()
-        startHealthLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // START_STICKY can recreate this service with a null intent after process death.
+        // Re-check local consent every time, before starting the foreground notification
+        // or health-reporting loop, so a restart cannot bypass onboarding or permissions.
+        if (!isStartupAllowed(intent)) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        if (!foregroundStarted) {
+            startVisibleForeground()
+            foregroundStarted = true
+            startHealthLoop()
+        }
+
         when (intent?.action) {
             ACTION_SYNCING -> {
                 syncing = true
@@ -41,10 +55,41 @@ class FamilySafetyService : Service() {
                     syncing = false
                     updateVisibleNotification()
                 }
-                if (intent?.action == ACTION_STOP_SYNC) stopSelf()
+                if (intent?.action == ACTION_STOP_SYNC) stopSelf(startId)
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
+    }
+
+    private fun isStartupAllowed(intent: Intent?): Boolean {
+        val consent = getSharedPreferences("legal_consent", MODE_PRIVATE)
+        val consentValid =
+            consent.getBoolean("accepted", false) &&
+                consent.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION &&
+                consent.getBoolean("device_owner_consent", false) &&
+                consent.getBoolean("privacy_consent", false) &&
+                consent.getBoolean("eula_consent", false) &&
+                consent.getLong("accepted_at_epoch_ms", 0L) > 0L &&
+                consent.getBoolean("age_verified", false)
+        if (!consentValid) return false
+
+        val mode = getSharedPreferences("smart_control_mode", MODE_PRIVATE)
+            .getString("mode", null)
+        if (mode.isNullOrBlank()) return false
+
+        // Android 13+ allows starting an FGS without this permission, but the ongoing
+        // notification may be hidden from the drawer. Do not auto-start a service the
+        // user has explicitly denied notifications for.
+        if (Build.VERSION.SDK_INT >= 33 && !granted(Manifest.permission.POST_NOTIFICATIONS)) {
+            return false
+        }
+
+        val autoStartEnabled = getSharedPreferences("smart_control_settings", MODE_PRIVATE)
+            .getBoolean("auto_start_service", false)
+        if ((intent == null || intent.action == ACTION_AUTO_START) && !autoStartEnabled) {
+            return false
+        }
+        return true
     }
 
     private fun startVisibleForeground() {
@@ -173,6 +218,7 @@ class FamilySafetyService : Service() {
     companion object {
         const val CHANNEL = "family_safety"
         const val NOTIFICATION_ID = 1001
+        const val ACTION_AUTO_START = "com.smartcontrol.action.AUTO_START"
         const val ACTION_SYNCING = "com.smartcontrol.action.SYNCING_DEVICE"
         const val ACTION_IDLE = "com.smartcontrol.action.FAMILY_SAFETY_IDLE"
         const val ACTION_STOP_SYNC = "com.smartcontrol.action.STOP_SYNC"
