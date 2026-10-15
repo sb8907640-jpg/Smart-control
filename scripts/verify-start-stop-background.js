@@ -26,6 +26,10 @@ check("STOP is user-triggered", session.includes("OutlinedButton(") && session.i
 check("Automatic start requires explicit user choice", main.includes("autoStart") && main.includes("auto_start_service") && main.includes("putBoolean"));
 check("Service starts only from START callback", main.includes("fun startServiceFromUserAction()") && main.includes("FamilySafetyService.start(this@MainActivity)"));
 check("Service stops from STOP callback", main.includes("fun stopServiceFromUserAction()") && main.includes("FamilySafetyService.stop(this@MainActivity)"));
+check("Start/Stop state follows the real service after recreation and notification actions",
+  main.includes("isFamilySafetyServiceRunning()") &&
+    main.includes("getRunningServices(Int.MAX_VALUE)") &&
+    main.includes("delay(1_500)"));
 check("Background operation is foreground-visible", service.includes("startVisibleForeground") && service.includes("setOngoing(true)"));
 check("No silent permission bypass markers", !/autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|permissionBypass|skipPermissionDialog|withoutUserAction/i.test(main + session + service));
 check("Master policy still forbids permission bypass", policy.includes("noPermissionBypass") && policy.includes("true"));
