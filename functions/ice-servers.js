@@ -3,6 +3,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
+const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
 
 // Configure this as the shared secret for a TURN server that supports the
 // coturn REST API. It is never included in the Android APK or returned to clients.
@@ -29,6 +30,19 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
   }
   if (!["APPROVED", "ACTIVE"].includes(String(session.status || ""))) {
     throw new HttpsError("failed-precondition", "TURN credentials are only available for approved or active sessions.");
+  }
+
+  const [globalPolicySnapshot, userPolicySnapshot] = await Promise.all([
+    db.collection("featurePolicy").doc("global").get(),
+    db.collection("featurePolicyUsers").doc(session.targetDeviceId).get()
+  ]);
+  const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
+  if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
+    session.capabilities,
+    globalPolicySnapshot.data() || {},
+    userPolicy
+  )) {
+    throw new HttpsError("permission-denied", "Owner feature policy no longer allows this media session.");
   }
 
   const turnUrls = String(process.env.SMARTCONTROL_TURN_URLS || "")
