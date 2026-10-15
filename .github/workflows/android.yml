@@ -59,7 +59,7 @@ jobs:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
           FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
-        run: gradle test assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+        run: gradle test lintOwnerDebug lintLiteDebug lintFullDebug lintOwnerRelease lintLiteRelease lintFullRelease assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
 
       - name: Verify PostgreSQL backend code
         working-directory: backend
