@@ -570,6 +570,13 @@ exports.refundPayment = onCall(
         refundAmountMinor,
         refundRequestedAtEpochMs: now,
         refundRequestedBy: request.auth.uid,
+        // Keep the previous attempt auditable, but clear its active ID so
+        // events from a new retry cannot be compared with a stale refund ID.
+        previousGatewayRefundId: stored.gatewayRefundId || null,
+        previousGatewayRefundStatus: stored.gatewayRefundStatus || null,
+        gatewayRefundId: FieldValue.delete(),
+        gatewayRefundStatus: FieldValue.delete(),
+        refundError: FieldValue.delete(),
         updatedAtEpochMs: now
       });
       return { ...stored, refundAmountMinor };
@@ -691,16 +698,34 @@ exports.refundPayment = onCall(
     }
 
     const processed = String(result.status || "").toLowerCase() === "processed";
-    await ref.update({
-      status: processed ? "REFUNDED" : "REFUND_PENDING",
-      gatewayRefundId,
-      gatewayRefundStatus: String(result.status || "pending"),
-      refundedAtEpochMs: processed ? Date.now() : null,
-      refundedBy: processed ? request.auth.uid : null,
-      updatedAtEpochMs: Date.now()
+    const finalStatus = await db.runTransaction(async (tx) => {
+      const latestSnap = await tx.get(ref);
+      if (!latestSnap.exists) throw new HttpsError("not-found", "Payment disappeared during refund reconciliation.");
+      const latestPayment = latestSnap.data() || {};
+      if (latestPayment.status === "REFUNDED") {
+        if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) {
+          throw new HttpsError("failed-precondition", "A different refund was completed; reconcile the gateway record.");
+        }
+        return "REFUNDED";
+      }
+      if (latestPayment.status !== "REFUND_PENDING") {
+        throw new HttpsError("failed-precondition", "Refund state changed during gateway processing; reconcile before retrying.");
+      }
+      if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) {
+        throw new HttpsError("failed-precondition", "A different refund ID is already active; reconcile before retrying.");
+      }
+      tx.update(ref, {
+        status: processed ? "REFUNDED" : "REFUND_PENDING",
+        gatewayRefundId,
+        gatewayRefundStatus: String(result.status || "pending"),
+        refundedAtEpochMs: processed ? Date.now() : null,
+        refundedBy: processed ? request.auth.uid : null,
+        updatedAtEpochMs: Date.now()
+      });
+      return processed ? "REFUNDED" : "REFUND_PENDING";
     });
 
-    if (processed && payment.subscriptionId) {
+    if (finalStatus === "REFUNDED" && payment.subscriptionId) {
       await db.collection("subscriptions").doc(payment.subscriptionId).set({
         status: "CANCELLED",
         cancelledAtEpochMs: Date.now(),
@@ -710,7 +735,7 @@ exports.refundPayment = onCall(
 
     return {
       ok: true,
-      status: processed ? "REFUNDED" : "REFUND_PENDING",
+      status: finalStatus,
       refundAmountMinor: payment.refundAmountMinor,
       gatewayRefundId
     };
