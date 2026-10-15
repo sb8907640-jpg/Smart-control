@@ -575,6 +575,22 @@ exports.refundPayment = onCall(
       return { ...stored, refundAmountMinor };
     });
 
+    // Restore a failed refund attempt only if the same refund lock is still
+    // pending. Webhooks may have completed the refund while the API call was in flight.
+    const restoreRefundPendingToSuccess = async (updates = {}, expectedRefundId = null) =>
+      db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return "MISSING";
+        const latestPayment = latestSnap.data() || {};
+        if (latestPayment.status !== "REFUND_PENDING") return String(latestPayment.status || "");
+        const currentRefundId = String(latestPayment.gatewayRefundId || "").trim();
+        if (currentRefundId && (!expectedRefundId || currentRefundId !== expectedRefundId)) {
+          return "REFUND_PENDING";
+        }
+        tx.update(ref, { ...updates, status: "SUCCESS", updatedAtEpochMs: Date.now() });
+        return "SUCCESS";
+      });
+
     const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
     if (provider === "TEST") {
       await ref.update({
@@ -594,7 +610,11 @@ exports.refundPayment = onCall(
     }
 
     if (provider !== "RAZORPAY") {
-      await ref.update({ status: "SUCCESS", refundError: "UNSUPPORTED_PROVIDER", updatedAtEpochMs: Date.now() });
+      const refundState = await restoreRefundPendingToSuccess({ refundError: "UNSUPPORTED_PROVIDER" });
+      if (refundState === "REFUNDED") return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while validating the provider; reconcile before retrying.");
+      }
       throw new HttpsError("failed-precondition", "This payment provider does not have a server-side refund adapter; no refund was issued.");
     }
 
@@ -603,7 +623,11 @@ exports.refundPayment = onCall(
     const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
     const razorpayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
     if (!keyId || !keySecret || !razorpayPaymentId) {
-      await ref.update({ status: "SUCCESS", refundError: "RAZORPAY_REFUND_NOT_CONFIGURED", updatedAtEpochMs: Date.now() });
+      const refundState = await restoreRefundPendingToSuccess({ refundError: "RAZORPAY_REFUND_NOT_CONFIGURED" });
+      if (refundState === "REFUNDED") return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while checking gateway credentials; reconcile before retrying.");
+      }
       throw new HttpsError("failed-precondition", "Razorpay refund credentials or payment reference are missing.");
     }
 
@@ -626,11 +650,12 @@ exports.refundPayment = onCall(
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status >= 400 && response.status < 500) {
-        await ref.update({
-          status: "SUCCESS",
-          refundError: "RAZORPAY_REJECTED_" + response.status,
-          updatedAtEpochMs: Date.now()
+        const refundState = await restoreRefundPendingToSuccess({
+          refundError: "RAZORPAY_REJECTED_" + response.status
         });
+        if (refundState === "REFUNDED") {
+          return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+        }
       } else {
         await ref.update({
           refundError: "RAZORPAY_OUTCOME_UNKNOWN",
@@ -651,13 +676,17 @@ exports.refundPayment = onCall(
     }
 
     if (String(result.status || "").toLowerCase() === "failed") {
-      await ref.update({
-        status: "SUCCESS",
+      const refundState = await restoreRefundPendingToSuccess({
         gatewayRefundId,
         gatewayRefundStatus: "failed",
-        refundError: "RAZORPAY_REFUND_FAILED",
-        updatedAtEpochMs: Date.now()
-      });
+        refundError: "RAZORPAY_REFUND_FAILED"
+      }, gatewayRefundId);
+      if (refundState === "REFUNDED") {
+        return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor, gatewayRefundId };
+      }
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while processing the failure response; reconcile before retrying.");
+      }
       throw new HttpsError("failed-precondition", "Razorpay reported that the refund failed; no refund was recorded.");
     }
 
