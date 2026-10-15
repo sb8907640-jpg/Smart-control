@@ -188,6 +188,41 @@ test("pairing codes support lifetime expiry and can only be consumed once", asyn
   assert.equal(db.data.devices.get("user-1").controllerUid, "owner-1");
 });
 
+test("data reads require matching consent scope and a current permission grant", async () => {
+  const db = makeOwnerTestDb();
+  db.data.consentLogs = new Map([["consent-1", {
+    userId: "user-1", scope: ["CAMERA"], granted: true, createdAt: 100
+  }]]);
+  db.data.permissionStates = new Map([["user-1_CAMERA", {
+    userId: "user-1", permission: "CAMERA", granted: true, updatedAt: 100
+  }]]);
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const getContacts = () => fetch(base + "/api/data/contacts", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.consentLogs.set("consent-1", {
+      userId: "user-1", scope: ["CONTACTS"], granted: true, createdAt: 200
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.permissionStates.set("user-1_CONTACTS", {
+      userId: "user-1", permission: "CONTACTS", granted: false, updatedAt: 300
+    });
+    assert.equal((await getContacts()).status, 403);
+
+    db.data.permissionStates.set("user-1_CONTACTS", {
+      userId: "user-1", permission: "CONTACTS", granted: true, updatedAt: 400
+    });
+    assert.equal((await getContacts()).status, 200);
+  });
+});
+
 test("legacy payment routes do not activate a subscription from a client payment ID", async () => {
   const db = makeOwnerTestDb();
   await db.collection("subscriptions").doc("sub-1").set({ status: "PENDING_PAYMENT" }, { merge: true });
