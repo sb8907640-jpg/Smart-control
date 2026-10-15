@@ -79,6 +79,24 @@ check("Verified payment activation cannot overwrite a concurrent refund lock",
     !/activateSubscriptionForPayment[\s\S]{0,500}paymentDoc\.ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayWebhookBlock),
   "The activation transaction persists success atomically; no redundant follow-up write may revert REFUND_PENDING.");
 
+const paymentFailedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "payment.failed"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.created"')
+);
+const refundFailedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.failed"'),
+  razorpayWebhookBlock.indexOf('eventName === "payment.refunded"')
+);
+check("Delayed payment failure cannot overwrite a captured payment",
+  paymentFailedWebhookBlock.includes("db.runTransaction") &&
+    paymentFailedWebhookBlock.includes('latestPayment.status !== "PENDING"'),
+  "Failure events only transition a payment that is still PENDING inside a transaction.");
+check("Failed refund event cannot revert a completed refund",
+  refundFailedWebhookBlock.includes("db.runTransaction") &&
+    refundFailedWebhookBlock.includes('latestPayment.status !== "REFUND_PENDING"') &&
+    refundFailedWebhookBlock.includes("latestPayment.gatewayRefundId === refundId"),
+  "A refund failure only restores SUCCESS while the same refund remains pending.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",
