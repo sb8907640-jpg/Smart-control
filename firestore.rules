@@ -118,7 +118,12 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      // A token holder may fetch a known high-entropy code directly, but must
+      // not list the collection and enumerate every user's active pairing token.
+      allow get: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow list: if request.auth != null
+        && resource.data.deviceUid == request.auth.uid
+        && resource.data.expiresAt > request.time.toMillis();
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
       allow delete: if request.auth != null && (
@@ -136,6 +141,9 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
+        && request.resource.data.status == 'REQUESTED'
+        && request.resource.data.createdAt is int
+        && request.resource.data.capabilities is list
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
