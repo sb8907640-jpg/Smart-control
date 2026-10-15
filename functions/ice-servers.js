@@ -39,7 +39,9 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     controllerAccessSnapshot,
     targetAccessSnapshot,
     globalPolicySnapshot,
-    userPolicySnapshot
+    userPolicySnapshot,
+    controllerConsentSnapshot,
+    targetConsentSnapshot
   ] = await Promise.all([
     db.collection("devices").doc(session.targetDeviceId).get(),
     db.collection("users").doc(session.controllerUid).get(),
@@ -47,7 +49,9 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     db.collection("userAccess").doc(session.controllerUid).get(),
     db.collection("userAccess").doc(session.targetDeviceId).get(),
     db.collection("featurePolicy").doc("global").get(),
-    db.collection("featurePolicyUsers").doc(session.targetDeviceId).get()
+    db.collection("featurePolicyUsers").doc(session.targetDeviceId).get(),
+    db.collection("consentHistory").doc(`${session.controllerUid}_${CURRENT_LEGAL_CONSENT_VERSION}`).get(),
+    db.collection("consentHistory").doc(`${session.targetDeviceId}_${CURRENT_LEGAL_CONSENT_VERSION}`).get()
   ]);
   const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
   if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
@@ -61,6 +65,22 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     throw new HttpsError("permission-denied", "A suspended or blocked account cannot use media sessions.");
   }
   const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
+  const hasCurrentConsent = (snapshot, uid) => {
+    const data = snapshot.exists ? snapshot.data() || {} : {};
+    return snapshot.exists &&
+      data.userId === uid &&
+      Number(data.consentVersion) === CURRENT_LEGAL_CONSENT_VERSION &&
+      data.deviceOwnerConsent === true &&
+      data.privacyConsent === true &&
+      data.eulaConsent === true;
+  };
+  if (!hasCurrentConsent(controllerConsentSnapshot, session.controllerUid) ||
+      !hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Both devices must have a current server-recorded legal consent before media connectivity is authorized."
+    );
+  }
   if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
     session.capabilities,
     globalPolicySnapshot.data() || {},

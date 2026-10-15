@@ -142,7 +142,29 @@ exports.approveMediaSession = onCall(async (request) => {
 
     const globalPolicySnapshot = await transaction.get(globalPolicyRef);
     const userPolicySnapshot = await transaction.get(userPolicyRef);
-    const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
+    const controllerConsentSnapshot = await transaction.get(
+      db.collection("consentHistory").doc(`${session.controllerUid}_${CURRENT_LEGAL_CONSENT_VERSION}`)
+    );
+    const targetConsentSnapshot = await transaction.get(
+      db.collection("consentHistory").doc(`${session.targetDeviceId}_${CURRENT_LEGAL_CONSENT_VERSION}`)
+    );
+    const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null
+    const hasCurrentConsent = (snapshot, uid) => {
+      const data = snapshot.exists ? snapshot.data() || {} : {};
+      return snapshot.exists &&
+        data.userId === uid &&
+        Number(data.consentVersion) === CURRENT_LEGAL_CONSENT_VERSION &&
+        data.deviceOwnerConsent === true &&
+        data.privacyConsent === true &&
+        data.eulaConsent === true;
+    };
+    if (!hasCurrentConsent(controllerConsentSnapshot, session.controllerUid) ||
+        !hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)) {
+      throw new HttpsError(
+        "permission-denied",
+        "Both devices must have a current server-recorded legal consent before media approval."
+      );
+    };
     if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
       session.capabilities,
       globalPolicySnapshot.data() || {},
