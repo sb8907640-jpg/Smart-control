@@ -67,11 +67,75 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     return active;
   };
 
+  const normalizePermission = value => String(value || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  const permissionStateId = (uid, permission) => String(uid) + "_" + normalizePermission(permission);
+  const getActiveConsent = async uid => {
+    const consents = (await list("consentLogs", uid, 500))
+      .filter(consent => consent.granted === true)
+      .filter(consent => consent.expiresAt == null ||
+        (Number.isFinite(Number(consent.expiresAt)) && Number(consent.expiresAt) > now()))
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    return consents[0] || null;
+  };
+  const consentCovers = (consent, permission) => {
+    const scopes = Array.isArray(consent?.scope) ? consent.scope.map(normalizePermission) : [];
+    const normalized = normalizePermission(permission);
+    return scopes.includes("ALL") || scopes.includes(normalized);
+  };
+  const requestedPermissions = req => {
+    const scope = req.body?.scope;
+    if (Array.isArray(scope)) return scope.map(normalizePermission).filter(Boolean);
+    if (typeof scope === "string") return [normalizePermission(scope)].filter(Boolean);
+    if (scope && typeof scope === "object") {
+      return Object.entries(scope).filter(([, enabled]) => enabled === true).map(([key]) => normalizePermission(key)).filter(Boolean);
+    }
+    return [];
+  };
   const requireConsent = async (req, res, next) => {
     try {
-      const snap = await firestoreCollection("consentLogs").where("userId", "==", req.catalogUid).where("granted", "==", true).limit(1).get();
-      if (snap.empty) return res.status(403).json({ error: "Active user consent is required." });
-      req.consentId = snap.docs[0].id;
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      next();
+    } catch (e) { next(e); }
+  };
+  const requireConsentScope = scopeResolver => async (req, res, next) => {
+    try {
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      const raw = typeof scopeResolver === "function" ? scopeResolver(req) : scopeResolver;
+      const scopes = (Array.isArray(raw) ? raw : [raw]).map(normalizePermission).filter(Boolean);
+      if (!scopes.length) return res.status(400).json({ error: "A consent scope is required." });
+      if (!scopes.every(scope => consentCovers(consent, scope))) {
+        return res.status(403).json({ error: "Consent does not cover the requested feature." });
+      }
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      next();
+    } catch (e) { next(e); }
+  };
+  const requireFeaturePermission = scopeResolver => async (req, res, next) => {
+    try {
+      const consent = await getActiveConsent(req.catalogUid);
+      if (!consent) return res.status(403).json({ error: "Active user consent is required." });
+      const raw = typeof scopeResolver === "function" ? scopeResolver(req) : scopeResolver;
+      const scopes = (Array.isArray(raw) ? raw : [raw]).map(normalizePermission).filter(Boolean);
+      if (!scopes.length) return res.status(400).json({ error: "A feature scope is required." });
+      if (!scopes.every(scope => consentCovers(consent, scope))) {
+        return res.status(403).json({ error: "Consent does not cover the requested feature." });
+      }
+      for (const scope of scopes) {
+        const permissionSnap = await firestoreCollection("permissionStates").doc(permissionStateId(req.catalogUid, scope)).get();
+        const permission = permissionSnap.exists ? permissionSnap.data() : null;
+        if (!permission || permission.userId !== req.catalogUid ||
+            permission.permission !== scope || permission.granted !== true) {
+          return res.status(403).json({ error: "The required permission has not been granted or was revoked." });
+        }
+      }
+      req.consentId = consent.id;
+      req.consentScope = Array.isArray(consent.scope) ? consent.scope.map(normalizePermission) : [];
+      req.requiredPermissions = scopes;
       next();
     } catch (e) { next(e); }
   };
