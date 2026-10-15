@@ -289,6 +289,8 @@ exports.updateOwnerUser = onCall(async (request) => {
     } else if (target.uid !== request.auth.uid) {
       delete claims.admin;
     }
+    if (role === "OWNER") claims.owner = true;
+    else delete claims.owner;
     await getAuth().setCustomUserClaims(uid, claims);
     const updatedAtEpochMs = Date.now();
     await db.collection("userAccess").doc(uid).set({
@@ -400,6 +402,8 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     const previousClaims = user.customClaims || {};
     const role = previousClaims.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
     const claims = { ...previousClaims, role, admin: true };
+    if (role === "OWNER") claims.owner = true;
+    else delete claims.owner;
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -418,6 +422,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     const claims = { ...(user.customClaims || {}) };
     if (claims.role === "SUPER_ADMIN") continue;
     delete claims.admin;
+    delete claims.owner;
     if (claims.role === "OWNER") delete claims.role;
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
