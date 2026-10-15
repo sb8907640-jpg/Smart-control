@@ -357,6 +357,20 @@ check("FCM token registration rejects insecure API URLs",
     messagingService.includes("instanceFollowRedirects = false"),
   "Firebase ID tokens are only posted to HTTPS endpoints, with HTTP allowed for local development only.");
 
+const mediaEngine = read("app/src/main/java/com/smartcontrol/data/media/WebRtcMediaEngine.kt");
+const mediaEngineRelease = mediaEngine.slice(
+  mediaEngine.indexOf("fun release()"),
+  mediaEngine.indexOf("private fun createPeerConnection")
+);
+check("Singleton WebRTC engine remains reusable after ViewModel cleanup",
+  mediaEngineRelease.includes("peerConnections.clear()") &&
+    mediaEngineRelease.includes("captures.clear()") &&
+    mediaEngineRelease.includes("candidateJobs.clear()") &&
+    !mediaEngineRelease.includes("factory.dispose()") &&
+    !mediaEngineRelease.includes("eglBase.release()") &&
+    !mediaEngineRelease.includes("initialized.set(false)"),
+  "ViewModel cleanup releases active sessions but does not destroy the process-wide EGL/factory instance reused by later screens.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
