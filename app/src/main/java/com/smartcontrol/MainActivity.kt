@@ -143,6 +143,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    private var notificationPermissionResultHandler: ((Boolean) -> Unit)? = null
+
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -155,6 +157,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     Toast.LENGTH_LONG
                 ).show()
             }
+            notificationPermissionResultHandler?.invoke(granted)
+            notificationPermissionResultHandler = null
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -242,7 +246,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         Manifest.permission.POST_NOTIFICATIONS
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
+                    notificationPermissionResultHandler = { granted -> running = granted }
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    return
                 } else {
                     FamilySafetyService.start(this@MainActivity)
                     FamilySafetyService.setSyncing(this@MainActivity)
