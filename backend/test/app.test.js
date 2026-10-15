@@ -188,6 +188,49 @@ test("pairing codes support lifetime expiry and can only be consumed once", asyn
   assert.equal(db.data.devices.get("user-1").controllerUid, "owner-1");
 });
 
+test("legacy payment routes do not activate a subscription from a client payment ID", async () => {
+  const db = makeOwnerTestDb();
+  await db.collection("subscriptions").doc("sub-1").set({ status: "PENDING_PAYMENT" }, { merge: true });
+  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const initResponse = await fetch(base + "/api/payment/initiate", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ subscriptionId: "sub-1", amountMinor: 1, provider: "TEST" })
+    });
+    assert.equal(initResponse.status, 503);
+    const verifyResponse = await fetch(base + "/api/payment/verify", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ paymentId: "payment-1" })
+    });
+    assert.equal(verifyResponse.status, 409);
+  });
+  assert.equal((await db.collection("payments").doc("payment-1").get()).data().status, "INITIATED");
+  assert.equal((await db.collection("subscriptions").doc("sub-1").get()).data().status, "PENDING_PAYMENT");
+});
+
+test("EMI requests reject unverified payments", async () => {
+  const db = makeOwnerTestDb();
+  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/emi/apply", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ paymentId: "payment-1", installmentCount: 6 })
+    });
+    assert.equal(response.status, 409);
+  });
+});
+
 test("plan route fails closed when Firestore is unavailable", async () => {
   const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
   await withServer(app, async base => {
