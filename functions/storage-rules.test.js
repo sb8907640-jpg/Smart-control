@@ -60,7 +60,9 @@ async function main() {
         sizeBytes: 4,
         status: "APPROVED"
       });
-      await setDoc(doc(db, "users", "blocked-sender"), { status: "ACTIVE" });
+      // Storage Rules read one account-status document plus the transfer record
+      // to stay within Firebase Storage's two-document Firestore lookup limit.
+      await setDoc(doc(db, "users", "blocked-sender"), { status: "BLOCKED" });
       await setDoc(doc(db, "userAccess", "blocked-sender"), { blocked: true });
     });
 
