@@ -134,7 +134,8 @@ class WebRtcMediaEngine(
     }
 
     suspend fun stop(sessionId: String) {
-        signaling.stopSession(sessionId)
+        // Session status is managed by MediaSessionViewModel; this method only
+        // releases local resources so remote-stop cleanup does not write STOPPED twice.
         captures.remove(sessionId)?.forEach { runCatching { it.close() } }
         candidateJobs.remove(sessionId)?.cancel()
         peerConnections.remove(sessionId)?.let { connection ->
