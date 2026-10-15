@@ -135,6 +135,11 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private val incomingPairLink = mutableStateOf<android.net.Uri?>(null)
 
+    override fun onResume() {
+        super.onResume()
+        serviceRunning.value = FamilySafetyService.isRunning
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
