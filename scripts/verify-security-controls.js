@@ -101,6 +101,13 @@ check("Test safety alert is separate from SOS",
     read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes("This is a test safety alert"),
   "The test-alert button cannot accidentally create a real SOS alert.");
 
+check("Payment and EMI ledger records are server-write only",
+  firestoreRules.includes("match /payments/{paymentId}") &&
+    firestoreRules.includes("match /emiSchedule/{scheduleId}") &&
+    read("functions/billing.js").includes("exports.createPayment") &&
+    read("functions/billing.js").includes("exports.applyEmi"),
+  "Clients cannot forge payment/EMI ledger rows; trusted billing callables own creation.");
+
 check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
