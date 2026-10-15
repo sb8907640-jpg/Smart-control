@@ -171,10 +171,8 @@ function installOwnerPanelRoutes(app, { db, auth }) {
       : status === "SUSPENDED"
         ? { status, suspendedAt: timestamp, suspendedBy: req.user.uid }
         : { status, blockedAt: timestamp, blockedBy: req.user.uid };
-    // Persist the server-side status first so Firestore/Functions reject access
-    // even if the subsequent Auth disable or token revocation call fails.
-    await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
-    if (auth && typeof auth.updateUser === "function") {
+    const syncAuthStatus = async () => {
+      if (!auth || typeof auth.updateUser !== "function") return;
       try {
         await auth.updateUser(id, { disabled: status !== "ACTIVE" });
         if (status !== "ACTIVE" && typeof auth.revokeRefreshTokens === "function") {
@@ -183,7 +181,12 @@ function installOwnerPanelRoutes(app, { db, auth }) {
       } catch (error) {
         if (error.code !== "auth/user-not-found") throw error;
       }
-    }
+    };
+    // Suspension is persisted first (fail-closed). Unsuspension enables Auth first,
+    // so a failed Auth update cannot restore Firestore access to a disabled account.
+    if (status === "ACTIVE") await syncAuthStatus();
+    await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
+    if (status !== "ACTIVE") await syncAuthStatus();
     await audit(req, action, "user", { id, previousStatus, status });
     return res.json({ ok: true, id, previousStatus, status });
   };
