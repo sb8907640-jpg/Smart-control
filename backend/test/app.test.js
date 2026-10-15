@@ -316,6 +316,30 @@ test("WhatsApp support endpoint uses private Owner destination and creates a tic
   });
 });
 
+test("Owner payment API cannot modify financial state", async () => {
+  const db = makeOwnerTestDb();
+  db.data.payments.get("payment-1").status = "INITIATED";
+  await withOwnerServer(db, async base => {
+    const unsafe = await fetch(base + "/api/owner/payments/payment-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { status: "SUCCESS", amount: 1 } })
+    });
+    assert.equal(unsafe.status, 400);
+    assert.equal(db.data.payments.get("payment-1").status, "INITIATED");
+    assert.equal(db.data.payments.get("payment-1").amount, 100);
+
+    const note = await fetch(base + "/api/owner/payments/payment-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { ownerNote: "Reconciliation checked" } })
+    });
+    assert.equal(note.status, 200);
+    assert.equal(db.data.payments.get("payment-1").ownerNote, "Reconciliation checked");
+    assert.equal(db.data.payments.get("payment-1").status, "INITIATED");
+  });
+});
+
 test("generic Owner settings API cannot add raw payment secrets", async () => {
   const db = makeOwnerTestDb();
   await withOwnerServer(db, async base => {
