@@ -20,9 +20,13 @@ function requireSignedIn(request) {
 
 async function requireOwner(request) {
   requireSignedIn(request);
-  const userSnapshot = await db.collection("users").doc(request.auth.uid).get();
-  if (userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
-    throw new HttpsError("permission-denied", "This account is suspended.");
+  const [userSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(request.auth.uid).get(),
+    db.collection("userAccess").doc(request.auth.uid).get()
+  ]);
+  if ((userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") ||
+      (accessSnapshot.exists && accessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "This account is suspended or blocked.");
   }
   const claims = request.auth.token || {};
   if (claims.owner === true || String(claims.role || "").toUpperCase() === "OWNER") return;
