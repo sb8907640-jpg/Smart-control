@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SafetyAlertsViewModel @Inject constructor(
     private val repository: SafetyAlertRepository,
