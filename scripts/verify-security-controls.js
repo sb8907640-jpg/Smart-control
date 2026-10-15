@@ -103,10 +103,12 @@ check("TURN shared secret is not embedded in Android APK",
   !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
     iceServers.includes('createHmac("sha1", sharedSecret)'),
   "Authenticated callable issues expiring TURN REST credentials server-side.");
-check("Media session requests server-issued ICE configuration",
+check("Media session requests server-authorized ICE configuration",
   mediaViewModel.includes('getHttpsCallable("getWebRtcIceServers")') &&
-    mediaViewModel.includes("resolveIceServers()"),
-  "Media sessions use TURN when configured and display a STUN-only warning otherwise.");
+    mediaViewModel.includes("resolveIceServers(sessionId: String)") &&
+    mediaViewModel.includes('call(mapOf("sessionId" to sessionId))') &&
+    mediaViewModel.includes("Secure ICE configuration or media authorization failed"),
+  "TURN credentials are tied to the approved session and authorization errors fail closed.");
 check("Screen recording is separate and visible",
   manifest.includes('android:name=".service.ScreenRecordingService"') &&
     featureCenter.includes("onScreenRecording") &&
