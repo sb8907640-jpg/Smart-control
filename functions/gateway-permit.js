@@ -276,9 +276,18 @@ exports.savePaymentGatewayProviderDraft = onCall(
 // Server-only helper. Never expose its result from a callable endpoint or log it.
 exports.getActiveGatewayPermit = async function getActiveGatewayPermit(revision = null) {
   let permit = null;
-  if (revision !== null && revision !== undefined && Number(revision) > 0) {
-    const versionSnap = await db.collection("paymentGatewayPermitVersions").doc(String(Number(revision))).get();
-    permit = versionSnap.exists ? versionSnap.data() : null;
+  if (revision !== null && revision !== undefined) {
+    const revisionNumber = Number(revision);
+    if (!Number.isSafeInteger(revisionNumber) || revisionNumber <= 0) {
+      throw new HttpsError("failed-precondition", "The payment references an invalid gateway permit revision.");
+    }
+    const versionSnap = await db.collection("paymentGatewayPermitVersions").doc(String(revisionNumber)).get();
+    if (!versionSnap.exists) {
+      // A payment created under a specific permit must never silently fall back
+      // to unrelated environment credentials if that historical revision is gone.
+      throw new HttpsError("failed-precondition", "The payment's gateway permit revision is unavailable.");
+    }
+    permit = versionSnap.data() || null;
   } else {
     const snap = await CONFIG_REF.get();
     permit = snap.exists ? snap.data()?.paymentGatewayPermit : null;
@@ -286,7 +295,7 @@ exports.getActiveGatewayPermit = async function getActiveGatewayPermit(revision 
       throw new HttpsError("failed-precondition", "The Owner has disabled the Payment Gateway Permit.");
     }
   }
-  if (!permit) return null; // Backward-compatible fallback to existing server secrets.
+  if (!permit) return null; // Backward-compatible fallback only for payments without a permit revision.
   const provider = String(permit.provider || "").toUpperCase();
   if (!IMPLEMENTED_PROVIDERS.has(provider)) {
     throw new HttpsError("failed-precondition", "The selected payment gateway does not have a server adapter.");
