@@ -173,11 +173,11 @@ class MediaSessionViewModel @Inject constructor(
             // Do not turn an authorization/policy denial into a STUN-only session;
             // that would bypass the server-side approval boundary.
             if (error.code in setOf(
-                    "permission-denied",
-                    "failed-precondition",
-                    "unauthenticated",
-                    "not-found",
-                    "invalid-argument"
+                    FirebaseFunctionsException.Code.PERMISSION_DENIED,
+                    FirebaseFunctionsException.Code.FAILED_PRECONDITION,
+                    FirebaseFunctionsException.Code.UNAUTHENTICATED,
+                    FirebaseFunctionsException.Code.NOT_FOUND,
+                    FirebaseFunctionsException.Code.INVALID_ARGUMENT
                 )
             ) throw error
             lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
