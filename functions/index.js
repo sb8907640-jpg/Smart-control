@@ -470,12 +470,12 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   const requestedEmails = new Set(
     (Array.isArray(request.data?.emails) ? request.data.emails : [])
       .map(value => String(value).trim().toLowerCase())
-      .filter(value => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value))
+      .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
   );
   const requestedMobiles = new Set(
     (Array.isArray(request.data?.mobiles) ? request.data.mobiles : [])
       .map(value => String(value).trim())
-      .filter(value => /^\\+[1-9]\\d{7,14}$/.test(value))
+      .filter(value => /^\+[1-9]\d{7,14}$/.test(value))
   );
   if (requestedEmails.size === 0 && requestedMobiles.size === 0) {
     throw new HttpsError("invalid-argument", "Provide at least one valid owner email or E.164 mobile number.");
