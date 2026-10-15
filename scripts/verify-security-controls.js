@@ -84,6 +84,13 @@ check("Pairing tokens are private and claimed by the authenticated server callab
     functionsIndex.includes("transaction.delete(codeRef)") &&
     pairingRepo.includes('getHttpsCallable("claimPairingCode")'),
   "Clients cannot list/read other devices' pairing tokens; the server validates and consumes a token atomically with the device link.");
+check("Owner sync validates identities and reconciles claims by UID",
+  functionsIndex.includes("const resolvedRequested = new Map()") &&
+    functionsIndex.includes("if (unresolved.length > 0)") &&
+    functionsIndex.includes("const requestedUids = new Set(requestedUsers.keys())") &&
+    functionsIndex.includes("revokedUids.has(user.uid)"),
+  "A bad identifier cannot partially mutate claims, and removing one of a user's identifiers does not revoke the remaining owner account.");
+
 check("Role helpers are exported and self-escalation is blocked",
   read("functions/spec/roles.js").includes("module.exports = { ROLES, normalizeRole, canManageRole }") &&
     functionsIndex.includes("You cannot change your own role.") &&
