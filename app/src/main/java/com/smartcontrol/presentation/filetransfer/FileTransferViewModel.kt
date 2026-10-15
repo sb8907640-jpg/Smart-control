@@ -48,7 +48,7 @@ class FileTransferViewModel @Inject constructor(
     }.distinctUntilChanged()
         .flatMapLatest { uid ->
             if (uid.isNullOrBlank()) {
-                flowOf(emptyList())
+                flowOf(emptyList<FileTransferRequest>())
             } else {
                 repository.observeIncoming(uid).catch {
                     // Clear stale transfer metadata and keep the auth observer alive
