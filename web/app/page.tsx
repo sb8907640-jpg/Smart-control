@@ -73,10 +73,24 @@ async function initiateWhatsAppSupport(user: User) {
   const token = await user.getIdToken();
   const base = apiBase();
   if (!base) throw new Error("Smart Control API URL is not configured.");
-  const response = await fetch(base + "/api/support/whatsapp/initiate", { method: "POST", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const response = await fetch(base + "/api/support/whatsapp/initiate", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+  });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.url) throw new Error(body.error ?? "WhatsApp support is unavailable.");
-  window.location.assign(body.url as string);
+  if (!response.ok || typeof body.whatsappUrl !== "string") {
+    throw new Error(body.error ?? "WhatsApp support is unavailable.");
+  }
+  let target: URL;
+  try {
+    target = new URL(body.whatsappUrl);
+  } catch {
+    throw new Error("WhatsApp support returned an invalid link.");
+  }
+  if (target.protocol !== "https:" || target.hostname !== "wa.me" || target.username || target.password) {
+    throw new Error("WhatsApp support returned an unsafe link.");
+  }
+  window.location.assign(target.toString());
 }
 
 export default function Home() {

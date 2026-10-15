@@ -19,6 +19,11 @@ function makeOwnerTestDb() {
       ["user-1", { name: "Test User", email: "user@example.test", status: "ACTIVE", role: "USER" }],
       ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
     ]),
+    devices: new Map([
+      ["controlled-1", { controllerUid: "user-1", pairingActive: true, pairedAt: 123, name: "Test device", platform: "android", pairingToken: "must-not-leak" }],
+      ["unrelated-1", { controllerUid: "other-user", pairingActive: true, userId: "user-1", name: "Unrelated device" }],
+      ["inactive-1", { controllerUid: "user-1", pairingActive: false, name: "Unpaired device" }]
+    ]),
     ownerSettings: new Map([["global", {}]]),
     auditLogs: [],
     securityEvents: [],
@@ -214,6 +219,27 @@ test("protected API accepts a verified Firebase identity", async () => {
     const body = await response.json();
     assert.equal(body.uid, "u1");
     assert.equal(body.authenticated, true);
+  });
+});
+
+test("Firestore device fallback follows Android pairing schema and redacts pairing tokens", async () => {
+  const db = makeOwnerTestDb();
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/devices", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.devices.map(device => device.id), ["controlled-1"]);
+    assert.equal(body.devices[0].name, "Test device");
+    assert.equal(body.devices[0].platform, "android");
+    assert.equal(body.devices[0].status, "PAIRED");
+    assert.equal(Object.hasOwn(body.devices[0], "pairingToken"), false);
+    assert.equal(Object.hasOwn(body.devices[0], "controllerUid"), false);
   });
 });
 

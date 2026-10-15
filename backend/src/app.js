@@ -265,8 +265,26 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
     try {
       if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
       if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
-      const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
-      return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+      // Android pairing records are keyed by the receiver UID and identify the
+      // controller with controllerUid. Query that canonical schema, not a legacy
+      // userId field that is absent from current pairing records.
+      const snap = await firestore.collection("devices")
+        .where("controllerUid", "==", req.user.uid)
+        .where("pairingActive", "==", true)
+        .limit(100)
+        .get();
+      return res.json({
+        devices: snap.docs.map(doc => {
+          const data = doc.data() || {};
+          const serviceAlive = data.health?.serviceAlive;
+          return {
+            id: doc.id,
+            name: String(data.name || data.deviceName || ("Device " + doc.id.slice(0, 8))),
+            ...(typeof data.platform === "string" ? { platform: data.platform } : {}),
+            status: serviceAlive === true ? "ONLINE" : serviceAlive === false ? "OFFLINE" : "PAIRED"
+          };
+        })
+      });
     } catch (error) { next(error); }
   });
 

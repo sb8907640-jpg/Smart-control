@@ -39,6 +39,13 @@ const interfaceChecks = [
   ["Web Google and OTP auth dependencies", /firebase/.test(webPackage) && /RecaptchaVerifier|signInWithPhoneNumber/.test(web)],
   ["PostgreSQL group capacity migration", migrations.includes("002_group_pairing.sql") && /max_clients\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+100/i.test(fs.readFileSync(path.join(root, "backend/migrations/002_group_pairing.sql"), "utf8"))],
   ["FCM backend registration", /api\/notifications\/register/.test(backend)],
+  ["Web WhatsApp support consumes the backend response field safely",
+    web.includes("body.whatsappUrl") && /hostname !== "wa\.me"/.test(web) &&
+    backend.includes("whatsappUrl")],
+  ["Firestore device fallback follows the Android pairing schema",
+    /where\("controllerUid", "==", req\.user\.uid\)/.test(backend) &&
+    /where\("pairingActive", "==", true\)/.test(backend) &&
+    web.includes("api/devices")],
   ["Remote Config backend", /api\/config/.test(backend)],
   ["Web dashboard treats Remote Config as optional", web.includes('.catch(() => ({ values: {} as Record<string, unknown> }))')],
   ["Residency policy enforcement", /getResidencyPolicy\(\)/.test(backend) && /residency/.test(backend)]
