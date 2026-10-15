@@ -140,6 +140,57 @@ class FamilySafetyService : Service() {
     }
 
     private suspend fun checkPermissionsAndReport() {
+        val localConsent = getSharedPreferences("legal_consent", MODE_PRIVATE)
+        val localConsentValid =
+            localConsent.getBoolean("accepted", false) &&
+                localConsent.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION &&
+                localConsent.getBoolean("device_owner_consent", false) &&
+                localConsent.getBoolean("privacy_consent", false) &&
+                localConsent.getBoolean("eula_consent", false) &&
+                localConsent.getLong("accepted_at_epoch_ms", 0L) > 0L &&
+                localConsent.getBoolean("age_verified", false)
+        val mode = getSharedPreferences("smart_control_mode", MODE_PRIVATE).getString("mode", null)
+        if (!localConsentValid || mode.isNullOrBlank() ||
+            (Build.VERSION.SDK_INT >= 33 && !granted(Manifest.permission.POST_NOTIFICATIONS))
+        ) {
+            previous = null
+            stopSelf()
+            return
+        }
+
+        val uid = auth.currentUser?.uid
+        if (uid.isNullOrBlank()) {
+            previous = null
+            stopSelf()
+            return
+        }
+
+        // A local consent screen is not enough: require the server-recorded,
+        // versioned consent receipt before reporting any device health data.
+        val serverConsent = try {
+            db.collection("consentHistory")
+                .document("${uid}_${CURRENT_LEGAL_CONSENT_VERSION}")
+                .get()
+                .await()
+        } catch (_: Exception) {
+            // Network failures must not cause telemetry to be sent; retry next cycle.
+            previous = null
+            return
+        }
+        val serverData = serverConsent.data.orEmpty()
+        val serverConsentValid =
+            serverConsent.exists() &&
+                serverData["userId"] == uid &&
+                (serverData["consentVersion"] as? Number)?.toInt() == CURRENT_LEGAL_CONSENT_VERSION &&
+                serverData["deviceOwnerConsent"] == true &&
+                serverData["privacyConsent"] == true &&
+                serverData["eulaConsent"] == true
+        if (!serverConsentValid) {
+            previous = null
+            stopSelf()
+            return
+        }
+
         val privacy = getSharedPreferences("privacy_controls", MODE_PRIVATE)
         if (!privacy.getBoolean("allow_device_health_sharing", false)) {
             previous = null
@@ -163,7 +214,6 @@ class FamilySafetyService : Service() {
                 granted(Manifest.permission.POST_NOTIFICATIONS)
             } else true
         )
-        val uid = auth.currentUser?.uid ?: return
         db.collection("devices").document(uid).set(
             mapOf("health" to mapOf(
                 "serviceAlive" to true,
