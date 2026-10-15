@@ -205,68 +205,119 @@ class FileTransferViewModel @Inject constructor(
             .onFailure { _status.value = it.message ?: "File download failed." }
     }
 
+    private fun clearPendingUploadState() {
+        _hasPendingUpload.value = false
+        pendingTransferId = null
+        pendingUri = null
+        pendingTransferPrefs.edit().clear().apply()
+    }
+
     fun uploadApproved() = viewModelScope.launch {
-        val id = pendingTransferId ?: run { _status.value = "No pending transfer."; return@launch }
-        val uri = pendingUri ?: run { _status.value = "Select the file again."; return@launch }
+        val sender = auth.currentUser?.uid ?: run {
+            _status.value = "Sign in first."
+            return@launch
+        }
+        if (sender != pendingOwnerUid || pendingTransferPrefs.getString("owner_uid", null) != sender) {
+            _status.value = "The signed-in account changed. Sign back into the original sender account before continuing."
+            return@launch
+        }
+        val id = pendingTransferId ?: run {
+            _status.value = "No pending transfer."
+            return@launch
+        }
+        val uri = pendingUri ?: run {
+            _status.value = "Select the file again."
+            return@launch
+        }
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
             _status.value = "File transfers are disabled in Privacy Controls."
             return@launch
         }
-        val request = runCatching { repository.get(id) }.getOrElse {
-            _status.value = it.message ?: "Could not load the approved transfer request."
+        val receiver = controlledDevice.value?.deviceUid ?: run {
+            _status.value = "Pair a client device first."
             return@launch
-        } ?: run { _status.value = "Transfer request not found."; return@launch }
-        if (request.senderDeviceId != sender || request.receiverDeviceId != controlledDevice.value?.deviceUid) {
+        }
+        val requestResult = runCatching { repository.get(id) }
+        if (requestResult.isFailure) {
+            _status.value = requestResult.exceptionOrNull()?.message ?: "Could not load the approved transfer request."
+            return@launch
+        }
+        val request = requestResult.getOrNull() ?: run {
+            clearPendingUploadState()
+            _status.value = "Transfer request not found. Select the file again to create a new request."
+            return@launch
+        }
+        if (request.senderDeviceId != sender || request.receiverDeviceId != receiver) {
             _status.value = "This transfer no longer belongs to the current account and paired device."
             return@launch
         }
-        if (request.status != FileTransferRequest.Status.APPROVED) {
-            _status.value = "Receiver approval is required first."
+        if (request.status !in setOf(FileTransferRequest.Status.APPROVED, FileTransferRequest.Status.UPLOADING)) {
+            _status.value = "The transfer is not approved or is no longer uploadable."
+            if (request.status in setOf(FileTransferRequest.Status.REJECTED, FileTransferRequest.Status.CANCELLED)) {
+                clearPendingUploadState()
+            }
             return@launch
         }
+
         var uploadedPath: String? = null
         try {
-            repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
+            // UPLOADING is accepted on restore so a process death or lost response can be retried.
+            if (request.status == FileTransferRequest.Status.APPROVED) {
+                repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
+            }
             val path = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
             uploadedPath = path
             repository.markReady(id, path)
+            clearPendingUploadState()
             _status.value = "File uploaded. The receiver can now download it."
-            _hasPendingUpload.value = false
-            pendingTransferId = null
-            pendingUri = null
-            pendingTransferPrefs.edit().clear().apply()
         } catch (error: Exception) {
-            // A write can commit on the server even if the client loses the response.
-            // Never cancel/delete a file if the transfer already reached READY.
-            val latest = runCatching { repository.get(id) }.getOrNull()
-            if (latest?.status == FileTransferRequest.Status.READY) {
-                _status.value = "File uploaded. The receiver can now download it."
-                _hasPendingUpload.value = false
-                pendingTransferId = null
-                pendingUri = null
-                pendingTransferPrefs.edit().clear().apply()
+            // Firestore may commit a write even if the client loses the response.
+            val latestResult = runCatching { repository.get(id) }
+            if (latestResult.isFailure) {
+                _status.value = (error.message ?: "File upload failed.") +
+                    " Transfer status could not be confirmed; the pending upload was kept. Retry when connected."
                 return@launch
             }
-            val cancellation = runCatching {
-                repository.updateStatus(id, FileTransferRequest.Status.CANCELLED)
+            val latest = latestResult.getOrNull()
+            if (latest?.status == FileTransferRequest.Status.READY) {
+                clearPendingUploadState()
+                _status.value = "File uploaded. The receiver can now download it."
+                return@launch
             }
-            var cleanupFailed = false
-            if (cancellation.isSuccess && uploadedPath != null) {
-                cleanupFailed = runCatching { uploader.deleteUploadedFile(uploadedPath!!) }.isFailure
+            if (latest?.status == FileTransferRequest.Status.APPROVED) {
+                _status.value = (error.message ?: "Upload could not start.") +
+                    " The transfer remains approved; retry the upload when ready."
+                return@launch
             }
-            _hasPendingUpload.value = false
-            pendingTransferId = null
-            pendingUri = null
-            pendingTransferPrefs.edit().clear().apply()
-            _status.value = when {
-                cancellation.isFailure ->
-                    (error.message ?: "File upload failed.") +
-                        " Cancellation could not be confirmed. Check the transfer list before retrying."
-                cleanupFailed ->
+            if (latest?.status == FileTransferRequest.Status.UPLOADING) {
+                // Only cancel after confirming the transfer entered UPLOADING.
+                // If cancellation fails, preserve the pending metadata for a retry.
+                val cancellation = runCatching {
+                    repository.updateStatus(id, FileTransferRequest.Status.CANCELLED)
+                }
+                if (cancellation.isFailure) {
+                    _status.value = (error.message ?: "File upload failed.") +
+                        " The transfer is still marked as uploading; retry when the connection is restored."
+                    return@launch
+                }
+                val cleanupPath = uploadedPath
+                    ?: runCatching { uploader.storagePathFor(sender, id, request.fileName) }.getOrNull()
+                val cleanupFailed = cleanupPath?.let {
+                    runCatching { uploader.deleteUploadedFile(it) }.isFailure
+                } ?: false
+                clearPendingUploadState()
+                _status.value = if (cleanupFailed) {
                     "The incomplete transfer was cancelled, but temporary storage cleanup failed. Select the file again to retry."
-                else ->
+                } else {
                     (error.message ?: "File upload failed.") +
                         " The incomplete transfer was cancelled. Select the file again to retry."
+                }
+                return@launch
             }
+
+            clearPendingUploadState()
+            _status.value = (error.message ?: "File upload failed.") +
+                " The transfer is no longer uploadable. Select the file again to create a new request."
+        }
     }
 }
