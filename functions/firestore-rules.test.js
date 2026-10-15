@@ -186,6 +186,15 @@ async function main() {
       acknowledged: false,
       createdBy: "media-target"
     }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "test-alert"), {
+      alertId: "test-alert",
+      deviceId: "media-target",
+      type: "TEST",
+      message: "Test safety alert. This is not an emergency.",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
