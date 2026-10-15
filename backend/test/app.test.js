@@ -465,3 +465,67 @@ test("Owner permission history returns scoped permission, consent, and audit eve
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
   });
 });
+
+test("legacy direct-connect endpoint cannot bypass consent-based pairing", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "attacker-1", email: "attacker@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/connect", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: "victim-device" })
+    });
+    assert.equal(response.status, 410);
+    assert.match((await response.json()).error, /consent-based pairing/i);
+  });
+});
+
+test("legacy link join requires explicit receiver consent before accessing pairing data", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "receiver-1", email: "receiver@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/link/join", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ code: "ABCD1234" })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /explicit receiver consent/i);
+  });
+});
+
+test("disconnect and reconnect reject devices unrelated to the authenticated user", async () => {
+  const db = {
+    collection(name) {
+      return {
+        doc(id) {
+          return {
+            async get() {
+              if (name === "users") return { exists: false, data: () => undefined };
+              if (name === "devices" && id === "victim-device") {
+                return { exists: true, data: () => ({ controllerUid: "victim-controller", pairingActive: true }) };
+              }
+              return { exists: false, data: () => undefined };
+            }
+          };
+        }
+      };
+    }
+  };
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "attacker-1", email: "attacker@example.test" })
+  });
+  await withServer(app, async base => {
+    for (const route of ["/api/disconnect", "/api/reconnect"]) {
+      const response = await fetch(base + route, {
+        method: "POST",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({ deviceId: "victim-device" })
+      });
+      assert.equal(response.status, 404, route);
+    }
+  });
+});
