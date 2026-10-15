@@ -69,7 +69,7 @@ jobs:
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
-        run: gradle test --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+        run: gradle testOwnerDebugUnitTest testLiteDebugUnitTest testFullDebugUnitTest --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
 
       - name: Lint all Android distribution flavors
         timeout-minutes: 10
