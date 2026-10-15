@@ -14,6 +14,7 @@ const { installOwnerPanelRoutes } = require("./owner-panel");
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
+  const sensitiveRemoteConfigKey = /(?:secret|password|private|credential|webhook|access[_-]?token|refresh[_-]?token|encryption[_-]?key)/i;
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -143,6 +144,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const template = await getRemoteConfig().getTemplate();
       const values = {};
       for (const [key, parameter] of Object.entries(template.parameters || {})) {
+        if (sensitiveRemoteConfigKey.test(key)) continue;
         const v = parameter.defaultValue;
         values[key] = v?.value ?? null;
       }
@@ -160,6 +162,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const template = await remoteConfig.getTemplate();
       for (const [key, value] of Object.entries(values)) {
         if (!/^[A-Za-z0-9_-]{1,200}$/.test(key)) return res.status(400).json({ error: "Invalid Remote Config key." });
+        if (sensitiveRemoteConfigKey.test(key)) return res.status(400).json({ error: "Secret or credential values must not be stored in Remote Config." });
         if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return res.status(400).json({ error: "Remote Config values must be scalar." });
         template.parameters[key] = { defaultValue: { value: String(value) } };
       }
