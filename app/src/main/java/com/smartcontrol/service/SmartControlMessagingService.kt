@@ -1,6 +1,7 @@
 package com.smartcontrol.service
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.smartcontrol.BuildConfig
@@ -19,29 +20,51 @@ class SmartControlMessagingService : FirebaseMessagingService() {
     }
 
     private fun registerToken(token: String) {
-        val base = BuildConfig.SMARTCONTROL_API_BASE_URL.trimEnd('/')
-        if (base.isBlank()) return
         val user = FirebaseAuth.getInstance().currentUser ?: return
-        thread(name = "smartcontrol-fcm-register") {
-            runCatching {
-                val idToken = user.getIdToken(false).result.token ?: return@runCatching
-                val connection = (URL("$base/api/notifications/register").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 10_000
-                    readTimeout = 10_000
-                    doOutput = true
-                    setRequestProperty("Authorization", "Bearer $idToken")
-                    setRequestProperty("Content-Type", "application/json")
-                }
-                connection.outputStream.use { output ->
-                    output.write("""{"token":${json(token)},"platform":"android"}""".toByteArray(Charsets.UTF_8))
-                }
-                connection.responseCode
-                connection.disconnect()
-            }
+        user.getIdToken(false).addOnSuccessListener authToken@{ result ->
+            val idToken = result.token ?: return@authToken
+            postToken(token, idToken)
         }
     }
 
-    private fun json(value: String): String =
-        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    companion object {
+        /**
+         * FCM may issue its first token before the user signs in. Call this after
+         * authentication so that token registration is retried for the current user.
+         */
+        fun registerCurrentToken() {
+            FirebaseMessaging.getInstance().token.addOnSuccessListener fcmToken@{ token ->
+                val user = FirebaseAuth.getInstance().currentUser ?: return@fcmToken
+                user.getIdToken(false).addOnSuccessListener authToken@{ result ->
+                    val idToken = result.token ?: return@authToken
+                    postToken(token, idToken)
+                }
+            }
+        }
+    }
 }
+
+private fun postToken(token: String, idToken: String) {
+    val base = BuildConfig.SMARTCONTROL_API_BASE_URL.trimEnd('/')
+    if (base.isBlank()) return
+    thread(name = "smartcontrol-fcm-register") {
+        runCatching {
+            val connection = (URL("$base/api/notifications/register").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer $idToken")
+                setRequestProperty("Content-Type", "application/json")
+            }
+            connection.outputStream.use { output ->
+                output.write("""{"token":${json(token)},"platform":"android"}""".toByteArray(Charsets.UTF_8))
+            }
+            connection.responseCode
+            connection.disconnect()
+        }
+    }
+}
+
+private fun json(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
