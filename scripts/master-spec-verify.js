@@ -67,7 +67,7 @@ check("owner allowlist is environment-backed", ownerAuth.includes("OWNER_EMAILS"
 check("owner role assignment is exact allowlist based", ownerAuth.includes("applyOwnerRole") && ownerAuth.includes('role: "OWNER"') && ownerAuth.includes("owner: true"));
 check("owner role is applied after authentication", backendApp.includes("applyOwnerRole(verifiedUser)"));
 check("owner identity is not hard-coded in source", !/(gmail\.com|@.*\.com|\+91\d{10})/i.test(ownerAuth));
-check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore })"));
+check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore, auth })"));
 check("owner panel requires OWNER role", ownerPanel.includes("req.user?.owner !== true") && ownerPanel.includes('!== "OWNER"'));
 check("owner panel identity hidden", ownerPanel.includes("ownerIdentity: null"));
 check("owner panel audit trail", ownerPanel.includes("/api/owner/audit") && ownerPanel.includes("auditLogs"));
