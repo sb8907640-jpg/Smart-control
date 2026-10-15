@@ -135,6 +135,20 @@ check("Suspended and Owner-blocked accounts are denied across service layers",
     read("functions/billing.js").includes("accessSnapshot.data()?.blocked === true") &&
     read("functions/gateway-permit.js").includes("accessSnapshot.data()?.blocked === true"),
   "Suspension revokes backend sessions and blocks Firestore, Storage, Functions, billing, and realtime access.");
+const configuredFirestoreIndexes = JSON.parse(read("firestore.indexes.json")).indexes;
+const hasCompositeIndex = (collectionGroup, fields) => configuredFirestoreIndexes.some(index =>
+  index.collectionGroup === collectionGroup &&
+    fields.every((field, i) => index.fields[i]?.fieldPath === field)
+);
+check("Composite indexes cover subscription, expiry, transfer, and session queries",
+  hasCompositeIndex("subscriptions", ["userId", "status", "updatedAtEpochMs"]) &&
+    hasCompositeIndex("subscriptions", ["status", "expiresAtEpochMs"]) &&
+    hasCompositeIndex("freeAccessGrants", ["userId", "status"]) &&
+    hasCompositeIndex("mediaSessions", ["targetDeviceId", "status"]) &&
+    hasCompositeIndex("mediaSessions", ["targetDeviceId", "controllerUid", "status"]) &&
+    hasCompositeIndex("fileTransfers", ["receiverDeviceId", "status"]),
+  "Compound Firestore queries have explicit deployed indexes rather than failing at runtime.");
+
 check("File transfer requests require an active paired receiver",
   firestoreRules.includes("data.pairingActive == true") &&
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
