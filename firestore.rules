@@ -40,6 +40,15 @@ service cloud.firestore {
       return featureEnabledFor(senderUid, 'FILE_TRANSFER')
         && featureEnabledFor(receiverUid, 'FILE_TRANSFER');
     }
+
+    function healthSharingAllowed() {
+      let policyPath = /databases/$(database)/documents/featurePolicy/global;
+      let policyExists = exists(policyPath);
+      let policy = policyExists ? get(policyPath).data : {};
+      return policyExists
+        && policy.get('dataCollectionEnabled', false) == true
+        && policy.get('dataShareAllowed', false) == true;
+    }
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if accountActive() && request.auth.uid == uid;
     }
@@ -409,19 +418,31 @@ service cloud.firestore {
           && request.resource.data.health.permissions.microphone is bool
           && request.resource.data.health.permissions.location is bool
           && request.resource.data.health.permissions.notifications is bool
+          && featureEnabledFor(uid, 'BATTERY_NETWORK')
+          && healthSharingAllowed()
         )
       );
 
       match /sharedLocation/{locationId} {
-        allow create, update: if accountActive() && request.auth.uid == uid;
+        allow create, update: if accountActive()
+          && request.auth.uid == uid
+          && featureEnabledFor(uid, 'LOCATION');
         allow read: if accountActive() && profileActive(uid)
-          && (request.auth.uid == uid
-              || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
+          && (
+            request.auth.uid == uid
+            || (
+              featureEnabledFor(uid, 'LOCATION')
+              && request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid
+            )
+          );
+        // The device owner can always remove previously shared location data.
         allow delete: if accountActive() && request.auth.uid == uid;
       }
 
       match /statusAlerts/{alertId} {
-        allow create: if accountActive() && request.auth.uid == uid;
+        allow create: if accountActive()
+          && request.auth.uid == uid
+          && featureEnabledFor(uid, 'SOS_ALERTS');
         allow read: if accountActive() && profileActive(uid)
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
