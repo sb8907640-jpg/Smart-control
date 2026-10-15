@@ -74,10 +74,17 @@ class WebRtcMediaEngine(
             val pc = createPeerConnection(sessionId, iceServers, null)
             if (MediaCapability.MICROPHONE in capabilities) {
                 val audioSource = factory.createAudioSource(MediaConstraints())
-                val audioTrack = factory.createAudioTrack("audio-$sessionId", audioSource)
+                val audioTrack = try {
+                    factory.createAudioTrack("audio-$sessionId", audioSource)
+                } catch (error: Exception) {
+                    // Track creation can fail before the source is registered with
+                    // the session cleanup list; dispose the source on this path too.
+                    runCatching { audioSource.dispose() }
+                    throw error
+                }
                 resources += AutoCloseable {
-                    audioTrack.dispose()
-                    audioSource.dispose()
+                    runCatching { audioTrack.dispose() }
+                    runCatching { audioSource.dispose() }
                 }
                 pc.addTrack(audioTrack, emptyList())
             }
