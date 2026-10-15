@@ -115,6 +115,12 @@ check("Feature policy refreshes when the signed-in UID changes",
     featureAccessViewModel.includes("_settings.value = null"),
   "A previous account's per-user feature policy cannot remain active after account switching.");
 
+const auditAnchorBlock = functionsIndex.slice(functionsIndex.indexOf("exports.anchorAuditRoot"));
+check("Audit-root admin callable checks account suspension",
+  auditAnchorBlock.includes("requireAdmin(request)") &&
+    auditAnchorBlock.includes("await assertAccountActive(request.auth.uid)"),
+  "A suspended or blocked admin cannot use the audit anchoring callable.");
+
 check("Media approval is server-authorized and policy-gated",
   read("functions/index.js").includes("exports.approveMediaSession") &&
     read("functions/spec/media-policy.js").includes("globalFeaturesEnabled !== true") &&

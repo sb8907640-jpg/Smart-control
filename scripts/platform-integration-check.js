@@ -49,6 +49,10 @@ const interfaceChecks = [
   ["Web pairing acceptance creates the canonical Android device record",
     fs.readFileSync(path.join(root, "backend/src/pairing-api.js"), "utf8").includes('collection("devices")') &&
     fs.readFileSync(path.join(root, "backend/src/pairing-api.js"), "utf8").includes('pairingActive: true')],
+  ["Legacy link join checks sender status and writes canonical pairing metadata",
+    fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("ownerAccessSnap") &&
+    fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("senderRole") &&
+    fs.readFileSync(path.join(root, "backend/src/catalog-api.js"), "utf8").includes("pairedAt")],
   ["Remote Config backend", /api\/config/.test(backend)],
   ["Web dashboard treats Remote Config as optional", web.includes('.catch(() => ({ values: {} as Record<string, unknown> }))')],
   ["iOS dashboard treats Remote Config as optional",

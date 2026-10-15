@@ -169,14 +169,33 @@ function installCatalogRoutes(app, { db, requireAuth }) {
         if(typeof data.ownerUid!=="string" || !data.ownerUid || data.ownerUid===req.catalogUid) {
           return {failure:{status:400,message:"This account cannot join its own device link."}};
         }
+        const ownerUserRef=firestoreCollection("users").doc(data.ownerUid);
+        const ownerAccessRef=firestoreCollection("userAccess").doc(data.ownerUid);
+        const ownerUserSnap=await transaction.get(ownerUserRef);
+        const ownerAccessSnap=await transaction.get(ownerAccessRef);
+        const ownerStatus=String(ownerUserSnap.exists ? ownerUserSnap.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
+        if(["SUSPENDED","BLOCKED","BANNED","DISABLED"].includes(ownerStatus) ||
+           (ownerAccessSnap.exists && ownerAccessSnap.data()?.blocked===true)) {
+          return {failure:{status:403,message:"The invitation sender is suspended or blocked."}};
+        }
         const deviceSnap=await transaction.get(deviceRef);
         const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
         if(device.pairingActive===true && typeof device.controllerUid==="string" && device.controllerUid) {
           return {failure:{status:409,message:"This device is already paired. Unpair it before joining another link."}};
         }
         const pairedAt=now();
+        const validRoles=["Father","Mother","Son","Daughter","Brother","Sister","Husband","Wife","Mechanic","Engineer","Other"];
+        const senderRole=validRoles.includes(data.senderRole) ? data.senderRole : "Other";
+        const receiverRole=validRoles.includes(data.receiverRole) ? data.receiverRole : "Other";
         transaction.update(ref,{clientUid:req.catalogUid,status:"PAIRED",pairedAt});
-        transaction.set(deviceRef,{controllerUid:data.ownerUid,pairingActive:true,updatedAt:pairedAt},{merge:true});
+        transaction.set(deviceRef,{
+          controllerUid:data.ownerUid,
+          pairedAt,
+          pairingActive:true,
+          senderRole,
+          receiverRole,
+          updatedAt:pairedAt
+        },{merge:true});
         return {ownerUid:data.ownerUid,pairedAt};
       });
       if(result.failure) return res.status(result.failure.status).json({error:result.failure.message});

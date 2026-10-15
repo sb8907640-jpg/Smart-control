@@ -627,6 +627,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
 
 exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const root = typeof request.data?.root === "string" ? request.data.root : "";
   if (!/^0x[0-9a-fA-F]{64}$/.test(root)) {
     throw new HttpsError("invalid-argument", "A 32-byte audit root is required.");
