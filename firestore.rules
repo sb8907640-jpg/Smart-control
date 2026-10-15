@@ -426,13 +426,25 @@ service cloud.firestore {
       match /sharedLocation/{locationId} {
         allow create, update: if accountActive()
           && request.auth.uid == uid
-          && featureEnabledFor(uid, 'LOCATION');
+          && featureEnabledFor(uid, 'LOCATION')
+          && request.resource.data.deviceId == uid
+          && request.resource.data.latitude is number
+          && request.resource.data.latitude >= -90
+          && request.resource.data.latitude <= 90
+          && request.resource.data.longitude is number
+          && request.resource.data.longitude >= -180
+          && request.resource.data.longitude <= 180
+          && request.resource.data.capturedAtEpochMs is int
+          && request.resource.data.sharingActive is bool;
         allow read: if accountActive() && profileActive(uid)
           && (
             request.auth.uid == uid
             || (
               featureEnabledFor(uid, 'LOCATION')
               && request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid
+              && resource.data.sharingActive == true
+              && resource.data.capturedAtEpochMs is int
+              && resource.data.capturedAtEpochMs > request.time.toMillis() - 600000
             )
           );
         // The device owner can always remove previously shared location data.
