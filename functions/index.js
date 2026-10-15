@@ -11,6 +11,12 @@ const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
 initializeApp();
 const db = getFirestore();
 
+async function assertAccountActive(uid) {
+  const snapshot = await db.collection("users").doc(uid).get();
+  if (snapshot.exists && String(snapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
+    throw new HttpsError("permission-denied", "This account is suspended.");
+  }
+}
 
 const CURRENT_LEGAL_CONSENT_VERSION = 1;
 
@@ -32,6 +38,7 @@ exports.recordLegalConsent = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "A valid local acceptance timestamp is required.");
   }
   const userId = request.auth.uid;
+  await assertAccountActive(userId);
   const ref = db.collection("consentHistory").doc(userId + "_" + version);
   const result = await db.runTransaction(async (transaction) => {
     const existing = await transaction.get(ref);
@@ -53,9 +60,10 @@ exports.recordLegalConsent = onCall(async (request) => {
 });
 
 exports.getDevicePairingPolicy = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in before generating a pairing code.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const claims = request.auth.token || {};
   if (canManageOwnerAccounts(claims)) return { isOwner: true, expiryMinutes: 0 };
