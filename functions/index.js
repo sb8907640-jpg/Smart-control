@@ -5,7 +5,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
-const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
+const { ROLES, normalizeRole, canManageUser } = require("./spec/roles");
 
 initializeApp();
 const db = getFirestore();
@@ -302,8 +302,18 @@ exports.updateOwnerUser = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
   const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  const currentTargetRole = normalizeRole(target.customClaims?.role);
+  if (!canManageUser(
+    request.auth.uid,
+    uid,
+    actorRole,
+    currentTargetRole,
+    action === "set" ? role : null
+  )) {
+    if (uid === request.auth.uid) {
+      throw new HttpsError("failed-precondition", "You cannot change your own role or access through this endpoint.");
+    }
+    throw new HttpsError("permission-denied", "Insufficient role authority for the target account or requested role.");
   }
 
   if (action === "set") {
