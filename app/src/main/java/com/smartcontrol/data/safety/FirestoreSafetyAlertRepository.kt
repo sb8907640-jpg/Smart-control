@@ -30,9 +30,9 @@ class FirestoreSafetyAlertRepository @Inject constructor(
             )).await()
     }
 
-    override suspend fun acknowledge(alertId: String): Result<Unit> = runCatching {
+    override suspend fun acknowledge(deviceId: String, alertId: String): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Authentication required")
-        val deviceId = auth.currentUser?.uid ?: error("Device identity unavailable")
+        require(deviceId.isNotBlank() && alertId.isNotBlank()) { "Alert identity is missing." }
         firestore.collection("devices").document(deviceId)
             .collection("statusAlerts").document(alertId)
             .update("acknowledged", true, "acknowledgedBy", uid).await()
