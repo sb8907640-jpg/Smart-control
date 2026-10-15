@@ -454,10 +454,9 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     return { ok: false, granted: 0, revoked: 0, unresolved };
   }
 
-  const requestedUids = new Set([...resolvedRequested.values()].map(user => user.uid));
-  for (const user of requestedUids.size
-    ? new Map([...resolvedRequested.values()].map(user => [user.uid, user])).values()
-    : []) {
+  const requestedUsers = new Map([...resolvedRequested.values()].map(user => [user.uid, user]));
+  const requestedUids = new Set(requestedUsers.keys());
+  for (const user of requestedUsers.values()) {
     const claims = { ...(user.customClaims || {}), admin: true };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
