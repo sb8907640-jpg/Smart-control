@@ -18,6 +18,8 @@ test("rejects missing, outdated, malformed, or cross-user consent receipts", () 
   assert.equal(isCurrentConsentRecord(null, "user-1"), false);
   assert.equal(isCurrentConsentRecord({ ...validReceipt, consentVersion: 0 }, "user-1"), false);
   assert.equal(isCurrentConsentRecord({ ...validReceipt, consentVersion: "not-a-version" }, "user-1"), false);
+  assert.equal(isCurrentConsentRecord({ ...validReceipt, consentVersion: "1" }, "user-1"), false);
+  assert.equal(isCurrentConsentRecord({ ...validReceipt, consentVersion: true }, "user-1"), false);
   assert.equal(isCurrentConsentRecord(validReceipt, "other-user"), false);
 });
 
