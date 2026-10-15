@@ -111,7 +111,7 @@ check("payment activation requires verified gateway flow",
 check("generated link uses plan validity", catalogApi.includes("getLinkValidity(plan)") && catalogApi.includes("linkValidityValue"));
 check("expired/revoked link join is atomic and expiry-checked",
   catalogApi.includes('data.status!=="PENDING"') &&
-    catalogApi.includes("expiry <= now()") &&
+    catalogApi.includes("expiry<=now()") &&
     catalogApi.includes("transaction.update(ref"));
 check("expired paid subscription blocks new link", catalogApi.includes("expiry > now()") && catalogApi.includes("unexpired paid subscription"));
 check("owner plan edit exists", ownerPanel.includes("/api/owner/plans/:id") && ownerPanel.includes("OWNER_PLAN_EDITED"));
