@@ -154,12 +154,14 @@ check("File transfer requests require an active paired receiver",
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
   "Transfers cannot be opened to arbitrary unrelated accounts.");
 
-check("Owner feature policy is enforced for file-transfer data operations",
+check("Owner feature policy is enforced across file-transfer operations",
   firestoreRules.includes("fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)") &&
-    storageRules.includes("fileTransferAllowed(transferDoc().data.senderDeviceId, transferDoc().data.receiverDeviceId)") &&
-    read("functions/firestore-rules.test.js").includes("disabled-feature-transfer") &&
-    read("functions/storage-rules.test.js").includes("policy-disabled.bin"),
-  "Direct Firestore writes and Storage reads/uploads are denied when global or per-user FILE_TRANSFER policy is disabled.");
+    functionsIndex.includes('exports.enforceGlobalFileTransferPolicy') &&
+    functionsIndex.includes('exports.enforcePerUserFileTransferPolicy') &&
+    functionsIndex.includes('cancelActiveFileTransfersForUser') &&
+    read("functions/spec/file-transfer-policy.test.js").includes("global file-transfer policy fails closed") &&
+    !storageRules.includes("featureEnabledFor"),
+  "Firestore rules gate requests/transitions; policy-change triggers cancel active transfers; Storage Rules stay within their two-document lookup limit.");
 check("Incoming transfer state follows the current authenticated account",
   fileTransferViewModel.includes("FirebaseAuth.AuthStateListener") &&
     fileTransferViewModel.includes("flatMapLatest") &&
