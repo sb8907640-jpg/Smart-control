@@ -291,7 +291,8 @@ service cloud.firestore {
         )
         ||
         (
-                  && request.resource.data.pairingToken is string
+          request.resource.data.controllerUid == request.auth.uid
+          && request.resource.data.pairingToken is string
                   && request.resource.data.pairedAt is int
                   && request.resource.data.pairingActive == true
                   && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
