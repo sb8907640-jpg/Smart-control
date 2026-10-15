@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -77,9 +78,14 @@ class LocationSharingViewModel @Inject constructor(
         val priority = if (
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         ) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val currentLocationRequest = CurrentLocationRequest.Builder()
+            .setPriority(priority)
+            .setMaxUpdateAgeMillis(0)
+            .setDurationMillis(30_000)
+            .build()
         val location = try {
             LocationServices.getFusedLocationProviderClient(context)
-                .getCurrentLocation(priority, CancellationTokenSource().token)
+                .getCurrentLocation(currentLocationRequest, CancellationTokenSource().token)
                 .await()
         } catch (error: Exception) {
             _status.value = error.message ?: "Could not obtain a current location fix."

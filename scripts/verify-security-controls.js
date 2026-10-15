@@ -181,7 +181,8 @@ check("Sender can cancel an approved transfer before upload starts",
 
 const locationSharingViewModel = read("app/src/main/java/com/smartcontrol/presentation/location/LocationSharingViewModel.kt");
 check("Location sharing uses a fresh fix and its real capture timestamp",
-  locationSharingViewModel.includes("getCurrentLocation(priority, CancellationTokenSource().token)") &&
+  locationSharingViewModel.includes("getCurrentLocation(currentLocationRequest, CancellationTokenSource().token)") &&
+    locationSharingViewModel.includes("setMaxUpdateAgeMillis(0)") &&
     locationSharingViewModel.includes("val capturedAtEpochMs = location.time") &&
     locationSharingViewModel.includes("ageMs > 2 * 60 * 1000L") &&
     locationSharingViewModel.includes("SharedLocation(uid, location.latitude, location.longitude, location.accuracy, capturedAtEpochMs)"),
