@@ -205,8 +205,14 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef = firestoreCollection("devices").doc(deviceId);
+      const deviceSnap = await deviceRef.get();
+      const device = deviceSnap.exists ? deviceSnap.data() : null;
+      if (!device || device.controllerUid !== req.catalogUid || device.pairingActive !== true) {
+        return res.status(403).json({ error: "An active pairing with this device is required before connecting." });
+      }
       const id=await add("connections",{userId:req.catalogUid,deviceId,status:"CONNECTED",connectedAt:now(),lastSeenAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({controllerUid:req.catalogUid,connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"CONNECTED","device",{deviceId,connectionId:id});
       res.status(201).json({ok:true,status:"CONNECTED",deviceId,connectionId:id});
     }catch(e){next(e);}
