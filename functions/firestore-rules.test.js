@@ -109,6 +109,14 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      amountMinor: 1,
+      currency: "INR",
+      status: "SUCCESS",
+      gateway: "RAZORPAY"
+    }));
+
     await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-schedule"), {
       userId: "normal-user",
       paymentId: "fake-payment",
