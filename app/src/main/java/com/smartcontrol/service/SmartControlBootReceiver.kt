@@ -3,7 +3,10 @@ package com.smartcontrol.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.Manifest
 import android.os.Build
+import androidx.core.content.ContextCompat
 import com.smartcontrol.presentation.consent.CURRENT_LEGAL_CONSENT_VERSION
 
 class SmartControlBootReceiver : BroadcastReceiver() {
@@ -12,6 +15,9 @@ class SmartControlBootReceiver : BroadcastReceiver() {
 
         val settings = context.getSharedPreferences("smart_control_settings", Context.MODE_PRIVATE)
         if (!settings.getBoolean("auto_start_service", false)) return
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
 
         // A boot broadcast must not bypass the consent and onboarding gates enforced by
         // MainActivity. If consent is missing, outdated, or only partially recorded,
