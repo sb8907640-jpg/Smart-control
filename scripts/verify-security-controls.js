@@ -139,6 +139,12 @@ check("File transfer requests require an active paired receiver",
   firestoreRules.includes("data.pairingActive == true") &&
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
   "Transfers cannot be opened to arbitrary unrelated accounts.");
+check("Receiver can explicitly approve or reject a pending transfer",
+  fileTransferViewModel.includes("fun reject(transferId: String)") &&
+    fileTransferViewModel.includes("Only the intended receiver can reject a pending transfer.") &&
+    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferScreen.kt").includes('Text("Reject")'),
+  "Receiver consent includes a working rejection action, and only the intended receiver can use it.");
+
 check("Receiver cannot download a transfer before READY",
   storageRules.includes("transferDoc().data.status == 'READY'"),
   "Storage read is gated until upload completes.");
