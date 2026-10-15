@@ -389,7 +389,8 @@ const mediaEngineInitialize = mediaEngine.slice(
   mediaEngine.indexOf("suspend fun publish(")
 );
 check("WebRTC initialization can retry after native factory failure",
-  mediaEngineInitialize.includes("@Synchronized") &&
+  mediaEngine.includes("@Synchronized\\n    fun initialize()") &&
+    mediaEngineInitialize.indexOf("factory = createdFactory") >= 0 &&
     mediaEngineInitialize.indexOf("factory = createdFactory") < mediaEngineInitialize.indexOf("initialized.set(true)") &&
     mediaEngineInitialize.includes("if (initialized.get()) return"),
   "The engine marks itself initialized only after the native factory is successfully created.");
