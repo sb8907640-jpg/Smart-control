@@ -133,6 +133,7 @@ class FirestorePairingRepository @Inject constructor(
         val deviceUid = db.runTransaction { tx ->
             val snap = tx.get(ref)
             val deviceUid = snap.getString("deviceUid") ?: error("Invalid pairing token")
+            require(deviceUid != controllerUid) { "You cannot pair a device to itself." }
             val expires = snap.getLong("expiresAt") ?: 0L
             require(expires > System.currentTimeMillis()) { "Pairing token expired" }
             val senderRole = snap.getString("senderRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
