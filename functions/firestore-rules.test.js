@@ -159,6 +159,34 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    const alertRef = doc(mediaTarget.firestore(), "devices/media-target/statusAlerts/alert-1");
+    await assertSucceeds(setDoc(alertRef, {
+      alertId: "alert-1",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Test alert",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+    await assertSucceeds(updateDoc(doc(mediaController.firestore(), "devices/media-target/statusAlerts/alert-1"), {
+      acknowledged: true,
+      acknowledgedBy: "media-controller"
+    }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices/media-target/statusAlerts/alert-2"), {
+      alertId: "alert-2",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Test alert",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+    await assertFails(updateDoc(doc(mediaController.firestore(), "devices/media-target/statusAlerts/alert-2"), {
+      acknowledged: true,
+      acknowledgedBy: "media-target"
+    }));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
@@ -179,7 +207,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry/claim/listing, payment and EMI write protection, media-session approval, ICE sender ownership, SDP permissions, and paired-device file transfers.");
+    console.log("Covered: pairing expiry/claim/listing, payment and EMI write protection, media-session approval, ICE sender ownership, SDP permissions, remote SOS acknowledgements, and paired-device file transfers.");
   } finally {
     await env.cleanup();
   }
