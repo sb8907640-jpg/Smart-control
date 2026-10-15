@@ -231,6 +231,28 @@ test("EMI requests reject unverified payments", async () => {
   });
 });
 
+test("connect rejects devices that are not actively paired to the caller", async () => {
+  const db = makeOwnerTestDb();
+  db.data.devices.set("unpaired-device", {
+    controllerUid: "another-user",
+    pairingActive: false,
+    connectionStatus: "DISCONNECTED"
+  });
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/connect", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: "unpaired-device" })
+    });
+    assert.equal(response.status, 403);
+  });
+  assert.equal(db.data.devices.get("unpaired-device").connectionStatus, "DISCONNECTED");
+});
+
 test("plan route fails closed when Firestore is unavailable", async () => {
   const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
   await withServer(app, async base => {
