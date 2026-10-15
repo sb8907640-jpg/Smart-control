@@ -207,8 +207,8 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
-        engine.stop(sessionId)
         signaling.stopSession(sessionId).onFailure { lastError.value = it.message }
+        engine.stop(sessionId)
         MediaProjectionForegroundService.stop(context)
         FamilySafetyService.setIdle(context)
         selectedId.value = null
