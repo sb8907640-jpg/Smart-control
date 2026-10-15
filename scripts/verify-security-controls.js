@@ -109,6 +109,7 @@ check("Remote commands require an ACTIVE session and visible indicator",
   "APPROVED is not sufficient for command delivery.");
 check("Suspended accounts are blocked across API, Functions, and Firestore",
   firestoreRules.includes("function accountActive()") &&
+    read("storage.rules").includes("function accountActive()") &&
     read("backend/src/owner-panel.js").includes("auth.updateUser(id, { disabled: status !== \"ACTIVE\" })") &&
     read("backend/src/owner-panel.js").includes("auth.revokeRefreshTokens(id)") &&
     read("functions/index.js").includes("async function assertAccountActive(uid)") &&
