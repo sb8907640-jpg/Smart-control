@@ -114,6 +114,11 @@ check("Legacy REST payment endpoints cannot self-activate subscriptions",
     read("backend/src/catalog-api.js").includes('["VERIFIED", "SUCCESS"].includes'),
   "The duplicate REST path fails closed and EMI requests require a verified payment.");
 
+check("REST connect requires an active device pairing",
+  read("backend/src/catalog-api.js").includes("device.controllerUid !== req.catalogUid") &&
+    read("backend/src/catalog-api.js").includes("device.pairingActive !== true"),
+  "A signed-in user cannot connect to an arbitrary device ID.");
+
 check("REST pairing codes are consumed atomically and support lifetime expiry",
   read("backend/src/catalog-api.js").includes("db.runTransaction") &&
     read("backend/src/catalog-api.js").includes("data?.expiresAt == null") &&
