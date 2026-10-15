@@ -41,6 +41,13 @@ async function main() {
         sizeBytes: 4,
         status: "REQUESTED"
       });
+      await setDoc(doc(db, "fileTransfers", "transfer-suspended"), {
+        senderDeviceId: "suspended-sender",
+        receiverDeviceId: "receiver",
+        sizeBytes: 4,
+        status: "APPROVED"
+      });
+      await setDoc(doc(db, "users", "suspended-sender"), { status: "SUSPENDED" });
     });
 
     const senderStorage = env.authenticatedContext("sender").storage();
@@ -66,6 +73,10 @@ async function main() {
     ));
     await assertFails(uploadBytes(
       ref(env.authenticatedContext("attacker").storage(), "fileTransfers/sender/transfer-known/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+    await assertFails(uploadBytes(
+      ref(env.authenticatedContext("suspended-sender").storage(), "fileTransfers/suspended-sender/transfer-suspended/file.bin"),
       new Uint8Array([1, 2, 3, 4])
     ));
 
