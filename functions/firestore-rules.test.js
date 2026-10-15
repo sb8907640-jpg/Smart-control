@@ -141,6 +141,38 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    // Owner feature policy must be enforced by Firestore, not only by Android UI checks.
+    await assertSucceeds(setDoc(doc(owner.firestore(), "featurePolicy/global"), {
+      globalFeaturesEnabled: true,
+      globalEnabled: true,
+      featureOverrides: { CAMERA: false },
+      globalFeatureOverrides: {}
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "session-disabled-create"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now()
+    }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "mediaSessions", "session-disabled-approval"), {
+        controllerUid: "media-controller",
+        targetDeviceId: "media-target",
+        capabilities: ["CAMERA"],
+        status: "REQUESTED",
+        createdAt: Date.now()
+      });
+    });
+    await assertFails(updateDoc(
+      doc(mediaTarget.firestore(), "mediaSessions", "session-disabled-approval"),
+      { status: "APPROVED" }
+    ));
+    await assertSucceeds(updateDoc(
+      doc(mediaTarget.firestore(), "mediaSessions", "session-disabled-approval"),
+      { status: "STOPPED" }
+    ));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
