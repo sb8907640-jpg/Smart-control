@@ -156,11 +156,10 @@ class WebRtcMediaEngine(
         captures.clear()
         candidateJobs.values.forEach(Job::cancel)
         candidateJobs.clear()
-        if (initialized.get()) {
-            factory.dispose()
-            eglBase.release()
-            initialized.set(false)
-        }
+        // This engine is provided as a process-wide Hilt singleton. Release active
+        // session resources when a ViewModel is cleared, but keep the shared
+        // PeerConnectionFactory/EGL context alive so a later ViewModel can reuse it.
+        // The operating system reclaims these process-lifetime resources at exit.
     }
 
     private fun createPeerConnection(sessionId: String, iceServers: List<IceServerConfig>, remoteSink: org.webrtc.VideoSink?): PeerConnection {
