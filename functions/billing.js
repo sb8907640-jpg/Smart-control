@@ -594,6 +594,10 @@ exports.refundPayment = onCall(
         if (currentRefundId && (!expectedRefundId || currentRefundId !== expectedRefundId)) {
           return "REFUND_PENDING";
         }
+        if (!currentRefundId && expectedRefundId &&
+            latestPayment.previousGatewayRefundId === expectedRefundId) {
+          return "REFUND_PENDING";
+        }
         tx.update(ref, { ...updates, status: "SUCCESS", updatedAtEpochMs: Date.now() });
         return "SUCCESS";
       });
@@ -711,8 +715,9 @@ exports.refundPayment = onCall(
       if (latestPayment.status !== "REFUND_PENDING") {
         throw new HttpsError("failed-precondition", "Refund state changed during gateway processing; reconcile before retrying.");
       }
-      if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) {
-        throw new HttpsError("failed-precondition", "A different refund ID is already active; reconcile before retrying.");
+      if ((latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) ||
+          (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === gatewayRefundId)) {
+        throw new HttpsError("failed-precondition", "A different or previous refund ID is active; reconcile before retrying.");
       }
       tx.update(ref, {
         status: processed ? "REFUNDED" : "REFUND_PENDING",
