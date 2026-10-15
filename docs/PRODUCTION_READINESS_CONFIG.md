@@ -8,6 +8,7 @@ Required in production:
 - SMARTCONTROL_DATA_REGION (IN, EU, US, UK, or APAC)
 - Firebase Admin credentials/environment supported by firebase-admin
 - CORS_ORIGIN
+- PUBLIC_APP_URL (trusted HTTPS origin used for invitation links; no path, query, or fragment)
 - PORT (defaults to 8080)
 
 For blockchain audit anchoring:
