@@ -343,7 +343,7 @@ function installCatalogRoutes(app, { db, requireAuth }) {
       const ref=firestoreCollection("users").doc(uid);
       const snap=await ref.get();
       if(!snap.exists) return res.status(404).json({error:"User not found."});
-      const actorRole=req.user?.owner===true ? "OWNER" : req.user?.admin===true ? "SUPER_ADMIN" : String(req.user?.role||"USER").toUpperCase();
+      const actorRole=req.user?.owner===true ? "OWNER" : String(req.user?.role || (req.user?.admin === true ? "ADMIN" : "USER")).toUpperCase();
       const targetRole=String(snap.data()?.role||"USER").toUpperCase();
       const rank={USER:0,SUPPORT:1,MODERATOR:2,FINANCE_ADMIN:2,LEGAL_ADMIN:2,ADMIN:3,OWNER:4,SUPER_ADMIN:5};
       if(!(actorRole in rank) || !(targetRole in rank) || rank[targetRole]>=rank[actorRole]) {
