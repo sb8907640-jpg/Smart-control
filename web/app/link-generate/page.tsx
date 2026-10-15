@@ -69,8 +69,17 @@ export default function LinkGeneratePage() {
     setNotice("");
     setInvite(null);
     try {
-      const base = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").replace(/\/$/, "");
-      if (!base) throw new Error("Smart Control API URL is not configured.");
+      const rawBase = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").trim();
+      if (!rawBase) throw new Error("Smart Control API URL is not configured.");
+      const parsedBase = new URL(rawBase);
+      const host = parsedBase.hostname.toLowerCase();
+      const isLocalHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+      if (parsedBase.username || parsedBase.password ||
+          (parsedBase.protocol !== "https:" && !(parsedBase.protocol === "http:" && isLocalHost)) ||
+          parsedBase.search || parsedBase.hash) {
+        throw new Error("Smart Control API must use HTTPS (HTTP is allowed only for localhost development).");
+      }
+      const base = parsedBase.toString().replace(/\/$/, "");
       const token = await user.getIdToken();
       const response = await fetch(base + "/api/pairing/invites", {
         method: "POST",
