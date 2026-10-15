@@ -61,6 +61,7 @@ import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
+import com.smartcontrol.service.SmartControlMessagingService
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -208,6 +209,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 )
             }
             val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+
+            LaunchedEffect(signedIn) {
+                if (signedIn) SmartControlMessagingService.registerCurrentToken()
+            }
 
             LaunchedEffect(signedIn, consented, consentSyncAttempt) {
                 if (!signedIn || !consented) {
