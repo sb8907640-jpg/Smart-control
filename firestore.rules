@@ -285,30 +285,14 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
-      // Pairing cannot be forged by editing controllerUid directly. Existing links may
-      // only be cleared by either participant; re-pairing requires a valid one-time token.
-      allow update: if request.auth != null && (
-        (
-          (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid)
-          && resource.data.controllerUid is string
-          && request.resource.data.controllerUid == null
-          && request.resource.data.pairingActive == false
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingActive'])
-        )
-        ||
-        (
-          resource.data.controllerUid == null
-          && request.resource.data.controllerUid == request.auth.uid
-          && request.resource.data.pairingActive == true
-          && request.resource.data.pairingToken is string
-          && request.resource.data.pairedAt is int
-          && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-          && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
-          && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-          && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        )
-      );
+      // Pairing claims are server-only and atomically consume a token through
+      // claimPairingCode. Clients may only clear an existing link as either participant.
+      allow update: if request.auth != null
+        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid)
+        && resource.data.controllerUid is string
+        && request.resource.data.controllerUid == null
+        && request.resource.data.pairingActive == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingActive']);
 
       match /sharedLocation/{locationId} {
         allow create, update: if request.auth != null && request.auth.uid == uid;
