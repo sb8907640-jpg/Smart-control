@@ -8,7 +8,9 @@ private func validatedBackendURL(_ value: String) -> URL? {
           let scheme = url.scheme?.lowercased(),
           let host = url.host?.lowercased(),
           url.user == nil,
-          url.password == nil else {
+          url.password == nil,
+          url.query == nil,
+          url.fragment == nil else {
         return nil
     }
     let isLocalHost = ["localhost", "127.0.0.1", "::1"].contains(host)
@@ -87,8 +89,10 @@ final class AppSession: ObservableObject {
             authenticated = true
             await refreshAuthenticatedData()
         } catch {
+            tokenStore.delete()
             client.clearBearerToken()
             authenticated = false
+            account = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -132,6 +136,15 @@ final class AppSession: ObservableObject {
             residency = try await residencyResult
             remoteConfig = (try await configResult).values.compactMapValues { $0 }
         } catch {
+            if let clientError = error as? ClientError, case .authentication(_) = clientError {
+                tokenStore.delete()
+                client.clearBearerToken()
+                authenticated = false
+                account = nil
+                devices = []
+                systemStatus = nil
+                remoteConfig = [:]
+            }
             errorMessage = error.localizedDescription
         }
     }
@@ -251,6 +264,9 @@ final class BackendClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClientError.network("Invalid server response.") }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 {
+                throw ClientError.authentication("Authentication token expired or is invalid. Sign in again.")
+            }
             let message = (try? decoder.decode(BackendError.self, from: data).error) ?? "Backend request failed (HTTP \(http.statusCode))."
             throw ClientError.network(message)
         }
