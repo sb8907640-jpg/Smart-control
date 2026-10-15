@@ -197,8 +197,8 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             encodeFeaturePolicy(restored)
         )
         val ownerPolicyFields = listOf(
-            FieldPath.of("ownerEnabled"),
-            FieldPath.of("featureOverrides")
+            "ownerEnabled",
+            "featureOverrides"
         )
         restored.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
             batch.set(
