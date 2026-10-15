@@ -10,6 +10,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -52,7 +53,13 @@ class FeatureAccessViewModel @Inject constructor(
                 }
                 .flatMapLatest { uid ->
                     if (!uid.isNullOrBlank()) {
-                        repository.observe(uid).map<FeaturePolicy, FeaturePolicy?> { it }
+                        repository.observe(uid)
+                            .map<FeaturePolicy, FeaturePolicy?> { it }
+                            .catch {
+                                // Firestore permission/network errors must fail closed
+                                // without terminating the auth-state observer.
+                                emit(null)
+                            }
                     } else {
                         flowOf(null)
                     }
