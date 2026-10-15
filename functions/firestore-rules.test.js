@@ -179,7 +179,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry/claim/listing, payment and EMI write protection, media-session approval, ICE sender ownership, SDP permissions, and paired-device file transfers.");
   } finally {
     await env.cleanup();
   }
