@@ -341,7 +341,8 @@ service cloud.firestore {
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedBy'])
-          && request.resource.data.acknowledged == true;
+          && request.resource.data.acknowledged == true
+          && request.resource.data.acknowledgedBy == request.auth.uid;
       }
     }
   }
