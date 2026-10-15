@@ -46,15 +46,20 @@ class WebRtcMediaEngine(
     private val eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
 
+    @Synchronized
     fun initialize() {
-        if (!initialized.compareAndSet(false, true)) return
+        if (initialized.get()) return
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
         )
-        factory = PeerConnectionFactory.builder()
+        val createdFactory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
             .createPeerConnectionFactory()
+        factory = createdFactory
+        // Mark initialized only after native factory creation succeeds so a failed
+        // initialization can be retried safely on the next user-approved session.
+        initialized.set(true)
     }
 
     suspend fun publish(
