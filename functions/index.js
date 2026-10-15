@@ -519,7 +519,16 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   for (const identifier of previousIdentifiers) {
     if (resolvedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    if (!user) continue;
+    if (user.uid === request.auth.uid) {
+      const actorClaims = request.auth.token || {};
+      const actorRole = normalizeRole(actorClaims.role);
+      // Preserve role-based Owners/Super Admins, but revoke a removed email/mobile
+      // allowlist account's generic admin claim instead of leaving stale access behind.
+      if (actorClaims.owner === true || actorRole === "OWNER" || actorRole === "SUPER_ADMIN") {
+        continue;
+      }
+    }
     const claims = { ...(user.customClaims || {}) };
     delete claims.admin;
     await getAuth().setCustomUserClaims(user.uid, claims);
