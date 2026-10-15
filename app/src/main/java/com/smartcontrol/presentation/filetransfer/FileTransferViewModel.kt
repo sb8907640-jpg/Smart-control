@@ -103,7 +103,7 @@ class FileTransferViewModel @Inject constructor(
             return@launch
         }
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
-            runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED).getOrThrow() }
+            runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED) }
                 .onSuccess { _status.value = "File transfers are disabled in Privacy Controls; request rejected." }
                 .onFailure { _status.value = it.message ?: "Could not reject the transfer request." }
             return@launch
@@ -120,7 +120,7 @@ class FileTransferViewModel @Inject constructor(
             _status.value = "Only the intended receiver can reject a pending transfer."
             return@launch
         }
-        runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED).getOrThrow() }
+        runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED) }
             .onSuccess { _status.value = "Transfer request rejected." }
             .onFailure { _status.value = it.message ?: "Could not reject this transfer." }
     }
