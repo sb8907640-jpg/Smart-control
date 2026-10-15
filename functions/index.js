@@ -12,9 +12,14 @@ initializeApp();
 const db = getFirestore();
 
 async function assertAccountActive(uid) {
-  const snapshot = await db.collection("users").doc(uid).get();
-  if (snapshot.exists && String(snapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
-    throw new HttpsError("permission-denied", "This account is suspended.");
+  const [profileSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("userAccess").doc(uid).get()
+  ]);
+  const status = String(profileSnapshot.data()?.status || "ACTIVE").toUpperCase();
+  if ((profileSnapshot.exists && status !== "ACTIVE") ||
+      (accessSnapshot.exists && accessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "This account is suspended or blocked.");
   }
 }
 
@@ -120,14 +125,18 @@ exports.approveMediaSession = onCall(async (request) => {
     const deviceSnapshot = await transaction.get(db.collection("devices").doc(session.targetDeviceId));
     const controllerUserSnapshot = await transaction.get(db.collection("users").doc(session.controllerUid));
     const targetUserSnapshot = await transaction.get(db.collection("users").doc(session.targetDeviceId));
+    const controllerAccessSnapshot = await transaction.get(db.collection("userAccess").doc(session.controllerUid));
+    const targetAccessSnapshot = await transaction.get(db.collection("userAccess").doc(session.targetDeviceId));
     const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
     if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
       throw new HttpsError("failed-precondition", "The device pairing is no longer active.");
     }
     const isActiveAccount = (snapshot) =>
       !snapshot.exists || String(snapshot.data()?.status || "ACTIVE").toUpperCase() === "ACTIVE";
-    if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot)) {
-      throw new HttpsError("permission-denied", "A suspended account cannot approve media sessions.");
+    if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot) ||
+        (controllerAccessSnapshot.exists && controllerAccessSnapshot.data()?.blocked === true) ||
+        (targetAccessSnapshot.exists && targetAccessSnapshot.data()?.blocked === true)) {
+      throw new HttpsError("permission-denied", "A suspended or blocked account cannot approve media sessions.");
     }
 
     const globalPolicySnapshot = await transaction.get(globalPolicyRef);
