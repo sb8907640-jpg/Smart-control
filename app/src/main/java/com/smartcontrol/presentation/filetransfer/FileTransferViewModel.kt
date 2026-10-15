@@ -103,13 +103,26 @@ class FileTransferViewModel @Inject constructor(
             return@launch
         }
         if (!privacyPrefs.getBoolean("allow_file_transfers", true)) {
-            _status.value = "File transfers are disabled in Privacy Controls."
-            repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED)
+            runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED) }
+                .onSuccess { _status.value = "File transfers are disabled in Privacy Controls; request rejected." }
+                .onFailure { _status.value = it.message ?: "Could not reject the transfer request." }
             return@launch
         }
         runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.APPROVED) }
             .onSuccess { _status.value = "Transfer approved. The sender can now upload the selected file." }
             .onFailure { _status.value = it.message ?: "Could not approve this transfer." }
+    }
+
+    fun reject(transferId: String) = viewModelScope.launch {
+        val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
+        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.REQUESTED) {
+            _status.value = "Only the intended receiver can reject a pending transfer."
+            return@launch
+        }
+        runCatching { repository.updateStatus(transferId, FileTransferRequest.Status.REJECTED) }
+            .onSuccess { _status.value = "Transfer request rejected." }
+            .onFailure { _status.value = it.message ?: "Could not reject this transfer." }
     }
 
     fun download(transferId: String, targetUri: Uri) = viewModelScope.launch {
