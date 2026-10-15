@@ -71,7 +71,7 @@ class MemoryDoc {
 function seedDb() {
   return new MemoryFirestore({
     users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
-    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
+    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", pairingActive: true, connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
@@ -147,6 +147,14 @@ function queryFor(endpoint) {
   assert.equal(planPayload.plans[0].durationUnit, "MONTHS");
   assert.equal(planPayload.plans[0].linkValidityValue, 10);
   assert.equal(planPayload.plans[0].linkValidityUnit, "MINUTES");
+
+  const devicesResponse = await fetch(base + "/api/devices", {
+    headers: { authorization: "Bearer integration-token" }
+  });
+  assert.equal(devicesResponse.status, 200);
+  const devicesPayload = await devicesResponse.json();
+  assert.equal(devicesPayload.devices.length, 1, "Firestore fallback should list actively paired devices");
+  assert.equal(devicesPayload.devices[0].id, "device-1");
 
   const linkResponse = await fetch(base + "/api/link/generate", {
     method: "POST",
