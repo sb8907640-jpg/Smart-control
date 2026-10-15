@@ -141,6 +141,30 @@ async function main() {
       tx.delete(codeRef);
     }));
 
+    // Device health heartbeats are allowed only on the signed-in user's own
+    // device document and may not be combined with pairing/link changes.
+    const healthHeartbeat = {
+      serviceAlive: true,
+      lastHeartbeatAt: Date.now(),
+      permissions: {
+        camera: true,
+        microphone: true,
+        location: false,
+        notifications: true
+      }
+    };
+    await assertSucceeds(updateDoc(doc(target.firestore(), "devices", "target-user"), {
+      health: healthHeartbeat
+    }));
+    await assertFails(updateDoc(doc(controller.firestore(), "devices", "target-user"), {
+      health: { ...healthHeartbeat, lastHeartbeatAt: Date.now() }
+    }));
+    await assertFails(updateDoc(doc(target.firestore(), "devices", "target-user"), {
+      health: healthHeartbeat,
+      controllerUid: null,
+      pairingActive: false
+    }));
+
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
         controllerUid: "media-controller",
