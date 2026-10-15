@@ -141,7 +141,7 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
     next();
   };
 
-  if (postgresPool) installPostgresRoutes(app, { pool: postgresPool });
+  if (postgresPool) installPostgresRoutes(app, { pool: postgresPool, authenticate });
 
   app.get("/api/config", authenticate, async (_req, res, next) => {
     try {
