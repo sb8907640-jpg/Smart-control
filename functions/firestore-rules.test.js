@@ -135,7 +135,25 @@ async function main() {
       status: "REQUESTED",
       createdAt: Date.now()
     }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/early-candidate"), {
+      senderUid: "media-controller",
+      candidate: "candidate:early",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "mediaSessions/session-1/iceCandidates/target-candidate"), {
+      senderUid: "media-target",
+      candidate: "candidate:target",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/forged-candidate"), {
+      senderUid: "media-target",
+      candidate: "candidate:forged",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { offerSdp: "test-offer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
