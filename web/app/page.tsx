@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 
@@ -91,11 +91,17 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     const client = authClient();
     setAuth(client);
-    return onAuthStateChanged(client, setUser);
+    const unsubscribe = onAuthStateChanged(client, setUser);
+    return () => {
+      unsubscribe();
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+    };
   }, []);
 
   async function signIn() {
@@ -124,11 +130,13 @@ export default function Home() {
     }
     setBusy(true);
     try {
-      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
-      const result = await signInWithPhoneNumber(auth, normalized, verifier);
+      if (!recaptchaRef.current) recaptchaRef.current = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      const result = await signInWithPhoneNumber(auth, normalized, recaptchaRef.current);
       setConfirmation(result);
       setStatus("OTP sent. Enter the verification code.");
     } catch (error) {
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setStatus(error instanceof Error ? error.message : "OTP request failed");
     } finally {
       setBusy(false);
@@ -143,6 +151,8 @@ export default function Home() {
     setBusy(true);
     try {
       await confirmation.confirm(otp.trim());
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setConfirmation(null);
       setOtp("");
       setStatus("Phone authentication verified. Loading backend session...");
