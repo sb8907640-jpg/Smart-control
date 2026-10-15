@@ -118,6 +118,11 @@ check("Refund API responses preserve webhook-completed state",
     billingFunctions.includes("gatewayRefundId: FieldValue.delete()"),
   "Late API responses cannot regress REFUNDED or reuse a prior attempt's refund ID.");
 
+check("Refund status and subscription cancellation are atomic",
+  billingFunctions.includes('tx.set(subscriptionRef, {\n            status: "CANCELLED"') &&
+    billingFunctions.includes("const finalStatus = await db.runTransaction"),
+  "A completed refund cannot leave its subscription active if the process exits between writes.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",
