@@ -1,6 +1,5 @@
 package com.smartcontrol.presentation.pairing
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -8,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,9 +45,10 @@ fun PairingScreen(
     val pairing by viewModel.pairing.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
-    val deepLinkToken = remember(initialToken, context) {
-        (initialToken ?: (context as? Activity)?.intent?.data?.getQueryParameter("token"))
+    val deepLinkToken = remember(initialToken, activity) {
+        (initialToken ?: activity?.intent?.data?.getQueryParameter("token"))
             ?.trim()
             .orEmpty()
     }
