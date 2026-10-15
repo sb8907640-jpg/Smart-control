@@ -139,7 +139,10 @@ async function main() {
       status: "REQUESTED",
       createdAt: Date.now()
     }));
-    await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" }));
+    await assertFails(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" }));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" });
+    });
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { offerSdp: "test-offer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
