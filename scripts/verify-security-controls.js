@@ -108,6 +108,13 @@ check("Payment and EMI ledger records are server-write only",
     read("functions/billing.js").includes("exports.applyEmi"),
   "Clients cannot forge payment/EMI ledger rows; trusted billing callables own creation.");
 
+check("Device pairing is server-only while health snapshots remain available",
+  firestoreRules.includes("function validHealth(health)") &&
+    firestoreRules.includes("request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health'])") &&
+    !firestoreRules.includes("get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken))") &&
+    functionsIndex.includes("exports.claimPairingCode"),
+  "Device clients can publish validated health state, but cannot create/re-pair links directly.");
+
 check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
