@@ -93,6 +93,12 @@ check("File transfer requests require an active paired receiver",
 check("Receiver cannot download a transfer before READY",
   storageRules.includes("transferDoc().data.status == 'READY'"),
   "Storage read is gated until upload completes.");
+
+check("File transfer uploads are bounded and match declared size",
+  storageRules.includes("request.resource.size <= 104857600") &&
+    storageRules.includes("request.resource.size == transferDoc().data.sizeBytes") &&
+    read("functions/storage-rules.test.js").includes("wrong-size.bin"),
+  "Storage writes are capped at 100 MiB and known-size uploads must match the transfer request.");
 check("TURN shared secret is not embedded in Android APK",
   !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
     iceServers.includes('createHmac("sha1", sharedSecret)'),
