@@ -596,7 +596,7 @@ test("legacy admin status routes enforce role hierarchy and prevent self-lockout
   };
   const app = createApp({
     db,
-    verifyIdToken: async () => ({ uid: "admin-user", email: "admin@example.test", role: "ADMIN" })
+    verifyIdToken: async () => ({ uid: "admin-user", email: "admin@example.test", role: "ADMIN", admin: true })
   });
   await withServer(app, async base => {
     const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
