@@ -452,42 +452,72 @@ exports.updateOwnerUser = onCall(async (request) => {
 exports.syncOwnerAccounts = onCall(async (request) => {
   await requireOwnerAccountManager(request);
 
-  const emails = Array.isArray(request.data?.emails)
-    ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
-    : [];
-  const mobiles = Array.isArray(request.data?.mobiles)
-    ? request.data.mobiles.map(String).map(v => v.trim()).filter(Boolean)
-    : [];
-
-  const requestedIdentifiers = new Set([...emails, ...mobiles]);
-  if (requestedIdentifiers.size === 0) {
-    throw new HttpsError("invalid-argument", "At least one owner email or mobile is required.");
+  const requestedEmails = new Set(
+    (Array.isArray(request.data?.emails) ? request.data.emails : [])
+      .map(value => String(value).trim().toLowerCase())
+      .filter(value => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value))
+  );
+  const requestedMobiles = new Set(
+    (Array.isArray(request.data?.mobiles) ? request.data.mobiles : [])
+      .map(value => String(value).trim())
+      .filter(value => /^\\+[1-9]\\d{7,14}$/.test(value))
+  );
+  if (requestedEmails.size === 0 && requestedMobiles.size === 0) {
+    throw new HttpsError("invalid-argument", "Provide at least one valid owner email or E.164 mobile number.");
   }
 
   const currentProfile = await db.collection("ownerAccounts").doc("config").get();
-  const previous = currentProfile.exists ? currentProfile.data() : {};
+  const previous = currentProfile.exists ? currentProfile.data() || {} : {};
   const previousIdentifiers = new Set([
-    ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(v => v.trim().toLowerCase()) : []),
-    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
+    ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(value => value.trim().toLowerCase()) : []),
+    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(value => value.trim()) : [])
   ]);
+
+  const unresolved = [];
+  const resolvedUsers = new Map();
+  const resolvedEmails = new Set();
+  const resolvedMobiles = new Set();
+  const resolvedIdentifiers = new Set();
+
+  for (const email of requestedEmails) {
+    const user = await findAuthUser(email);
+    // An unverified email must never become an Owner allowlist identity.
+    if (!user || user.emailVerified !== true || !user.email) {
+      unresolved.push(email);
+      continue;
+    }
+    const canonicalEmail = user.email.trim().toLowerCase();
+    resolvedEmails.add(canonicalEmail);
+    resolvedIdentifiers.add(canonicalEmail);
+    resolvedUsers.set(user.uid, user);
+  }
+
+  for (const mobile of requestedMobiles) {
+    const user = await findAuthUser(mobile);
+    if (!user || !user.phoneNumber) {
+      unresolved.push(mobile);
+      continue;
+    }
+    const canonicalMobile = user.phoneNumber.trim();
+    resolvedMobiles.add(canonicalMobile);
+    resolvedIdentifiers.add(canonicalMobile);
+    resolvedUsers.set(user.uid, user);
+  }
+
+  if (resolvedIdentifiers.size === 0) {
+    throw new HttpsError("failed-precondition", "No valid, existing, verified Owner account was found; existing configuration was left unchanged.");
+  }
 
   let granted = 0;
   let revoked = 0;
-  const unresolved = [];
-
-  for (const identifier of requestedIdentifiers) {
-    const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+  for (const user of resolvedUsers.values()) {
     const claims = { ...(user.customClaims || {}), admin: true };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
 
   for (const identifier of previousIdentifiers) {
-    if (requestedIdentifiers.has(identifier)) continue;
+    if (resolvedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
     if (!user || user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
@@ -495,6 +525,13 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...resolvedEmails],
+    mobiles: [...resolvedMobiles],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  });
 
   return { ok: true, granted, revoked, unresolved };
 });
