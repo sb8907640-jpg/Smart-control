@@ -26,9 +26,9 @@ Remote camera, microphone and screen sessions use short-lived, per-user TURN cre
    ```sh
    firebase functions:secrets:set SMARTCONTROL_TURN_CREDENTIAL
    ```
-3. Deploy Functions and Firestore rules:
+3. Deploy Functions, Firestore rules/indexes, and Storage rules:
    ```sh
-   firebase deploy --only functions,firestore:rules
+   firebase deploy --only functions,firestore,storage
    ```
 4. Verify with two real devices on different carrier/Wi-Fi networks. If TURN is not configured, the app uses STUN fallback and displays a warning; restrictive NATs may prevent the session from connecting.
 
