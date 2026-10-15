@@ -11,6 +11,21 @@ const { installCatalogRoutes } = require("./catalog-api");
 const { applyOwnerRole } = require("./owner-auth");
 const { installOwnerPanelRoutes } = require("./owner-panel");
 
+function resolvePublicAppUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password ||
+        url.search || url.hash || url.pathname !== "/") {
+      return null;
+    }
+    return url.origin;
+  } catch (_) {
+    return null;
+  }
+}
+
 function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
@@ -360,6 +375,12 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
       if (senderRole === receiverRole && senderRole !== "Other") {
         return res.status(400).json({ error: "Sender and receiver relationships must be different." });
       }
+      // Invitation URLs must use the operator-configured trusted app origin.
+      // Never fall back to a request Origin header for a security-sensitive link.
+      const baseUrl = resolvePublicAppUrl(process.env.PUBLIC_APP_URL);
+      if (!baseUrl) {
+        return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to a trusted HTTPS app origin before generating links." });
+      }
       const now = Date.now();
       const recent = await firestore.collection("pairingInvites")
         .where("creatorUid", "==", req.user.uid)
@@ -376,11 +397,6 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
         creatorUid: req.user.uid, senderRole, receiverRole, tokenHash, codeHash,
         status: "pending", createdAtEpochMs: now, expiresAtEpochMs
       });
-      const baseUrl = String(process.env.PUBLIC_APP_URL || req.get("origin") || "").replace(/\/$/, "");
-      if (!baseUrl || !/^https:\/\//i.test(baseUrl)) {
-        await firestore.collection("pairingInvites").doc(tokenHash).delete();
-        return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to an HTTPS app URL before generating links." });
-      }
       return res.status(201).json({
         link: baseUrl + "/link?token=" + encodeURIComponent(token),
         code, senderRole, receiverRole, expiresAtEpochMs
@@ -481,4 +497,4 @@ function createProductionApp() {
   });
 }
 
-module.exports = { createApp, createProductionApp };
+module.exports = { createApp, createProductionApp, resolvePublicAppUrl };
