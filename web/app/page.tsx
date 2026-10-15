@@ -148,6 +148,8 @@ export default function Home() {
     setBusy(true);
     try {
       await confirmation.confirm(otp.trim());
+      recaptchaVerifier.current?.clear();
+      recaptchaVerifier.current = null;
       setConfirmation(null);
       setOtp("");
       setStatus("Phone authentication verified. Loading backend session...");
