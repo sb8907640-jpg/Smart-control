@@ -7,6 +7,7 @@ import com.smartcontrol.domain.media.IceCandidateModel
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSignalingRepository
+import com.smartcontrol.domain.media.MediaSessionStatus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -112,7 +113,12 @@ class WebRtcMediaEngine(
     ): Result<Unit> = runCatching {
         initialize()
         val pc = createPeerConnection(sessionId, iceServers, remoteVideoSink)
-        val session = signaling.observeSession(sessionId).filterNotNull().first { !it.offerSdp.isNullOrBlank() }
+        val session = signaling.observeSession(sessionId).filterNotNull().first {
+            !it.offerSdp.isNullOrBlank() || it.status == MediaSessionStatus.STOPPED
+        }
+        require(session.status != MediaSessionStatus.STOPPED && !session.offerSdp.isNullOrBlank()) {
+            "Media session stopped before the offer arrived."
+        }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.OFFER, session.offerSdp!!))
         val answer = createAnswer(pc)
         pc.setLocalDescriptionAwait(answer)
@@ -186,7 +192,12 @@ class WebRtcMediaEngine(
     }
 
     private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
-        val session = signaling.observeSession(sessionId).filterNotNull().first { !it.answerSdp.isNullOrBlank() }
+        val session = signaling.observeSession(sessionId).filterNotNull().first {
+            !it.answerSdp.isNullOrBlank() || it.status == MediaSessionStatus.STOPPED
+        }
+        require(session.status != MediaSessionStatus.STOPPED && !session.answerSdp.isNullOrBlank()) {
+            "Media session stopped before the answer arrived."
+        }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp!!))
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
     }
