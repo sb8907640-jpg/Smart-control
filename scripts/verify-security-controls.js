@@ -84,6 +84,23 @@ check("Pairing tokens are private and claimed by the authenticated server callab
     functionsIndex.includes("transaction.delete(codeRef)") &&
     pairingRepo.includes('getHttpsCallable("claimPairingCode")'),
   "Clients cannot list/read other devices' pairing tokens; the server validates and consumes a token atomically with the device link.");
+check("Role helpers are exported and self-escalation is blocked",
+  read("functions/spec/roles.js").includes("module.exports = { ROLES, normalizeRole, canManageRole }") &&
+    functionsIndex.includes("You cannot change your own role.") &&
+    functionsIndex.includes("canManageRole(actorRole, currentRole)"),
+  "User-management role checks have defined helpers and prevent self-promotion.");
+
+check("Live Razorpay refunds use the provider and track pending confirmation",
+  read("functions/billing.js").includes("/refund") &&
+    read("functions/billing.js").includes('status: "REFUND_PENDING"') &&
+    read("functions/billing.js").includes("gatewayRefundId"),
+  "A live refund is sent to Razorpay and remains pending until provider confirmation.");
+
+check("Test safety alert is separate from SOS",
+  read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes('"TEST"') &&
+    read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes("This is a test safety alert"),
+  "The test-alert button cannot accidentally create a real SOS alert.");
+
 check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
