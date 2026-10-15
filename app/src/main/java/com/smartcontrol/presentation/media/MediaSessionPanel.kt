@@ -155,9 +155,15 @@ fun MediaSessionPanel(
                         enabled = current.capabilities.all(::capabilityEnabled)
                     ) { Text("Start sharing (visible)") }
                 }
-                if (device != null && current.status == MediaSessionStatus.ACTIVE) {
+                if (device != null && current.status in setOf(MediaSessionStatus.APPROVED, MediaSessionStatus.ACTIVE)) {
                     WebRtcVideoRenderer(viewModel.eglBase(), renderer, Modifier.fillMaxWidth().height(220.dp))
-                    LaunchedEffect(current.sessionId) { viewModel.connectViewer(current, renderer) }
+                    // The controller must answer the offer while the session is APPROVED;
+                    // waiting for ACTIVE here deadlocks both peers before SDP exchange.
+                    LaunchedEffect(current.sessionId, current.offerSdp) {
+                        if (!current.offerSdp.isNullOrBlank()) {
+                            viewModel.connectViewer(current, renderer)
+                        }
+                    }
                 }
                 if (current.status == MediaSessionStatus.REQUESTED || current.status == MediaSessionStatus.APPROVED || current.status == MediaSessionStatus.ACTIVE) {
                     OutlinedButton(onClick = { viewModel.stop(current.sessionId) }) { Text("Stop session") }
