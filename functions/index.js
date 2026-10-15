@@ -321,8 +321,18 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
+  const tokenRole = normalizeRole(request.auth.token?.role);
+  // Owner accounts created by syncOwnerAccounts carry admin=true and may still
+  // have a legacy USER role claim. Treat that combination as OWNER, not USER.
+  const actorRole = request.auth.token?.admin === true && tokenRole === "USER"
+    ? "OWNER"
+    : tokenRole;
+  const currentRole = normalizeRole(target.customClaims?.role);
+  if (uid === request.auth.uid && role !== currentRole) {
+    throw new HttpsError("permission-denied", "You cannot change your own role.");
+  }
+  if (uid !== request.auth.uid &&
+      (!canManageRole(actorRole, currentRole) || !canManageRole(actorRole, role))) {
     throw new HttpsError("permission-denied", "Insufficient role authority.");
   }
 
