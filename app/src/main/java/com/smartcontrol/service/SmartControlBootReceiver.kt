@@ -37,7 +37,7 @@ class SmartControlBootReceiver : BroadcastReceiver() {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(Intent(context, FamilySafetyService::class.java))
+                context.startForegroundService(Intent(context, FamilySafetyService::class.java).setAction(FamilySafetyService.ACTION_AUTO_START))
             } else {
                 context.startService(Intent(context, FamilySafetyService::class.java))
             }
