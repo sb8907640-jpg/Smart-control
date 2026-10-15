@@ -103,6 +103,9 @@ exports.claimPairingCode = onCall(async (request) => {
     if (typeof deviceUid !== "string" || !deviceUid) {
       throw new HttpsError("failed-precondition", "Pairing token is invalid.");
     }
+    if (deviceUid === controllerUid) {
+      throw new HttpsError("failed-precondition", "A device cannot pair with itself.");
+    }
     if (expiresAt <= Date.now()) {
       throw new HttpsError("deadline-exceeded", "Pairing token has expired.");
     }
