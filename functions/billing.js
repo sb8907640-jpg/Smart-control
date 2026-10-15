@@ -581,7 +581,13 @@ exports.refundPayment = onCall(
     const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
     let providerRefundId = null;
     if (provider === "RAZORPAY") {
-      const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
+      let permit;
+      try {
+        permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
+      } catch (_) {
+        await ref.update({ status: "SUCCESS", refundError: "GATEWAY_PERMIT_UNAVAILABLE", updatedAtEpochMs: Date.now() });
+        throw new HttpsError("failed-precondition", "The payment's gateway credentials are unavailable; no refund request was sent.");
+      }
       const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
       const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
       const razorpayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
@@ -612,13 +618,19 @@ exports.refundPayment = onCall(
         await ref.update({ refundError: "PROVIDER_RESULT_UNKNOWN", updatedAtEpochMs: Date.now() });
         throw new HttpsError("unavailable", "Razorpay refund result is unknown; reconcile it in the provider dashboard before retrying.");
       }
-      if (!response.ok || typeof providerResult.id !== "string") {
+      if (!response.ok) {
         await ref.update({
           status: "SUCCESS",
           refundError: "PROVIDER_REFUND_REJECTED",
           updatedAtEpochMs: Date.now()
         });
         throw new HttpsError("failed-precondition", "Razorpay rejected the refund request.");
+      }
+      if (typeof providerResult.id !== "string" || !providerResult.id) {
+        // A successful HTTP response without a refund ID is ambiguous. Keep
+        // REFUNDING and require reconciliation instead of risking a duplicate.
+        await ref.update({ refundError: "PROVIDER_REFUND_ID_MISSING", updatedAtEpochMs: Date.now() });
+        throw new HttpsError("unavailable", "Razorpay may have processed the refund; reconcile it in the provider dashboard before retrying.");
       }
       providerRefundId = providerResult.id;
     } else if (provider !== "TEST") {
