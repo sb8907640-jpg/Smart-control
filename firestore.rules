@@ -442,7 +442,24 @@ service cloud.firestore {
       match /statusAlerts/{alertId} {
         allow create: if accountActive()
           && request.auth.uid == uid
-          && featureEnabledFor(uid, 'SOS_ALERTS');
+          && (
+            (
+              request.resource.data.type == 'SOS'
+              && featureEnabledFor(uid, 'SOS_ALERTS')
+              && request.resource.data.deviceId == uid
+              && request.resource.data.createdBy == request.auth.uid
+              && request.resource.data.createdAt is int
+              && request.resource.data.acknowledged is bool
+            )
+            || (
+              request.resource.data.type == 'PERMISSION_REVOKED'
+              && featureEnabledFor(uid, 'BATTERY_NETWORK')
+              && healthSharingAllowed()
+              && request.resource.data.permission in ['camera', 'microphone', 'location', 'notifications']
+              && request.resource.data.createdAt is int
+              && request.resource.data.read == false
+            )
+          );
         allow read: if accountActive() && profileActive(uid)
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
