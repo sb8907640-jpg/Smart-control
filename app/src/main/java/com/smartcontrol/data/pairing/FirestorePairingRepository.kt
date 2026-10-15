@@ -171,6 +171,20 @@ class FirestorePairingRepository @Inject constructor(
             .await()
         controlled.documents.forEach { refs[it.reference.path] = it.reference }
 
+        // Unpairing must also stop pending/active media sessions so camera, microphone,
+        // or screen capture cannot remain live after the link is revoked.
+        val controllerSessions = db.collection("mediaSessions")
+            .whereEqualTo("controllerUid", uid)
+            .get()
+            .await()
+        val targetSessions = db.collection("mediaSessions")
+            .whereEqualTo("targetDeviceId", uid)
+            .get()
+            .await()
+        val activeSessions = (controllerSessions.documents + targetSessions.documents)
+            .distinctBy { it.reference.path }
+            .filter { it.getString("status") in setOf("REQUESTED", "APPROVED", "ACTIVE") }
+
         val batch = db.batch()
         refs.values.forEach { ref ->
             batch.set(
@@ -179,7 +193,10 @@ class FirestorePairingRepository @Inject constructor(
                 SetOptions.merge()
             )
         }
-        if (refs.isNotEmpty()) batch.commit().await()
+        activeSessions.forEach { session ->
+            batch.update(session.reference, "status", "STOPPED")
+        }
+        if (refs.isNotEmpty() || activeSessions.isNotEmpty()) batch.commit().await()
     }
 
     private fun buildToken(): String {
