@@ -2,6 +2,7 @@ package com.smartcontrol.data.media
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.domain.media.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -81,8 +82,17 @@ class FirestoreMediaSignalingRepository @Inject constructor(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun approveSession(sessionId: String) = transition(sessionId, MediaSessionStatus.REQUESTED, MediaSessionStatus.APPROVED)
-    override suspend fun denySession(sessionId: String) = transition(sessionId, MediaSessionStatus.REQUESTED, MediaSessionStatus.STOPPED)
+    override suspend fun approveSession(sessionId: String): Result<Unit> = runCatching {
+        // Approval is server-authorized so a modified client cannot bypass the
+        // Owner's per-device media feature policy with a direct Firestore update.
+        FirebaseFunctions.getInstance()
+            .getHttpsCallable("approveMediaSession")
+            .call(mapOf("sessionId" to sessionId))
+            .await()
+    }.map { Unit }
+
+    override suspend fun denySession(sessionId: String) =
+        transition(sessionId, MediaSessionStatus.REQUESTED, MediaSessionStatus.STOPPED)
 
     private suspend fun transition(id: String, expected: MediaSessionStatus, next: MediaSessionStatus): Result<Unit> = runCatching {
         db.runTransaction { tx ->
