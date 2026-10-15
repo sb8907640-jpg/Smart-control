@@ -86,6 +86,22 @@ check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
   "Target publishes offer SDP; controller publishes answer SDP.");
+check("Media approval is server-authorized and policy-gated",
+  read("functions/index.js").includes("exports.approveMediaSession") &&
+    read("functions/spec/media-policy.js").includes("globalFeaturesEnabled !== true") &&
+    read("app/src/main/java/com/smartcontrol/data/media/FirestoreMediaSignalingRepository.kt").includes('getHttpsCallable("approveMediaSession")') &&
+    firestoreRules.includes("request.resource.data.status == 'STOPPED'"),
+  "Direct client status writes cannot approve a session when owner policy has not authorized it.");
+check("Unpairing stops pending and active media sessions",
+  pairingRepo.includes('whereEqualTo("controllerUid", uid)') &&
+    pairingRepo.includes('whereEqualTo("targetDeviceId", uid)') &&
+    pairingRepo.includes('"REQUESTED", "APPROVED", "ACTIVE"') &&
+    pairingRepo.includes('"STOPPED"'),
+  "Revoking a device link also ends sessions and releases peer resources.");
+check("Remote commands require an ACTIVE session and visible indicator",
+  read("app/src/main/java/com/smartcontrol/domain/control/RemoteCommandSessionGate.kt").includes("session.status != SessionStatus.ACTIVE") &&
+    read("app/src/main/java/com/smartcontrol/domain/control/RemoteCommandSessionGate.kt").includes("visibleIndicatorActive"),
+  "APPROVED is not sufficient for command delivery.");
 check("File transfer requests require an active paired receiver",
   firestoreRules.includes("data.pairingActive == true") &&
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
