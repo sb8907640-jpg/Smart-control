@@ -90,3 +90,4 @@ class RemoteCommandSessionGateTest {
         assertFalse(gate.isAllowed(remoteSession(SessionStatus.ACTIVE), SessionCapability.REMOTE_CONTROL, emptySet(), true))
         assertFalse(gate.isAllowed(remoteSession(SessionStatus.ACTIVE), SessionCapability.REMOTE_CONTROL, granted, false))
     }
+}
