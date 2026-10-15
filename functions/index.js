@@ -489,6 +489,11 @@ exports.updateOwnerUser = onCall(async (request) => {
       updatedAtEpochMs,
       updatedBy: request.auth.uid
     }, { merge: true });
+    await db.collection("userAccess").doc(uid).set({
+      blocked: disabled,
+      updatedAtEpochMs,
+      updatedBy: request.auth.uid
+    }, { merge: true });
     if (disabled) {
       await db.collection("featurePolicyUsers").doc(uid).set({
         enabled: false,
