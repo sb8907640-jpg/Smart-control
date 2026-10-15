@@ -1094,44 +1094,68 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           res.status(400).send("Razorpay refund ID is missing.");
           return;
         }
-        if (payment.status === "REFUND_PENDING" &&
-            (!payment.gatewayRefundId || payment.gatewayRefundId === refundId)) {
-          await paymentDoc.ref.update({
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "REFUND_PENDING" ||
+              latestPayment.previousGatewayRefundId === refundId ||
+              (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId)) return;
+          tx.update(paymentDoc.ref, {
             gatewayRefundId: refundId,
             gatewayRefundStatus: String(entity.status || "created"),
             updatedAtEpochMs: now
           });
-        }
+        });
       } else if (eventName === "refund.processed") {
         const refundId = String(entity.id || "").trim();
         const refundAmount = Number(entity.amount || 0);
-        if (!refundId || (payment.gatewayRefundId && payment.gatewayRefundId !== refundId)) {
-          res.status(400).send("Razorpay refund identity mismatch.");
+        if (!refundId) {
+          res.status(400).send("Razorpay refund ID is missing.");
           return;
         }
-        if (payment.status === "REFUNDED") {
-          res.status(200).json({ ok: true, alreadyProcessed: true });
-          return;
-        }
-        if (payment.status !== "REFUND_PENDING" ||
-            (payment.refundAmountMinor != null && refundAmount !== Number(payment.refundAmountMinor))) {
-          res.status(409).send("Refund does not match a pending refund request.");
-          return;
-        }
-        await paymentDoc.ref.update({
-          status: "REFUNDED",
-          gatewayRefundId: refundId,
-          gatewayRefundStatus: "processed",
-          refundAmountMinor: refundAmount,
-          refundedAtEpochMs: now,
-          updatedAtEpochMs: now
+        const refundResult = await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return { failure: { statusCode: 404, message: "Payment not found." } };
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status === "REFUNDED") {
+            if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId) {
+              return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
+            }
+            return { alreadyProcessed: true, subscriptionId: latestPayment.subscriptionId };
+          }
+          if (latestPayment.status !== "REFUND_PENDING" ||
+              (latestPayment.refundAmountMinor != null && refundAmount !== Number(latestPayment.refundAmountMinor))) {
+            return { failure: { statusCode: 409, message: "Refund does not match a pending refund request." } };
+          }
+          if ((latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId) ||
+              (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === refundId)) {
+            return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
+          }
+          tx.update(paymentDoc.ref, {
+            status: "REFUNDED",
+            gatewayRefundId: refundId,
+            gatewayRefundStatus: "processed",
+            refundAmountMinor: refundAmount,
+            refundedAtEpochMs: now,
+            updatedAtEpochMs: now
+          });
+          return { processed: true, subscriptionId: latestPayment.subscriptionId };
         });
-        if (payment.subscriptionId) {
-          await db.collection("subscriptions").doc(payment.subscriptionId).set({
+        if (refundResult.failure) {
+          res.status(refundResult.failure.statusCode).send(refundResult.failure.message);
+          return;
+        }
+        if (refundResult.subscriptionId) {
+          await db.collection("subscriptions").doc(refundResult.subscriptionId).set({
             status: "CANCELLED",
             cancelledAtEpochMs: now,
             updatedAtEpochMs: now
           }, { merge: true });
+        }
+        if (refundResult.alreadyProcessed) {
+          res.status(200).json({ ok: true, alreadyProcessed: true });
+          return;
         }
       } else if (eventName === "refund.failed") {
         const refundId = String(entity.id || "").trim();
