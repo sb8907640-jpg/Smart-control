@@ -56,10 +56,10 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Payment records are written only by verified server-side gateway flows.
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
@@ -71,8 +71,8 @@ service cloud.firestore {
     match /emiSchedule/{scheduleId} {
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // EMI schedules are derived from server-verified payment records.
+      allow create, update, delete: if false;
     }
 
     match /coupons/{couponId} {
