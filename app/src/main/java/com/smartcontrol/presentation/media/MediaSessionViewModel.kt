@@ -104,7 +104,16 @@ class MediaSessionViewModel @Inject constructor(
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
-        engine.publish(session.sessionId, session.capabilities, projectionIntent, resolveIceServers(session.sessionId))
+        val iceServers = try {
+            resolveIceServers(session.sessionId)
+        } catch (error: Exception) {
+            signaling.stopSession(session.sessionId)
+            MediaProjectionForegroundService.stop(context)
+            FamilySafetyService.setIdle(context)
+            lastError.value = error.message ?: "Secure media authorization failed."
+            return@launch
+        }
+        engine.publish(session.sessionId, session.capabilities, projectionIntent, iceServers)
             .onSuccess { FamilySafetyService.setSyncing(context) }
             .onFailure {
                 signaling.stopSession(session.sessionId)
@@ -186,7 +195,15 @@ class MediaSessionViewModel @Inject constructor(
             lastError.value = "Media sharing is disabled in Privacy Controls."
             return@launch
         }
-        engine.view(session.sessionId, sink, resolveIceServers(session.sessionId)).onFailure { lastError.value = it.message }
+        val iceServers = try {
+            resolveIceServers(session.sessionId)
+        } catch (error: Exception) {
+            signaling.stopSession(session.sessionId)
+            FamilySafetyService.setIdle(context)
+            lastError.value = error.message ?: "Secure media authorization failed."
+            return@launch
+        }
+        engine.view(session.sessionId, sink, iceServers).onFailure { lastError.value = it.message }
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
