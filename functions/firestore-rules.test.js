@@ -172,6 +172,10 @@ async function main() {
       doc(mediaTarget.firestore(), "mediaSessions", "session-disabled-approval"),
       { status: "STOPPED" }
     ));
+    await assertFails(setDoc(
+      doc(mediaController.firestore(), "mediaSessions", "session-1/iceCandidates/candidate-disabled"),
+      { candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0 }
+    ));
 
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
