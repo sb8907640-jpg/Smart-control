@@ -105,7 +105,11 @@ class WebRtcMediaEngine(
         }
     }
 
-    suspend fun view(sessionId: String, remoteVideoSink: org.webrtc.VideoSink? = null, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
+    suspend fun view(
+        sessionId: String,
+        remoteVideoSink: org.webrtc.VideoSink? = null,
+        iceServers: List<IceServerConfig> = defaultIceServers()
+    ): Result<Unit> = runCatching {
         initialize()
         val pc = createPeerConnection(sessionId, iceServers, remoteVideoSink)
         val session = signaling.observeSession(sessionId).filterNotNull().first { !it.offerSdp.isNullOrBlank() }
@@ -115,6 +119,12 @@ class WebRtcMediaEngine(
         signaling.writeAnswer(sessionId, answer.description).getOrThrow()
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
         signaling.markActive(sessionId).getOrThrow()
+    }.onFailure {
+        candidateJobs.remove(sessionId)?.cancel()
+        peerConnections.remove(sessionId)?.let { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
     }
 
     suspend fun stop(sessionId: String) {
