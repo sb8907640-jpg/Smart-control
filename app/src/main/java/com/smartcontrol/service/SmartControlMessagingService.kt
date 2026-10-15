@@ -99,6 +99,9 @@ private fun postToken(token: String, idToken: String) {
     thread(name = "smartcontrol-fcm-register") {
         runCatching {
             val connection = (URL("$base/api/notifications/register").openConnection() as HttpURLConnection).apply {
+                // Do not follow a redirect with a bearer token. The configured HTTPS origin
+                // must receive the registration request directly.
+                instanceFollowRedirects = false
                 requestMethod = "POST"
                 connectTimeout = 10_000
                 readTimeout = 10_000

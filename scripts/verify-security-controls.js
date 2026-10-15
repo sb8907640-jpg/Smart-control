@@ -353,7 +353,8 @@ check("FCM token registration rejects insecure API URLs",
     messagingService.includes("parsedBase.query != null") &&
     messagingService.includes("parsedBase.ref != null") &&
     messagingService.includes('parsedBase.protocol != "https"') &&
-    messagingService.includes("parsedBase.host"),
+    messagingService.includes("parsedBase.host") &&
+    messagingService.includes("instanceFollowRedirects = false"),
   "Firebase ID tokens are only posted to HTTPS endpoints, with HTTP allowed for local development only.");
 
 const failed = checks.filter(x => !x.ok);
