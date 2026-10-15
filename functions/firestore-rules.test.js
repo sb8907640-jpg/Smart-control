@@ -30,10 +30,22 @@ async function main() {
     const target = env.authenticatedContext("target-user");
     await env.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "users", "blocked-user"), { status: "SUSPENDED" });
+      await setDoc(doc(context.firestore(), "users", "blocked-by-access"), { status: "ACTIVE" });
+      await setDoc(doc(context.firestore(), "userAccess", "blocked-by-access"), { blocked: true });
     });
     const blocked = env.authenticatedContext("blocked-user");
+    const blockedByAccess = env.authenticatedContext("blocked-by-access");
     await assertFails(setDoc(doc(blocked.firestore(), "pairingCodes", "d".repeat(48)), {
       deviceUid: "blocked-user",
+      expiresAt: now + 10 * 60 * 1000,
+      createdAt: now,
+      expiryMinutes: 10,
+      expiryMode: "PLAN",
+      senderRole: "Father",
+      receiverRole: "Son"
+    }));
+    await assertFails(setDoc(doc(blockedByAccess.firestore(), "pairingCodes", "e".repeat(48)), {
+      deviceUid: "blocked-by-access",
       expiresAt: now + 10 * 60 * 1000,
       createdAt: now,
       expiryMinutes: 10,
