@@ -26,13 +26,16 @@ class SmartControlMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // Foreground FCM notifications are not displayed by Android automatically.
-        // Show only a visible notification; no message can execute a remote action.
+        // Notifications are data-only and bound to one account UID. FCM tokens can
+        // outlive a sign-out, so never display a previous account's message on a
+        // shared device after another account signs in.
+        val targetUid = message.data["targetUid"] ?: return
+        if (FirebaseAuth.getInstance().currentUser?.uid != targetUid) return
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
-        val title = message.notification?.title ?: message.data["title"] ?: "Family Suraksha"
-        val body = message.notification?.body ?: message.data["body"] ?: return
+        val title = message.data["title"] ?: return
+        val body = message.data["body"] ?: return
         val manager = getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
