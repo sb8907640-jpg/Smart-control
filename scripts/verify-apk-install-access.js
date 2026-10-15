@@ -14,7 +14,7 @@ const checks = [
   ["Settings opens the per-app unknown-source access page", screen.includes("Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES") && screen.includes("package:${context.packageName}")],
   ["Installer receives a read-granted APK URI", screen.includes("setDataAndType(uri, \"application/vnd.android.package-archive\")") && screen.includes("Intent.FLAG_GRANT_READ_URI_PERMISSION")],
   ["Installation remains user-confirmed by Android", screen.includes("context.startActivity(intent)") && screen.includes("The user must confirm the installation.")],
-  ["Uninstall remains a system confirmation flow", screen.includes("Intent.ACTION_DELETE") && screen.includes("package:\" + pkg")]
+  ["Uninstall remains a system confirmation flow", screen.includes("Intent.ACTION_DELETE") && screen.includes('Uri.parse("package:" + pkg)')]
 ];
 
 const failures = [];
