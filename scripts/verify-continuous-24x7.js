@@ -72,6 +72,15 @@ check(
   "Long-running work is represented by an Android foreground service with a visible notification."
 );
 
+const sessionScreen = read("app/src/main/java/com/smartcontrol/presentation/session/SessionScreen.kt");
+check(
+  "Android background-service limits are disclosed to the user",
+  sessionScreen.includes("Android 15+") &&
+    sessionScreen.includes("six hours per 24-hour period") &&
+    sessionScreen.includes("open the app to resume"),
+  "The Home screen explains the platform limit and user action needed to resume sync."
+);
+
 check(
   "Android 15 background-start and dataSync timeout limitations are surfaced",
   bootReceiver.includes("Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM") &&
