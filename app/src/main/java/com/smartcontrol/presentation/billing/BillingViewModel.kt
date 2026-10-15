@@ -43,25 +43,32 @@ class BillingViewModel @Inject constructor(
     }
 
     fun buy(plan: Plan, method: String, coupon: String) {
+        if (_busy.value) return
         viewModelScope.launch {
+            if (_busy.value) return@launch
             _busy.value = true
-            repository.createPlanPayment(plan.id, "RAZORPAY", method, coupon)
-                .onSuccess { payment ->
-                    if (payment.gateway.equals("RAZORPAY", ignoreCase = true) &&
-                        !payment.gatewayOrderId.isNullOrBlank() &&
-                        !payment.gatewayKeyId.isNullOrBlank()
-                    ) {
-                        _pendingCheckout.value = payment
-                        _message.value = "Opening secure Razorpay checkout…"
-                    } else if (payment.status == Payment.Status.SUCCESS) {
-                        _message.value = "Payment completed and subscription is active."
-                    } else {
-                        _message.value = "Payment order created: " + payment.id +
-                            ". Open Owner / Admin Control Panel → Permanent Gateway Permit and complete secure server setup to enable checkout."
+            try {
+                repository.createPlanPayment(plan.id, "RAZORPAY", method, coupon)
+                    .onSuccess { payment ->
+                        if (payment.gateway.equals("RAZORPAY", ignoreCase = true) &&
+                            !payment.gatewayOrderId.isNullOrBlank() &&
+                            !payment.gatewayKeyId.isNullOrBlank()
+                        ) {
+                            _pendingCheckout.value = payment
+                            _message.value = "Opening secure Razorpay checkout…"
+                        } else if (payment.status == Payment.Status.SUCCESS) {
+                            _message.value = "Payment completed and subscription is active."
+                        } else {
+                            _message.value = "Payment order created: " + payment.id +
+                                ". Open Owner / Admin Control Panel → Permanent Gateway Permit and complete secure server setup to enable checkout."
+                        }
                     }
-                }
-                .onFailure { _message.value = it.message ?: "Payment could not be created." }
-            _busy.value = false
+                    .onFailure { _message.value = it.message ?: "Payment could not be created." }
+            } catch (error: Exception) {
+                _message.value = error.message ?: "Payment could not be created."
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
