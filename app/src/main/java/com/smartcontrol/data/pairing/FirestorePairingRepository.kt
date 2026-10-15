@@ -157,9 +157,10 @@ class FirestorePairingRepository @Inject constructor(
         }
 
         // If this account is the controller, unlink every device it controls too.
+        // Include stale inactive links too, so the controller can clear them
+        // before attempting to claim a new one-time pairing token.
         val controlled = db.collection("devices")
             .whereEqualTo("controllerUid", uid)
-            .whereEqualTo("pairingActive", true)
             .get()
             .await()
         controlled.documents.forEach { refs[it.reference.path] = it.reference }
