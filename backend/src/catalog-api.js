@@ -148,16 +148,47 @@ function installCatalogRoutes(app, { db, requireAuth }) {
 
   app.post("/api/link/join", async (req,res,next) => {
     try {
-      const code=String(req.body?.code||"").trim().toUpperCase();
-      if(!code) return res.status(400).json({error:"Pairing code is required."});
-      const ref=firestoreCollection("pairingCodes").doc(code);
-      const snap=await ref.get(); const data=snap.exists?snap.data():null;
-      if(!data||data.status!=="PENDING"||Number(data.expiresAt)<now()) return res.status(404).json({error:"Pairing code is invalid or expired."});
-      await ref.set({clientUid:req.catalogUid,status:"PAIRED",pairedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(req.catalogUid).set({controllerUid:data.ownerUid,pairingActive:true,updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{code});
-      res.json({ok:true,ownerUid:data.ownerUid});
-    }catch(e){next(e);}
+      const code = String(req.body?.code || "").trim().toUpperCase();
+      if (!code) return res.status(400).json({ error: "Pairing code is required." });
+      const codeRef = firestoreCollection("pairingCodes").doc(code);
+      const deviceRef = firestoreCollection("devices").doc(req.catalogUid);
+      const ownerUid = await db.runTransaction(async transaction => {
+        const snap = await transaction.get(codeRef);
+        const data = snap.exists ? snap.data() : null;
+        const expiry = data?.expiresAt == null ? null : Number(data.expiresAt);
+        if (!data || data.status !== "PENDING" ||
+            (expiry !== null && (!Number.isFinite(expiry) || expiry <= now()))) {
+          const error = new Error("Pairing code is invalid or expired.");
+          error.statusCode = 404;
+          throw error;
+        }
+        if (data.ownerUid === req.catalogUid) {
+          const error = new Error("A device cannot join its own pairing code.");
+          error.statusCode = 400;
+          throw error;
+        }
+        const deviceSnap = await transaction.get(deviceRef);
+        const deviceData = deviceSnap.exists ? deviceSnap.data() : {};
+        if (deviceData.pairingActive === true && deviceData.controllerUid) {
+          const error = new Error("This device is already paired. Unpair it before linking again.");
+          error.statusCode = 409;
+          throw error;
+        }
+        transaction.set(codeRef, {
+          clientUid: req.catalogUid,
+          status: "PAIRED",
+          pairedAt: now()
+        }, { merge: true });
+        transaction.set(deviceRef, {
+          controllerUid: data.ownerUid,
+          pairingActive: true,
+          updatedAt: now()
+        }, { merge: true });
+        return data.ownerUid;
+      });
+      await audit(req.catalogUid, "LINK_JOINED", "pairingCode", { code });
+      return res.json({ ok: true, ownerUid });
+    } catch (e) { next(e); }
   });
 
   app.post("/api/link/share", async(req,res,next)=>{
