@@ -13,8 +13,11 @@ function mediaCapabilitiesAllowed(capabilities, globalPolicy, userPolicy = null,
   const userOverrides = userPolicy?.featureOverrides || {};
   if (userPolicy) {
     if (userPolicy.enabled === false || userPolicy.ownerEnabled === false) return false;
-    const expiresAt = Number(userPolicy.expiresAtEpochMs || 0);
-    if (expiresAt > 0 && expiresAt <= now) return false;
+    if (userPolicy.expiresAtEpochMs != null) {
+      const expiresAt = Number(userPolicy.expiresAtEpochMs);
+      if (!Number.isFinite(expiresAt)) return false;
+      if (expiresAt > 0 && expiresAt <= now) return false;
+    }
   }
 
   return capabilities.every(capability => {
