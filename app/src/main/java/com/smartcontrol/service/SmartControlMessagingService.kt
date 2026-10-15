@@ -1,10 +1,20 @@
 package com.smartcontrol.service
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.smartcontrol.BuildConfig
+import com.smartcontrol.MainActivity
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -16,7 +26,34 @@ class SmartControlMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // Foreground messages are handled by app UI; no hidden actions are executed.
+        // Foreground FCM notifications are not displayed by Android automatically.
+        // Show only a visible notification; no message can execute a remote action.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val title = message.notification?.title ?: message.data["title"] ?: "Family Suraksha"
+        val body = message.notification?.body ?: message.data["body"] ?: return
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(MESSAGE_CHANNEL, "Family Suraksha alerts", NotificationManager.IMPORTANCE_DEFAULT)
+            )
+        }
+        val openIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title.take(100))
+            .setContentText(body.take(500))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body.take(2000)))
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+        manager.notify((message.messageId ?: System.currentTimeMillis().toString()).hashCode(), notification)
     }
 
     private fun registerToken(token: String) {
@@ -28,6 +65,8 @@ class SmartControlMessagingService : FirebaseMessagingService() {
     }
 
     companion object {
+        private const val MESSAGE_CHANNEL = "family_suraksha_alerts"
+
         /**
          * FCM may issue its first token before the user signs in. Call this after
          * authentication so that token registration is retried for the current user.
