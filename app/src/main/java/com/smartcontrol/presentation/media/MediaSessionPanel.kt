@@ -53,6 +53,14 @@ fun MediaSessionPanel(
         }
         return settingsLoaded && featureAccess.isEnabled(featureId, userId)
     }
+    fun capabilityGloballyEnabled(capability: MediaCapability): Boolean {
+        val featureId = when (capability) {
+            MediaCapability.CAMERA -> FeatureId.CAMERA
+            MediaCapability.MICROPHONE -> FeatureId.MICROPHONE
+            MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
+        }
+        return settingsLoaded && featureAccess.isGloballyEnabled(featureId)
+    }
     val pending by viewModel.pending.collectAsState()
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
@@ -95,15 +103,15 @@ fun MediaSessionPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.CAMERA)) },
-                        enabled = capabilityEnabled(MediaCapability.CAMERA)
+                        enabled = capabilityGloballyEnabled(MediaCapability.CAMERA)
                     ) { Text("Request camera") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.MICROPHONE)) },
-                        enabled = capabilityEnabled(MediaCapability.MICROPHONE)
+                        enabled = capabilityGloballyEnabled(MediaCapability.MICROPHONE)
                     ) { Text("Request mic") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) },
-                        enabled = capabilityEnabled(MediaCapability.SCREEN_SHARING)
+                        enabled = capabilityGloballyEnabled(MediaCapability.SCREEN_SHARING)
                     ) { Text("Request screen") }
                 }
             } ?: Text("No controlled device is paired on this account.")
