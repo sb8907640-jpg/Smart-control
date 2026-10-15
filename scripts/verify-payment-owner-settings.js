@@ -112,6 +112,12 @@ check("Refund webhooks reconcile only the current refund attempt",
     refundProcessedWebhookBlock.includes("latestPayment.gatewayRefundId !== refundId"),
   "Late events from an earlier refund attempt cannot overwrite the active attempt's status.");
 
+check("Refund API responses preserve webhook-completed state",
+  billingFunctions.includes("const finalStatus = await db.runTransaction") &&
+    billingFunctions.includes("latestPayment.previousGatewayRefundId === gatewayRefundId") &&
+    billingFunctions.includes("gatewayRefundId: FieldValue.delete()"),
+  "Late API responses cannot regress REFUNDED or reuse a prior attempt's refund ID.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",
