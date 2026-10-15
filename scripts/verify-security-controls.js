@@ -130,13 +130,14 @@ const approvalCallableBlock = functionsIndex.slice(
   functionsIndex.indexOf("function validatePin")
 );
 const iceCallableSource = read("functions/ice-servers.js");
+const consentPolicy = read("functions/spec/consent-policy.js");
 check("Media approval and ICE credentials require server-recorded consent for both peers",
-  approvalCallableBlock.includes('collection("consentHistory")') &&
-    approvalCallableBlock.includes("hasCurrentConsent(controllerConsentSnapshot, session.controllerUid)") &&
-    approvalCallableBlock.includes("hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)") &&
+  consentPolicy.includes("function isCurrentConsentRecord") &&
+    approvalCallableBlock.includes('collection("consentHistory")') &&
+    approvalCallableBlock.includes("isCurrentConsentRecord(") &&
     iceCallableSource.includes('collection("consentHistory")') &&
-    iceCallableSource.includes("hasCurrentConsent(controllerConsentSnapshot, session.controllerUid)") &&
-    iceCallableSource.includes("hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)"),
+    iceCallableSource.includes("isCurrentConsentRecord(") &&
+    read("functions/spec/consent-policy.test.js").includes("rejects any receipt missing a required acknowledgement"),
   "Both the target's approval and the session's ICE credentials fail closed unless both peers have current server-recorded consent.");
 
 check("Media approval is server-authorized and policy-gated",

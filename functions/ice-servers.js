@@ -4,6 +4,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
+const { CURRENT_LEGAL_CONSENT_VERSION, isCurrentConsentRecord } = require("./spec/consent-policy");
 
 // Configure this as the shared secret for a TURN server that supports the
 // coturn REST API. It is never included in the Android APK or returned to clients.
@@ -65,17 +66,14 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     throw new HttpsError("permission-denied", "A suspended or blocked account cannot use media sessions.");
   }
   const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
-  const hasCurrentConsent = (snapshot, uid) => {
-    const data = snapshot.exists ? snapshot.data() || {} : {};
-    return snapshot.exists &&
-      data.userId === uid &&
-      Number(data.consentVersion) === CURRENT_LEGAL_CONSENT_VERSION &&
-      data.deviceOwnerConsent === true &&
-      data.privacyConsent === true &&
-      data.eulaConsent === true;
-  };
-  if (!hasCurrentConsent(controllerConsentSnapshot, session.controllerUid) ||
-      !hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)) {
+  if (!isCurrentConsentRecord(
+        controllerConsentSnapshot.exists ? controllerConsentSnapshot.data() : null,
+        session.controllerUid
+      ) ||
+      !isCurrentConsentRecord(
+        targetConsentSnapshot.exists ? targetConsentSnapshot.data() : null,
+        session.targetDeviceId
+      )) {
     throw new HttpsError(
       "permission-denied",
       "Both devices must have a current server-recorded legal consent before media connectivity is authorized."

@@ -8,6 +8,7 @@ const { anchorAuditRoot } = require("./blockchain-audit");
 const { ROLES, normalizeRole, canManageUser, canManageOwnerAccounts } = require("./spec/roles");
 const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
 const { globalFileTransferEnabled, userFileTransferEnabled } = require("./spec/file-transfer-policy");
+const { CURRENT_LEGAL_CONSENT_VERSION, isCurrentConsentRecord } = require("./spec/consent-policy");
 
 initializeApp();
 const db = getFirestore();
@@ -24,7 +25,7 @@ async function assertAccountActive(uid) {
   }
 }
 
-const CURRENT_LEGAL_CONSENT_VERSION = 1;
+
 
 // Record consent with server-controlled identity and a server timestamp.
 exports.recordLegalConsent = onCall(async (request) => {
@@ -149,17 +150,14 @@ exports.approveMediaSession = onCall(async (request) => {
       db.collection("consentHistory").doc(`${session.targetDeviceId}_${CURRENT_LEGAL_CONSENT_VERSION}`)
     );
     const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null
-    const hasCurrentConsent = (snapshot, uid) => {
-      const data = snapshot.exists ? snapshot.data() || {} : {};
-      return snapshot.exists &&
-        data.userId === uid &&
-        Number(data.consentVersion) === CURRENT_LEGAL_CONSENT_VERSION &&
-        data.deviceOwnerConsent === true &&
-        data.privacyConsent === true &&
-        data.eulaConsent === true;
-    };
-    if (!hasCurrentConsent(controllerConsentSnapshot, session.controllerUid) ||
-        !hasCurrentConsent(targetConsentSnapshot, session.targetDeviceId)) {
+    if (!isCurrentConsentRecord(
+          controllerConsentSnapshot.exists ? controllerConsentSnapshot.data() : null,
+          session.controllerUid
+        ) ||
+        !isCurrentConsentRecord(
+          targetConsentSnapshot.exists ? targetConsentSnapshot.data() : null,
+          session.targetDeviceId
+        )) {
       throw new HttpsError(
         "permission-denied",
         "Both devices must have a current server-recorded legal consent before media approval."
