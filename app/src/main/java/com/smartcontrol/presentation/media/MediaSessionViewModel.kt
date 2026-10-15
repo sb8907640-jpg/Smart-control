@@ -110,6 +110,36 @@ class MediaSessionViewModel @Inject constructor(
             signaling.stopSession(session.sessionId)
             return@launch
         }
+        if (MediaCapability.CAMERA in session.capabilities &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        ) {
+            lastError.value = "Grant camera permission before starting this session."
+            signaling.stopSession(session.sessionId)
+            return@launch
+        }
+        if (MediaCapability.MICROPHONE in session.capabilities &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+        ) {
+            lastError.value = "Grant microphone permission before starting this session."
+            signaling.stopSession(session.sessionId)
+            return@launch
+        }
+        if (MediaCapability.SCREEN_SHARING in session.capabilities && projectionIntent == null) {
+            lastError.value = "Screen sharing requires fresh Android system consent."
+            signaling.stopSession(session.sessionId)
+            return@launch
+        }
+        try {
+            FamilySafetyService.setSessionActive(
+                context,
+                camera = MediaCapability.CAMERA in session.capabilities,
+                microphone = MediaCapability.MICROPHONE in session.capabilities
+            )
+        } catch (error: Exception) {
+            signaling.stopSession(session.sessionId)
+            lastError.value = error.message ?: "The foreground media session could not start."
+            return@launch
+        }
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
@@ -123,7 +153,7 @@ class MediaSessionViewModel @Inject constructor(
             return@launch
         }
         engine.publish(session.sessionId, session.capabilities, projectionIntent, iceServers)
-            .onSuccess { FamilySafetyService.setSyncing(context) }
+            .onSuccess { lastError.value = null }
             .onFailure {
                 signaling.stopSession(session.sessionId)
                 MediaProjectionForegroundService.stop(context)
