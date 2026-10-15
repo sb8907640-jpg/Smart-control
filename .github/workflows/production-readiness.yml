@@ -59,7 +59,7 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
       - name: Test Firestore rules in emulator
-        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node functions/firestore-rules.test.js"
+        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore,storage --project demo-family-suraksha "node functions/firestore-rules.test.js && node functions/storage-rules.test.js"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
