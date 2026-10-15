@@ -197,6 +197,7 @@ service cloud.firestore {
 
       match /iceCandidates/{candidateId} {
         allow create: if request.auth != null
+          && request.resource.data.senderUid == request.auth.uid
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
         allow read: if request.auth != null
