@@ -29,7 +29,7 @@ service firebase.storage {
       allow delete: if accountActive()
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
-        && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
+        && transferDoc().data.status in ['APPROVED', 'UPLOADING', 'CANCELLED'];
 
       allow read: if accountActive()
         && (

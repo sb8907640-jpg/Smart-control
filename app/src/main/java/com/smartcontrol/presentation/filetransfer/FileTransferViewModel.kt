@@ -218,23 +218,35 @@ class FileTransferViewModel @Inject constructor(
             _status.value = "Receiver approval is required first."
             return@launch
         }
-        runCatching {
+        var uploadedPath: String? = null
+        try {
             repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
-            val storagePath = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
-            repository.markReady(id, storagePath)
-        }.onSuccess {
+            uploadedPath = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
+            repository.markReady(id, uploadedPath)
             _status.value = "File uploaded. The receiver can now download it."
             _hasPendingUpload.value = false
             pendingTransferId = null
             pendingUri = null
             pendingTransferPrefs.edit().clear().apply()
-        }.onFailure {
+        } catch (error: Exception) {
+            // A write can commit on the server even if the client loses the response.
+            // Never cancel/delete a file if the transfer already reached READY.
+            val latest = runCatching { repository.get(id) }.getOrNull()
+            if (latest?.status == FileTransferRequest.Status.READY) {
+                _status.value = "File uploaded. The receiver can now download it."
+                _hasPendingUpload.value = false
+                pendingTransferId = null
+                pendingUri = null
+                pendingTransferPrefs.edit().clear().apply()
+                return@launch
+            }
             runCatching { repository.updateStatus(id, FileTransferRequest.Status.CANCELLED) }
+            uploadedPath?.let { path -> runCatching { uploader.deleteUploadedFile(path) } }
             _hasPendingUpload.value = false
             pendingTransferId = null
             pendingUri = null
             pendingTransferPrefs.edit().clear().apply()
-            _status.value = (it.message ?: "File upload failed.") + " Select the file again to start a new request."
-        }
+            _status.value = (error.message ?: "File upload failed.") +
+                " The incomplete transfer was cancelled. Select the file again to retry."
     }
 }

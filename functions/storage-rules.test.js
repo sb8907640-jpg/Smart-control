@@ -5,8 +5,8 @@ const {
   assertFails,
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
-const { doc, setDoc } = require("firebase/firestore");
-const { ref, uploadBytes } = require("firebase/storage");
+const { doc, setDoc, updateDoc } = require("firebase/firestore");
+const { ref, uploadBytes, deleteObject } = require("firebase/storage");
 
 async function main() {
   const projectId = process.env.GCLOUD_PROJECT || "demo-family-suraksha";
@@ -99,6 +99,14 @@ async function main() {
       ref(env.authenticatedContext("blocked-sender").storage(), "fileTransfers/blocked-sender/transfer-blocked/file.bin"),
       new Uint8Array([1, 2, 3, 4])
     ));
+
+    // Failed uploads may be cancelled after an object was uploaded but before
+    // Firestore marked it READY. The sender must be able to remove that orphan.
+    await assertSucceeds(updateDoc(
+      doc(env.authenticatedContext("sender").firestore(), "fileTransfers", "transfer-known"),
+      { status: "CANCELLED" }
+    ));
+    await assertSucceeds(deleteObject(ref(senderStorage, "fileTransfers/sender/transfer-known/file.bin")));
 
     console.log("STORAGE_RULES_VERIFY=PASS");
   } finally {

@@ -225,6 +225,13 @@ check("File transfer uploads are bounded and match declared size",
     storageRules.includes("request.resource.size == transferDoc().data.sizeBytes") &&
     read("functions/storage-rules.test.js").includes("wrong-size.bin"),
   "Storage writes are capped at 100 MiB and known-size uploads must match the transfer request.");
+
+check("Cancelled file transfers can remove orphaned upload objects",
+  storageRules.includes("transferDoc().data.status in ['APPROVED', 'UPLOADING', 'CANCELLED']") &&
+    read("app/src/main/java/com/smartcontrol/data/filetransfer/FirebaseFileUploader.kt").includes("suspend fun deleteUploadedFile") &&
+    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("uploader.deleteUploadedFile(path)") &&
+    read("functions/storage-rules.test.js").includes("deleteObject(ref(senderStorage"),
+  "An incomplete upload is cancelled and its inaccessible object can be deleted without allowing receivers to read cancelled files.");
 check("TURN shared secret is not embedded in Android APK",
   !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
     iceServers.includes('createHmac("sha1", sharedSecret)'),

@@ -31,6 +31,7 @@ class FirebaseFileUploader @Inject constructor(
             .replace(Regex("[\\u0000-\\u001F]"), "_")
             .take(180)
             .ifBlank { "selected-file" }
+            .let { if (it == "." || it == "..") "selected-file" else it }
         val path = "fileTransfers/$uid/$transferId/$safeName"
         val ref = storage.reference.child(path)
         context.contentResolver.openInputStream(uri).use { input ->
@@ -41,6 +42,15 @@ class FirebaseFileUploader @Inject constructor(
             ref.putStream(input, metadata).await()
         }
         return path
+    }
+
+    suspend fun deleteUploadedFile(storagePath: String) {
+        val uid = auth.currentUser?.uid ?: error("Sign in first.")
+        val parts = storagePath.split('/')
+        require(parts.size == 4 && parts[0] == "fileTransfers" && parts[1] == uid &&
+            parts[2].isNotBlank() && parts[3].isNotBlank() && !storagePath.contains("..")
+        ) { "Invalid transfer storage path." }
+        storage.reference.child(storagePath).delete().await()
     }
 
     suspend fun downloadToUri(storagePath: String, targetUri: Uri) {
