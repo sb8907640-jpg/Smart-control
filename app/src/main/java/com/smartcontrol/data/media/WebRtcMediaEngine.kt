@@ -56,32 +56,50 @@ class WebRtcMediaEngine(
             .createPeerConnectionFactory()
     }
 
-    suspend fun publish(sessionId: String, capabilities: Set<MediaCapability>, mediaProjectionData: Intent?, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
-        initialize()
-        val pc = createPeerConnection(sessionId, iceServers, null)
+    suspend fun publish(
+        sessionId: String,
+        capabilities: Set<MediaCapability>,
+        mediaProjectionData: Intent?,
+        iceServers: List<IceServerConfig> = defaultIceServers()
+    ): Result<Unit> {
         val resources = mutableListOf<AutoCloseable>()
-        if (MediaCapability.MICROPHONE in capabilities) {
-            val audio = factory.createAudioSource(MediaConstraints())
-            pc.addTrack(factory.createAudioTrack("audio-$sessionId", audio), emptyList())
-            resources += AutoCloseable { audio.dispose() }
+        return runCatching {
+            initialize()
+            val pc = createPeerConnection(sessionId, iceServers, null)
+            if (MediaCapability.MICROPHONE in capabilities) {
+                val audioSource = factory.createAudioSource(MediaConstraints())
+                val audioTrack = factory.createAudioTrack("audio-$sessionId", audioSource)
+                resources += AutoCloseable {
+                    audioTrack.dispose()
+                    audioSource.dispose()
+                }
+                pc.addTrack(audioTrack, emptyList())
+            }
+            if (MediaCapability.CAMERA in capabilities) {
+                val camera = createCameraTrack(sessionId)
+                resources += camera
+                pc.addTrack(camera.track, emptyList())
+            }
+            if (MediaCapability.SCREEN_SHARING in capabilities) {
+                require(mediaProjectionData != null) { "Screen sharing requires MediaProjection consent" }
+                val screen = createScreenTrack(sessionId, mediaProjectionData)
+                resources += screen
+                pc.addTrack(screen.track, emptyList())
+            }
+            captures[sessionId] = resources
+            val offer = createOffer(pc)
+            pc.setLocalDescriptionAwait(offer)
+            signaling.writeOffer(sessionId, offer.description).getOrThrow()
+            waitForAnswerAndCandidates(sessionId, pc)
+            signaling.markActive(sessionId).getOrThrow()
+        }.onFailure {
+            // A failed offer/signaling step must not leave the camera, microphone,
+            // screen capturer, or peer connection running in the background.
+            val failedResources = captures.remove(sessionId) ?: resources
+            failedResources.forEach { resource -> runCatching { resource.close() } }
+            candidateJobs.remove(sessionId)?.cancel()
+            peerConnections.remove(sessionId)?.close()
         }
-        if (MediaCapability.CAMERA in capabilities) {
-            val camera = createCameraTrack(sessionId)
-            pc.addTrack(camera.track, emptyList())
-            resources += camera
-        }
-        if (MediaCapability.SCREEN_SHARING in capabilities) {
-            require(mediaProjectionData != null) { "Screen sharing requires MediaProjection consent" }
-            val screen = createScreenTrack(sessionId, mediaProjectionData)
-            pc.addTrack(screen.track, emptyList())
-            resources += screen
-        }
-        captures[sessionId] = resources
-        val offer = createOffer(pc)
-        pc.setLocalDescriptionAwait(offer)
-        signaling.writeOffer(sessionId, offer.description).getOrThrow()
-        waitForAnswerAndCandidates(sessionId, pc)
-        signaling.markActive(sessionId).getOrThrow()
     }
 
     suspend fun view(sessionId: String, remoteVideoSink: org.webrtc.VideoSink? = null, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
