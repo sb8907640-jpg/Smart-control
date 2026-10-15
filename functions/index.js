@@ -92,6 +92,42 @@ function newSecret(pin) {
   return { salt, pinHash: hashPin(pin, salt) };
 }
 
+const PARENT_PIN_MAX_ATTEMPTS = 5;
+const PARENT_PIN_WINDOW_MS = 15 * 60 * 1000;
+
+function parentPinAttemptRef(parentUid, requesterUid) {
+  return db.collection("parentPinAttempts").doc(parentUid + "_" + requesterUid);
+}
+
+async function consumeParentPinAttempt(parentUid, requesterUid) {
+  const ref = parentPinAttemptRef(parentUid, requesterUid);
+  const now = Date.now();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const startedAt = Number(snapshot.get("windowStartedAtEpochMs") || 0);
+    const expired = !startedAt || now - startedAt >= PARENT_PIN_WINDOW_MS;
+    const windowStartedAtEpochMs = expired ? now : startedAt;
+    const attempts = expired ? 0 : Number(snapshot.get("attempts") || 0);
+    if (attempts >= PARENT_PIN_MAX_ATTEMPTS) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many PIN attempts. Try again in 15 minutes."
+      );
+    }
+    transaction.set(ref, {
+      parentUid,
+      requesterUid,
+      attempts: attempts + 1,
+      windowStartedAtEpochMs,
+      updatedAtEpochMs: now
+    }, { merge: true });
+  });
+}
+
+async function clearParentPinAttempts(parentUid, requesterUid) {
+  await parentPinAttemptRef(parentUid, requesterUid).delete();
+}
+
 exports.changeParentPin = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in first.");
@@ -135,11 +171,13 @@ exports.verifyParentPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  await consumeParentPinAttempt(parentUid, request.auth.uid);
   const actual = hashPin(pin, salt);
   const matches = crypto.timingSafeEqual(
     Buffer.from(actual, "hex"),
     Buffer.from(expected, "hex")
   );
+  if (matches) await clearParentPinAttempts(parentUid, request.auth.uid);
 
   return { ok: matches };
 });
@@ -176,6 +214,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  await consumeParentPinAttempt(parentUid, request.auth.uid);
   const actual = hashPin(pin, salt);
   const expectedBuffer = Buffer.from(expected, "hex");
   const actualBuffer = Buffer.from(actual, "hex");
@@ -183,6 +222,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
       !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
     return { ok: false, stoppedCount: 0 };
   }
+  await clearParentPinAttempts(parentUid, request.auth.uid);
 
   const snapshot = await db.collection("mediaSessions")
     .where("targetDeviceId", "==", request.auth.uid)
