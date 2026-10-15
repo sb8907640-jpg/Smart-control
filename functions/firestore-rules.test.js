@@ -173,7 +173,7 @@ async function main() {
       { status: "STOPPED" }
     ));
     await assertFails(setDoc(
-      doc(mediaController.firestore(), "mediaSessions", "session-1/iceCandidates/candidate-disabled"),
+      doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/candidate-disabled"),
       { candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0 }
     ));
 
