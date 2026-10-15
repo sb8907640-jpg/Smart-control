@@ -178,6 +178,25 @@ test("health endpoint fails closed for production without residency configuratio
 });
 
 
+test("production CORS rejects browser origins when no allowlist is configured", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousCorsOrigin = process.env.CORS_ORIGIN;
+  try {
+    process.env.NODE_ENV = "production";
+    delete process.env.CORS_ORIGIN;
+    const app = createApp();
+    await withServer(app, async base => {
+      const response = await fetch(base + "/healthz", {
+        headers: { origin: "https://untrusted.example" }
+      });
+      assert.equal(response.status, 403);
+    });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousNodeEnv;
+    if (previousCorsOrigin === undefined) delete process.env.CORS_ORIGIN; else process.env.CORS_ORIGIN = previousCorsOrigin;
+  }
+});
+
 test("pairing invitation requires valid relationship selections", async () => {
   const app = createApp({
     verifyIdToken: async () => ({ uid: "sender-1" }),
