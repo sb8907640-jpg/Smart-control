@@ -121,6 +121,10 @@ check("Audit-root admin callable checks account suspension",
     auditAnchorBlock.includes("await assertAccountActive(request.auth.uid)"),
   "A suspended or blocked admin cannot use the audit anchoring callable.");
 
+check("Owner allowlist sync preserves explicitly role-assigned Owners",
+  functionsIndex.includes('currentRole === "SUPER_ADMIN" || currentRole === "OWNER" || claims.owner === true'),
+  "Removing an email/mobile allowlist entry revokes only the generic admin claim and does not demote a separately assigned Owner role.");
+
 check("Media approval is server-authorized and policy-gated",
   read("functions/index.js").includes("exports.approveMediaSession") &&
     read("functions/spec/media-policy.js").includes("globalFeaturesEnabled !== true") &&

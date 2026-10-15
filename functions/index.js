@@ -606,7 +606,10 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     }
     const claims = { ...(user.customClaims || {}) };
     const currentRole = normalizeRole(claims.role);
-    if (currentRole === "SUPER_ADMIN") continue;
+    // An explicitly role-assigned Owner is independent of the email/mobile
+    // allowlist. Only revoke the generic admin claim granted by this allowlist
+    // sync; never demote a separately assigned OWNER or SUPER_ADMIN role.
+    if (currentRole === "SUPER_ADMIN" || currentRole === "OWNER" || claims.owner === true) continue;
     delete claims.admin;
     delete claims.owner;
     if (currentRole === "OWNER") claims.role = "USER";
