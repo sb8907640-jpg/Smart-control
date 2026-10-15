@@ -248,6 +248,28 @@ function requireAdmin(request) {
   }
 }
 
+async function requireOwnerAccountManager(request) {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in first.");
+  }
+  const claims = request.auth.token || {};
+  const role = normalizeRole(claims.role);
+  if (claims.owner === true || role === "OWNER" || role === "SUPER_ADMIN") return;
+
+  const snapshot = await db.collection("ownerAccounts").doc("config").get();
+  const config = snapshot.exists ? snapshot.data() || {} : {};
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = String(claims.phone_number || "").trim();
+  const emails = Array.isArray(config.emails)
+    ? config.emails.map(value => String(value).trim().toLowerCase())
+    : [];
+  const mobiles = Array.isArray(config.mobiles)
+    ? config.mobiles.map(value => String(value).trim())
+    : [];
+  if ((email && emails.includes(email)) || (phone && mobiles.includes(phone))) return;
+  throw new HttpsError("permission-denied", "Only a configured Owner or Super Admin can manage Owner Accounts.");
+}
+
 async function findAuthUser(identifier) {
   try {
     if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
@@ -380,7 +402,7 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireOwnerAccountManager(request);
 
   const emails = Array.isArray(request.data?.emails)
     ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
