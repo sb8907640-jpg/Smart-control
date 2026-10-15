@@ -196,6 +196,15 @@ class MediaSessionViewModel @Inject constructor(
         selectedId.value = null
     }
 
+    fun cleanupStoppedSession(sessionId: String) = viewModelScope.launch {
+        // The other peer or the unpair flow may stop a session remotely. Release
+        // local capture/peer resources without attempting another status transition.
+        engine.stop(sessionId)
+        MediaProjectionForegroundService.stop(context)
+        FamilySafetyService.setIdle(context)
+        if (selectedId.value == sessionId) selectedId.value = null
+    }
+
     override fun onCleared() {
         engine.release()
         FamilySafetyService.setIdle(context)
