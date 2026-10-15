@@ -376,6 +376,15 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     revoked += 1;
   }
 
+  // Persist the latest owner identifier list. Without this write, later syncs
+  // compare against a stale/empty profile and removed owners may keep admin access.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails,
+    mobiles,
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  });
+
   return { ok: true, granted, revoked, unresolved };
 });
 
