@@ -179,6 +179,14 @@ check("Sender can cancel an approved transfer before upload starts",
     read("functions/firestore-rules.test.js").includes("approved-cancelled-transfer"),
   "A failed upload can cancel an approved-but-not-uploading request instead of leaving it stuck.");
 
+const locationSharingViewModel = read("app/src/main/java/com/smartcontrol/presentation/location/LocationSharingViewModel.kt");
+check("Location sharing uses a fresh fix and its real capture timestamp",
+  locationSharingViewModel.includes("getCurrentLocation(priority, CancellationTokenSource().token)") &&
+    locationSharingViewModel.includes("val capturedAtEpochMs = location.time") &&
+    locationSharingViewModel.includes("ageMs > 2 * 60 * 1000L") &&
+    locationSharingViewModel.includes("SharedLocation(uid, location.latitude, location.longitude, location.accuracy, capturedAtEpochMs)"),
+  "The app does not label a stale last-known coordinate as freshly captured location.");
+
 check("Location, SOS, and health sharing enforce Owner policy server-side",
   firestoreRules.includes("featureEnabledFor(uid, 'LOCATION')") &&
     firestoreRules.includes("featureEnabledFor(uid, 'SOS_ALERTS')") &&

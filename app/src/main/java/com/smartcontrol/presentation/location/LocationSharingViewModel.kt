@@ -8,6 +8,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.smartcontrol.data.location.FirestoreLocationSharingRepository
 import com.smartcontrol.domain.location.SharedLocation
 import com.google.firebase.auth.FirebaseAuth
@@ -72,16 +74,27 @@ class LocationSharingViewModel @Inject constructor(
             _status.value = "Allow location permission in Android Settings first."
             return@launch
         }
+        val priority = if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        ) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
         val location = try {
-            LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
+            LocationServices.getFusedLocationProviderClient(context)
+                .getCurrentLocation(priority, CancellationTokenSource().token)
+                .await()
         } catch (error: Exception) {
-            _status.value = error.message ?: "Could not read the current location."
+            _status.value = error.message ?: "Could not obtain a current location fix."
             return@launch
         } ?: run {
-            _status.value = "The device has no recent location fix yet."
+            _status.value = "No current location fix is available. Turn on Location and try again."
             return@launch
         }
-        val shared = SharedLocation(uid, location.latitude, location.longitude, location.accuracy, System.currentTimeMillis())
+        val capturedAtEpochMs = location.time
+        val ageMs = System.currentTimeMillis() - capturedAtEpochMs
+        if (capturedAtEpochMs <= 0L || ageMs > 2 * 60 * 1000L) {
+            _status.value = "The location fix is older than two minutes. Try again after the device gets a fresh fix."
+            return@launch
+        }
+        val shared = SharedLocation(uid, location.latitude, location.longitude, location.accuracy, capturedAtEpochMs)
         try {
             repository.publish(shared)
             _lastLocation.value = shared
