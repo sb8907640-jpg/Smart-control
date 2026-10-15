@@ -121,15 +121,20 @@ check("Remote commands require an ACTIVE session and visible indicator",
   read("app/src/main/java/com/smartcontrol/domain/control/RemoteCommandSessionGate.kt").includes("session.status != SessionStatus.ACTIVE") &&
     read("app/src/main/java/com/smartcontrol/domain/control/RemoteCommandSessionGate.kt").includes("visibleIndicatorActive"),
   "APPROVED is not sufficient for command delivery.");
-check("Suspended accounts are blocked across API, Functions, and Firestore",
+check("Suspended and Owner-blocked accounts are denied across service layers",
   firestoreRules.includes("function accountActive()") &&
+    firestoreRules.includes("userAccess/$(request.auth.uid)") &&
     read("storage.rules").includes("function accountActive()") &&
+    read("storage.rules").includes("userAccess/$(request.auth.uid)") &&
     read("backend/src/owner-panel.js").includes("auth.updateUser(id, { disabled: status !== \"ACTIVE\" })") &&
     read("backend/src/owner-panel.js").includes("auth.revokeRefreshTokens(id)") &&
+    read("backend/src/app.js").includes("accessBlocked = access.exists") &&
+    read("backend/src/server.js").includes("accessBlocked = access.exists") &&
     read("functions/index.js").includes("async function assertAccountActive(uid)") &&
-    read("functions/billing.js").includes("This account is suspended.") &&
-    read("functions/gateway-permit.js").includes("This account is suspended."),
-  "Suspension revokes backend sessions and prevents continued direct Firestore/media access.");
+    read("functions/index.js").includes("accessSnapshot.data()?.blocked === true") &&
+    read("functions/billing.js").includes("accessSnapshot.data()?.blocked === true") &&
+    read("functions/gateway-permit.js").includes("accessSnapshot.data()?.blocked === true"),
+  "Suspension revokes backend sessions and blocks Firestore, Storage, Functions, billing, and realtime access.");
 check("File transfer requests require an active paired receiver",
   firestoreRules.includes("data.pairingActive == true") &&
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
