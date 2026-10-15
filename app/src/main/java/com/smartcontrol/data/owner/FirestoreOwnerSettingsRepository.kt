@@ -107,9 +107,11 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             firestore.collection("featurePolicy").document("global"),
             encodeFeaturePolicy(settings)
         )
+        // SetOptions.mergeFields accepts field-name strings in the Firebase
+        // Android SDK used by this project. These are top-level projection fields.
         val ownerPolicyFields = listOf(
-            FieldPath.of("ownerEnabled"),
-            FieldPath.of("featureOverrides")
+            "ownerEnabled",
+            "featureOverrides"
         )
         settings.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
             batch.set(
