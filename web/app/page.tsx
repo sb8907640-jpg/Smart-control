@@ -85,9 +85,12 @@ export default function Home() {
   }, []);
 
   async function signIn() {
+    if (!auth) {
+      setStatus("Authentication is still initializing. Please try again in a moment.");
+      return;
+    }
     setBusy(true);
     setStatus("Signing in with Google...");
-    if (!auth) return;
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       setStatus("Signed in. Verifying backend session...");
@@ -160,8 +163,11 @@ export default function Home() {
   }
 
   async function logout() {
+    if (!auth) {
+      setStatus("Authentication is still initializing. Please try again in a moment.");
+      return;
+    }
     setBusy(true);
-    if (!auth) return;
     try {
       await signOut(auth);
       setSession(null);
