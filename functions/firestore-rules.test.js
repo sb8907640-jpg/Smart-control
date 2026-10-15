@@ -29,6 +29,9 @@ async function main() {
     const owner = env.authenticatedContext("owner-user", { admin: true, role: "OWNER" });
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
+    const adminOnly = env.authenticatedContext("admin-only", { admin: true, role: "ADMIN" });
+    const allowlistOwner = env.authenticatedContext("allowlist-owner", { email: "allowlist-owner@example.test" });
+    const mobileAllowlistOwner = env.authenticatedContext("mobile-allowlist-owner", { phone_number: "+15551234567" });
     await env.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "featurePolicy", "global"), {
         globalFeaturesEnabled: true,
@@ -41,6 +44,10 @@ async function main() {
       await setDoc(doc(context.firestore(), "users", "blocked-user"), { status: "SUSPENDED" });
       await setDoc(doc(context.firestore(), "users", "blocked-by-access"), { status: "ACTIVE" });
       await setDoc(doc(context.firestore(), "userAccess", "blocked-by-access"), { blocked: true });
+      await setDoc(doc(context.firestore(), "ownerAccounts", "config"), {
+        emails: ["allowlist-owner@example.test"],
+        mobiles: ["+15551234567"]
+      });
     });
     const blocked = env.authenticatedContext("blocked-user");
     const blockedByAccess = env.authenticatedContext("blocked-by-access");
@@ -113,6 +120,30 @@ async function main() {
 
     await assertSucceeds(setDoc(doc(owner.firestore(), "pairingCodes", "c".repeat(48)), {
       deviceUid: "owner-user",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertFails(setDoc(doc(adminOnly.firestore(), "pairingCodes", "g".repeat(48)), {
+      deviceUid: "admin-only",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertSucceeds(setDoc(doc(allowlistOwner.firestore(), "pairingCodes", "h".repeat(48)), {
+      deviceUid: "allowlist-owner",
+      expiresAt: 253402300799000,
+      createdAt: now,
+      expiryMinutes: 0,
+      expiryMode: "NO_EXPIRY"
+    }));
+
+    await assertSucceeds(setDoc(doc(mobileAllowlistOwner.firestore(), "pairingCodes", "i".repeat(48)), {
+      deviceUid: "mobile-allowlist-owner",
       expiresAt: 253402300799000,
       createdAt: now,
       expiryMinutes: 0,

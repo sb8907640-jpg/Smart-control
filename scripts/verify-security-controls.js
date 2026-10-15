@@ -78,11 +78,14 @@ check("Server computes the pairing policy",
   read("functions/index.js").includes("exports.getDevicePairingPolicy") &&
     read("functions/index.js").includes("PairingTokenExpiryMinutes"),
   "Plan expiry is read server-side without exposing owner settings.");
-check("Pairing codes enforce Owner-only no-expiry",
+check("Pairing codes enforce configured-Owner-only no-expiry",
   firestoreRules.includes("request.resource.data.expiresAt <= request.time.toMillis() + 3600000") &&
-    firestoreRules.includes("request.auth.token.role == 'OWNER'") &&
-    firestoreRules.includes("request.resource.data.expiryMode == 'NO_EXPIRY'"),
-  "Non-owner pairing codes are limited to 60 minutes.");
+    firestoreRules.includes("function configuredOwner()") &&
+    firestoreRules.includes("ownerAccounts/config") &&
+    firestoreRules.includes("request.resource.data.expiryMode == 'NO_EXPIRY'") &&
+    read("functions/firestore-rules.test.js").includes("adminOnly.firestore()") &&
+    read("functions/firestore-rules.test.js").includes("allowlistOwner.firestore()"),
+  "Only OWNER/SUPER_ADMIN role claims or verified Owner allowlist identities can bypass pairing-code expiry.");
 check("Pairing claim consumes code only with matching atomic device link",
   firestoreRules.includes("getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid))") &&
     firestoreRules.includes("pairingToken == token"),

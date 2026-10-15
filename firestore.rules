@@ -14,6 +14,23 @@ service cloud.firestore {
       return request.auth != null && profileActive(request.auth.uid);
     }
 
+    // Match the server's Owner resolution: role claims or the verified Owner
+    // allowlist. A generic admin claim alone must not bypass pairing-code expiry.
+    function configuredOwner() {
+      let ownerPath = /databases/$(database)/documents/ownerAccounts/config;
+      let ownerConfig = exists(ownerPath) ? get(ownerPath).data : {};
+      let ownerEmails = ownerConfig.get('emails', []);
+      let ownerMobiles = ownerConfig.get('mobiles', []);
+      let email = request.auth.token.get('email', '');
+      let phone = request.auth.token.get('phone_number', '');
+      return request.auth != null && (
+        request.auth.token.get('owner', false) == true
+        || request.auth.token.get('role', '') in ['OWNER', 'SUPER_ADMIN']
+        || (email is string && ownerEmails is list && ownerEmails.hasAny([email]))
+        || (phone is string && ownerMobiles is list && ownerMobiles.hasAny([phone]))
+      );
+    }
+
     // File transfer policy is enforced by Firestore and Storage Rules, not only
     // by Compose button visibility. Missing global policy fails closed; a missing
     // per-user override means no additional restriction, matching the client policy.
@@ -163,7 +180,7 @@ service cloud.firestore {
           )
           || (
             request.resource.data.expiryMode == 'NO_EXPIRY'
-            && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
+            && configuredOwner()
           )
         );
       allow read: if accountActive() && profileActive(resource.data.deviceUid) && resource.data.expiresAt > request.time.toMillis();
