@@ -15,7 +15,8 @@ fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewMode
     val last by viewModel.lastLocation.collectAsState()
     val status by viewModel.status.collectAsState()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (viewModel.hasPermission) viewModel.publishCurrentLocation()
+        // Always let the ViewModel surface a clear message when Android denies access.
+        viewModel.publishCurrentLocation()
     }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Location Sharing", style = MaterialTheme.typography.headlineSmall)
