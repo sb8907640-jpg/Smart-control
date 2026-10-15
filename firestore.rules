@@ -168,7 +168,9 @@ service cloud.firestore {
       // The controller writes the answer SDP. Each side may only write its own signaling field.
       allow update: if accountActive() && (
         (
-          resource.data.targetDeviceId == request.auth.uid
+          profileActive(resource.data.controllerUid)
+          && profileActive(resource.data.targetDeviceId)
+          && resource.data.targetDeviceId == request.auth.uid
           && resource.data.controllerUid == request.resource.data.controllerUid
           && resource.data.targetDeviceId == request.resource.data.targetDeviceId
           && resource.data.capabilities == request.resource.data.capabilities
@@ -192,7 +194,9 @@ service cloud.firestore {
         )
         ||
         (
-          resource.data.controllerUid == request.auth.uid
+          profileActive(resource.data.controllerUid)
+          && profileActive(resource.data.targetDeviceId)
+          && resource.data.controllerUid == request.auth.uid
           && resource.data.controllerUid == request.resource.data.controllerUid
           && resource.data.targetDeviceId == request.resource.data.targetDeviceId
           && resource.data.capabilities == request.resource.data.capabilities
@@ -213,6 +217,13 @@ service cloud.firestore {
               && request.resource.data.answerSdp is string
             )
           )
+        )
+        || (
+          // Either active participant may terminate a session if the other
+          // account is blocked; no other status or SDP update is allowed.
+          (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'STOPPED'
         )
       );
       allow delete: if accountActive() && resource.data.controllerUid == request.auth.uid;
