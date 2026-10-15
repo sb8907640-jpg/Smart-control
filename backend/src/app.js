@@ -20,7 +20,9 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.length === 0 && process.env.NODE_ENV !== "production") return callback(null, true);
       return callback(new Error("CORS origin is not allowed."));
     },
     credentials: true
@@ -227,8 +229,20 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     try {
       if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
       if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
-      const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
-      return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+      const [ownDevice, controlledDevices] = await Promise.all([
+        firestore.collection("devices").doc(req.user.uid).get(),
+        firestore.collection("devices")
+          .where("controllerUid", "==", req.user.uid)
+          .where("pairingActive", "==", true)
+          .limit(100)
+          .get()
+      ]);
+      const devicesById = new Map();
+      if (ownDevice.exists) devicesById.set(ownDevice.id, { id: ownDevice.id, ...ownDevice.data() });
+      for (const device of controlledDevices.docs) {
+        devicesById.set(device.id, { id: device.id, ...device.data() });
+      }
+      return res.json({ devices: [...devicesById.values()] });
     } catch (error) { next(error); }
   });
 

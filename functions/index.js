@@ -131,7 +131,8 @@ exports.verifyParentPin = onCall(async (request) => {
 
   const salt = secretSnap.get("salt");
   const expected = secretSnap.get("pinHash");
-  if (typeof salt !== "string" || typeof expected !== "string") {
+  if (typeof salt !== "string" || !/^[0-9a-f]{32}$/i.test(salt) ||
+      typeof expected !== "string" || !/^[0-9a-f]{64}$/i.test(expected)) {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
@@ -257,24 +258,39 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   const target = await getAuth().getUser(uid);
   const action = typeof request.data?.action === "string" ? request.data.action : "set";
-  const role = normalizeRole(request.data?.role);
-  if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
-    throw new HttpsError("invalid-argument", "Unsupported user role.");
-  }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
-  }
+  const actorRole = normalizeRole(
+    request.auth.token?.role || (request.auth.token?.admin === true ? "OWNER" : "USER")
+  );
+  const targetRole = normalizeRole(
+    target.customClaims?.role || (target.customClaims?.admin === true ? "OWNER" : "USER")
+  );
 
   if (action === "set") {
+    if (typeof request.data?.role === "string" &&
+        !ROLES.includes(request.data.role.trim().toUpperCase())) {
+      throw new HttpsError("invalid-argument", "Unsupported user role.");
+    }
+    const role = typeof request.data?.role === "string"
+      ? normalizeRole(request.data.role)
+      : targetRole;
+    if (uid === request.auth.uid && role !== actorRole) {
+      throw new HttpsError("permission-denied", "You cannot change your own role.");
+    }
+    if (uid !== request.auth.uid &&
+        (!canManageRole(actorRole, targetRole) || !canManageRole(actorRole, role))) {
+      throw new HttpsError("permission-denied", "Insufficient role authority.");
+    }
+
     const access = request.data?.access === true;
     const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
     const claims = { ...(target.customClaims || {}), role, access };
-    if (role === "SUPER_ADMIN") {
+    if (role === "SUPER_ADMIN" || role === "OWNER") {
       claims.admin = true;
     } else if (target.uid !== request.auth.uid) {
       delete claims.admin;
     }
+    if (role === "OWNER") claims.owner = true;
+    else delete claims.owner;
     await getAuth().setCustomUserClaims(uid, claims);
     const updatedAtEpochMs = Date.now();
     await db.collection("userAccess").doc(uid).set({
@@ -299,6 +315,9 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (action === "block" || action === "unblock") {
     if (uid === request.auth.uid && action === "block") {
       throw new HttpsError("failed-precondition", "You cannot block your own admin account.");
+    }
+    if (uid !== request.auth.uid && !canManageRole(actorRole, targetRole)) {
+      throw new HttpsError("permission-denied", "Insufficient role authority to change this account's status.");
     }
     const disabled = action === "block";
     await getAuth().updateUser(uid, { disabled });
@@ -343,6 +362,14 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   if (requestedIdentifiers.size === 0) {
     throw new HttpsError("invalid-argument", "At least one owner email or mobile is required.");
   }
+  const actor = await getAuth().getUser(request.auth.uid);
+  const actorIdentifiers = [
+    String(actor.email || "").trim().toLowerCase(),
+    String(actor.phoneNumber || "").trim()
+  ].filter(Boolean);
+  if (!actorIdentifiers.some((identifier) => requestedIdentifiers.has(identifier))) {
+    throw new HttpsError("failed-precondition", "Keep your own Owner email or mobile in the configured list.");
+  }
 
   const currentProfile = await db.collection("ownerAccounts").doc("config").get();
   const previous = currentProfile.exists ? currentProfile.data() : {};
@@ -354,14 +381,29 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedRequested = [];
 
+  // Resolve every requested identity before changing any claims. A typo must
+  // not leave a partially synchronized owner list or revoke previous owners.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
-    const claims = { ...(user.customClaims || {}), admin: true };
+    if (!user) unresolved.push(identifier);
+    else resolvedRequested.push({ identifier, user });
+  }
+  if (unresolved.length > 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      "These owner accounts are not registered in Firebase Auth: " + unresolved.join(", ")
+    );
+  }
+
+  const resolvedUsers = new Map(resolvedRequested.map(({ user }) => [user.uid, user]));
+  for (const user of resolvedUsers.values()) {
+    const previousClaims = user.customClaims || {};
+    const role = previousClaims.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
+    const claims = { ...previousClaims, role, admin: true };
+    if (role === "OWNER") claims.owner = true;
+    else delete claims.owner;
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
@@ -369,12 +411,31 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   for (const identifier of previousIdentifiers) {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    if (!user) continue;
+    const currentIdentifiers = [
+      String(user.email || "").trim().toLowerCase(),
+      String(user.phoneNumber || "").trim()
+    ].filter(Boolean);
+    // An owner may remove one alias while keeping another configured alias.
+    if (currentIdentifiers.some((value) => requestedIdentifiers.has(value))) continue;
+    if (user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
+    if (claims.role === "SUPER_ADMIN") continue;
     delete claims.admin;
+    delete claims.owner;
+    if (claims.role === "OWNER") delete claims.role;
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  // Persist the latest configured owner list so removed identifiers can be
+  // detected and their admin claims revoked on the next synchronization.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails,
+    mobiles,
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
 
   return { ok: true, granted, revoked, unresolved };
 });

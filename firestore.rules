@@ -56,10 +56,11 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Payment records are created and updated only by trusted server functions.
+      // Client writes could forge SUCCESS payments or manipulate the ledger.
+      allow create, update, delete: if false;
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
@@ -71,8 +72,8 @@ service cloud.firestore {
     match /emiSchedule/{scheduleId} {
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // EMI schedules are validated and created by the applyEmi callable only.
+      allow create, update, delete: if false;
     }
 
     match /coupons/{couponId} {
@@ -118,7 +119,12 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      // A token holder may fetch a known high-entropy code directly, but must
+      // not list the collection and enumerate every user's active pairing token.
+      allow get: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
+      allow list: if request.auth != null
+        && resource.data.deviceUid == request.auth.uid
+        && resource.data.expiresAt > request.time.toMillis();
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
       allow delete: if request.auth != null && (
@@ -136,6 +142,9 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
+        && request.resource.data.status == 'REQUESTED'
+        && request.resource.data.createdAt is int
+        && request.resource.data.capabilities is list
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
@@ -197,6 +206,9 @@ service cloud.firestore {
 
       match /iceCandidates/{candidateId} {
         allow create: if request.auth != null
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.candidate is string
+          && get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.status in ['APPROVED', 'ACTIVE']
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
         allow read: if request.auth != null
@@ -329,7 +341,8 @@ service cloud.firestore {
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedBy'])
-          && request.resource.data.acknowledged == true;
+          && request.resource.data.acknowledged == true
+          && request.resource.data.acknowledgedBy == request.auth.uid;
       }
     }
   }

@@ -6,7 +6,9 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
+  getDocs,
   setDoc,
   updateDoc,
   runTransaction
@@ -37,6 +39,22 @@ async function main() {
       expiryMode: "PLAN",
       senderRole: "Father",
       receiverRole: "Son"
+    }));
+    // A signed-in user must not be able to enumerate other users' pairing tokens.
+    await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
+
+    // Financial records must be created by trusted callable functions only.
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      status: "SUCCESS",
+      amountMinor: 1,
+      createdAtEpochMs: now
+    }));
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-emi"), {
+      userId: "normal-user",
+      paymentId: "forged-payment",
+      tenureMonths: 12,
+      status: "PENDING"
     }));
 
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "f".repeat(48)), {
@@ -103,6 +121,13 @@ async function main() {
     const mediaController = env.authenticatedContext("media-controller");
     const mediaTarget = env.authenticatedContext("media-target");
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "session-bypass"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "ACTIVE",
+      createdAt: Date.now()
+    }));
     await assertSucceeds(setDoc(sessionRef, {
       controllerUid: "media-controller",
       targetDeviceId: "media-target",
@@ -110,11 +135,57 @@ async function main() {
       status: "REQUESTED",
       createdAt: Date.now()
     }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/early-candidate"), {
+      senderUid: "media-controller",
+      candidate: "candidate:early",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "mediaSessions/session-1/iceCandidates/target-candidate"), {
+      senderUid: "media-target",
+      candidate: "candidate:target",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/forged-candidate"), {
+      senderUid: "media-target",
+      candidate: "candidate:forged",
+      sdpMid: "0",
+      sdpMLineIndex: 0
+    }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { offerSdp: "test-offer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
+
+    const alertRef = doc(mediaTarget.firestore(), "devices/media-target/statusAlerts/alert-1");
+    await assertSucceeds(setDoc(alertRef, {
+      alertId: "alert-1",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Test alert",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+    await assertSucceeds(updateDoc(doc(mediaController.firestore(), "devices/media-target/statusAlerts/alert-1"), {
+      acknowledged: true,
+      acknowledgedBy: "media-controller"
+    }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices/media-target/statusAlerts/alert-2"), {
+      alertId: "alert-2",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Test alert",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+    await assertFails(updateDoc(doc(mediaController.firestore(), "devices/media-target/statusAlerts/alert-2"), {
+      acknowledged: true,
+      acknowledgedBy: "media-target"
+    }));
 
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
@@ -136,7 +207,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry/claim/listing, payment and EMI write protection, media-session approval, ICE sender ownership, SDP permissions, remote SOS acknowledgements, and paired-device file transfers.");
   } finally {
     await env.cleanup();
   }

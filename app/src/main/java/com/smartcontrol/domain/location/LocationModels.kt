@@ -11,4 +11,5 @@ data class SharedLocation(
 interface LocationSharingRepository {
     suspend fun publish(location: SharedLocation)
     suspend fun stopSharing(deviceId: String)
+    fun observe(deviceId: String): kotlinx.coroutines.flow.Flow<SharedLocation?>
 }

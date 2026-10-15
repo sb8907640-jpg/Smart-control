@@ -3,6 +3,7 @@ package com.smartcontrol.presentation.location
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
@@ -10,29 +11,65 @@ import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
 import com.smartcontrol.data.location.FirestoreLocationSharingRepository
 import com.smartcontrol.domain.location.SharedLocation
+import com.smartcontrol.domain.pairing.PairingRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LocationSharingViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: FirestoreLocationSharingRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    pairingRepository: PairingRepository
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
     private val _sharing = MutableStateFlow(false)
     val sharing: StateFlow<Boolean> = _sharing
     private val _lastLocation = MutableStateFlow<SharedLocation?>(null)
     val lastLocation: StateFlow<SharedLocation?> = _lastLocation
+    private val _remoteLocations = MutableStateFlow<List<SharedLocation>>(emptyList())
+    val remoteLocations: StateFlow<List<SharedLocation>> = _remoteLocations.asStateFlow()
     val hasPermission: Boolean
         get() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private val privacyListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "allow_location_sharing" &&
+            !privacyPrefs.getBoolean("allow_location_sharing", true)
+        ) {
+            stopSharing()
+        }
+    }
+
+    init {
+        privacyPrefs.registerOnSharedPreferenceChangeListener(privacyListener)
+        if (!privacyPrefs.getBoolean("allow_location_sharing", true)) stopSharing()
+        viewModelScope.launch {
+            pairingRepository.observeControlledDevices()
+                .map { devices -> devices.map { it.deviceUid }.filter(String::isNotBlank).distinct() }
+                .distinctUntilChanged()
+                .flatMapLatest { deviceIds ->
+                    if (deviceIds.isEmpty()) flowOf(emptyList())
+                    else combine(deviceIds.map { id -> repository.observe(id) }) { locations ->
+                        locations.filterNotNull().sortedByDescending { it.capturedAtEpochMs }
+                    }
+                }
+                .collect { _remoteLocations.value = it }
+        }
+    }
 
     @SuppressLint("MissingPermission")
     fun publishCurrentLocation() = viewModelScope.launch {
@@ -50,5 +87,10 @@ class LocationSharingViewModel @Inject constructor(
         val uid = auth.currentUser?.uid ?: return@launch
         repository.stopSharing(uid)
         _sharing.value = false
+    }
+
+    override fun onCleared() {
+        privacyPrefs.unregisterOnSharedPreferenceChangeListener(privacyListener)
+        super.onCleared()
     }
 }

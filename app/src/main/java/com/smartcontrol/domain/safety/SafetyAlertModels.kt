@@ -11,6 +11,6 @@ data class SafetyAlert(
 
 interface SafetyAlertRepository {
     suspend fun create(alert: SafetyAlert): Result<Unit>
-    suspend fun acknowledge(alertId: String): Result<Unit>
+    suspend fun acknowledge(deviceId: String, alertId: String): Result<Unit>
     suspend fun observe(deviceId: String): kotlinx.coroutines.flow.Flow<List<SafetyAlert>>
 }

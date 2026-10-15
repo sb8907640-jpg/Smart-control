@@ -60,15 +60,26 @@ class FirestoreMediaSignalingRepository @Inject constructor(
     }
 
     override fun observeRemoteIceCandidates(sessionId: String): Flow<IceCandidateModel> = callbackFlow {
+        val localUid = auth.currentUser?.uid
+        if (localUid.isNullOrBlank()) {
+            close(IllegalStateException("Sign in first"))
+            return@callbackFlow
+        }
         val registration = ref(sessionId).collection("iceCandidates").addSnapshotListener { s, e ->
-            if (e != null) close(e)
-            s?.documentChanges?.filter { it.type.name == "ADDED" }?.forEach { c ->
-                trySend(IceCandidateModel(
-                    c.document.getString("candidate").orEmpty(),
-                    c.document.getString("sdpMid"),
-                    c.document.getLong("sdpMLineIndex")?.toInt()
-                ))
+            if (e != null) {
+                close(e)
+                return@addSnapshotListener
             }
+            s?.documentChanges
+                ?.filter { it.type.name == "ADDED" }
+                ?.filter { change -> change.document.getString("senderUid")?.let { it != localUid } == true }
+                ?.forEach { change ->
+                    trySend(IceCandidateModel(
+                        change.document.getString("candidate").orEmpty(),
+                        change.document.getString("sdpMid"),
+                        change.document.getLong("sdpMLineIndex")?.toInt()
+                    ))
+                }
         }
         awaitClose { registration.remove() }
     }
@@ -92,8 +103,12 @@ class FirestoreMediaSignalingRepository @Inject constructor(
     }.map { Unit }
 
     override suspend fun addLocalIceCandidate(sessionId: String, candidate: IceCandidateModel): Result<Unit> = runCatching {
+        val senderUid = auth.currentUser?.uid ?: error("Sign in first")
         ref(sessionId).collection("iceCandidates").add(mapOf(
-            "candidate" to candidate.candidate, "sdpMid" to candidate.sdpMid, "sdpMLineIndex" to candidate.sdpMLineIndex
+            "senderUid" to senderUid,
+            "candidate" to candidate.candidate,
+            "sdpMid" to candidate.sdpMid,
+            "sdpMLineIndex" to candidate.sdpMLineIndex
         )).await()
     }.map { Unit }
 

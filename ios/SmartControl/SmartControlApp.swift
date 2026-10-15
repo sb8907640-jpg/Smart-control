@@ -103,7 +103,7 @@ final class AppSession: ObservableObject {
             devices = deviceResult.devices
             systemStatus = try await status
             residency = try await residencyResult
-            remoteConfig = (try await configResult).values.compactMapValues { $0 }
+            remoteConfig = (try await configResult).values.mapValues(\.stringValue)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -155,8 +155,39 @@ struct ResidencyPolicy: Decodable {
     let supportedRegions: [String]
 }
 
+enum RemoteConfigScalar: Decodable {
+    case string(String)
+    case number(Double)
+    case boolean(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() {
+            self = .null
+        } else if let boolean = try? value.decode(Bool.self) {
+            self = .boolean(boolean)
+        } else if let number = try? value.decode(Double.self) {
+            self = .number(number)
+        } else if let string = try? value.decode(String.self) {
+            self = .string(string)
+        } else {
+            throw DecodingError.dataCorruptedError(in: value, debugDescription: "Unsupported Remote Config value.")
+        }
+    }
+
+    var stringValue: String {
+        switch self {
+        case .string(let value): return value
+        case .number(let value): return String(value)
+        case .boolean(let value): return String(value)
+        case .null: return ""
+        }
+    }
+}
+
 struct RemoteConfig: Decodable {
-    let values: [String: String?]
+    let values: [String: RemoteConfigScalar]
     let etag: String?
     let fetchedAt: String
 }

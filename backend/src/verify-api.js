@@ -71,14 +71,17 @@ class MemoryDoc {
 function seedDb() {
   return new MemoryFirestore({
     users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
-    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
+    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", pairingActive: true, connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
     pairingCodes: { "JOIN-CODE": { ownerUid: "user-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
-    subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
-    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "INITIATED" } },
+    subscriptions: {
+      "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" },
+      "sub-pending": { userId: "user-1", planId: "plan-1", status: "PENDING_PAYMENT" }
+    },
+    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-pending", amountMinor: 100, status: "INITIATED" } },
     sosAlerts: { "sos-1": { userId: "user-1", status: "TRIGGERED" } },
     freeAccessGrants: { "grant-1": { userId: "user-1", status: "ACTIVE" } }
   });
@@ -87,6 +90,8 @@ function pathFor(endpoint) {
   if (endpoint.startsWith("/api/devices/:id")) return "/api/devices/device-1";
   if (endpoint.startsWith("/api/permissions/:id")) return "/api/permissions/permission-1";
   if (endpoint.startsWith("/api/plans/:id")) return "/api/plans/plan-1";
+  if (endpoint === "/api/owner/payments/:id") return "/api/owner/payments/payment-1";
+  if (endpoint === "/api/owner/subscriptions/:id") return "/api/owner/subscriptions/sub-1";
   return endpoint;
 }
 function requestBody(endpoint) {
@@ -107,6 +112,8 @@ function requestBody(endpoint) {
   if (endpoint.includes("/admin/free-access/edit") || endpoint.includes("/admin/free-access/revoke")) return { grantId: "grant-1", reason: "integration test" };
   if (endpoint.includes("/admin/user/ban") || endpoint.includes("/admin/user/unban")) return { userId: "user-2" };
   if (endpoint.includes("/admin/system/config")) return { values: { testMode: true } };
+  if (endpoint === "/api/owner/payments/:id") return { values: { ownerNote: "integration test note" } };
+  if (endpoint === "/api/owner/subscriptions/:id") return { values: { ownerNote: "integration test note" } };
   if (endpoint.includes("/support/ticket/create")) return { subject: "Integration test", body: "HTTP verification" };
   if (endpoint.includes("/sos/cancel")) return { alertId: "sos-1" };
   if (endpoint.includes("/sos/trigger")) return { message: "integration test", latitude: 0, longitude: 0 };
@@ -132,6 +139,11 @@ function queryFor(endpoint) {
   await new Promise(resolve => server.once("listening", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
   const results = [];
+  const explicitlyDisabledLegacyPaymentRoutes = new Set([
+    "POST /api/payment/initiate",
+    "POST /api/payment/verify",
+    "POST /api/emi/apply"
+  ]);
   const planResponse = await fetch(base + "/api/plans", { headers: { authorization: "Bearer integration-token" } });
   assert.equal(planResponse.status, 200);
   const planPayload = await planResponse.json();
@@ -139,6 +151,14 @@ function queryFor(endpoint) {
   assert.equal(planPayload.plans[0].durationUnit, "MONTHS");
   assert.equal(planPayload.plans[0].linkValidityValue, 10);
   assert.equal(planPayload.plans[0].linkValidityUnit, "MINUTES");
+
+  const devicesResponse = await fetch(base + "/api/devices", {
+    headers: { authorization: "Bearer integration-token" }
+  });
+  assert.equal(devicesResponse.status, 200);
+  const devicesPayload = await devicesResponse.json();
+  assert.equal(devicesPayload.devices.length, 1, "Firestore fallback should list actively paired devices");
+  assert.equal(devicesPayload.devices[0].id, "device-1");
 
   const linkResponse = await fetch(base + "/api/link/generate", {
     method: "POST",
@@ -175,7 +195,8 @@ function queryFor(endpoint) {
         body: method === "GET" ? undefined : JSON.stringify(requestBody(endpoint))
       });
       const body = await response.text();
-      const ok = response.status >= 200 && response.status < 300;
+      const ok = (response.status >= 200 && response.status < 300) ||
+        (response.status === 410 && explicitlyDisabledLegacyPaymentRoutes.has(route));
       results.push({ route, status: response.status, ok });
       if (!ok) throw new Error(route + " returned HTTP " + response.status + ": " + body.slice(0, 500));
     }
@@ -184,5 +205,19 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
+  const unsafePaymentEdit = await fetch(base + "/api/owner/payments/payment-1", {
+    method: "PATCH",
+    headers: {
+      authorization: "Bearer integration-token",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ values: { status: "SUCCESS" } })
+  });
+  assert.equal(unsafePaymentEdit.status, 400, "owner REST edits must not forge payment status");
+
+  const paymentAfterLegacyVerify = await db.collection("payments").doc("payment-1").get();
+  const subscriptionAfterLegacyVerify = await db.collection("subscriptions").doc("sub-pending").get();
+  assert.equal(paymentAfterLegacyVerify.data().status, "INITIATED", "legacy verification must not mark an unverified payment successful");
+  assert.equal(subscriptionAfterLegacyVerify.data().status, "PENDING_PAYMENT", "legacy verification must not activate a subscription");
+  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned success or an explicitly disabled legacy-payment response.");
 })();

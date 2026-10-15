@@ -26,6 +26,9 @@ function makeOwnerTestDb() {
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
     freeAccessGrants: new Map(),
+    featurePolicy: new Map(),
+    featurePolicyUsers: new Map(),
+    ownerSettingsHistory: [],
     permissionHistory: new Map(),
     consentHistory: new Map()
   };
@@ -178,6 +181,25 @@ test("health endpoint fails closed for production without residency configuratio
 });
 
 
+test("production CORS rejects browser origins when no allowlist is configured", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousCorsOrigin = process.env.CORS_ORIGIN;
+  try {
+    process.env.NODE_ENV = "production";
+    delete process.env.CORS_ORIGIN;
+    const app = createApp();
+    await withServer(app, async base => {
+      const response = await fetch(base + "/healthz", {
+        headers: { origin: "https://untrusted.example" }
+      });
+      assert.equal(response.status, 403);
+    });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousNodeEnv;
+    if (previousCorsOrigin === undefined) delete process.env.CORS_ORIGIN; else process.env.CORS_ORIGIN = previousCorsOrigin;
+  }
+});
+
 test("pairing invitation requires valid relationship selections", async () => {
   const app = createApp({
     verifyIdToken: async () => ({ uid: "sender-1" }),
@@ -291,6 +313,54 @@ test("WhatsApp support endpoint uses private Owner destination and creates a tic
       method: "POST", headers: { authorization: "Bearer owner-token" }
     });
     assert.equal(throttled.status, 429);
+  });
+});
+
+test("Owner payment API cannot modify financial state", async () => {
+  const db = makeOwnerTestDb();
+  db.data.payments.get("payment-1").status = "INITIATED";
+  await withOwnerServer(db, async base => {
+    const unsafe = await fetch(base + "/api/owner/payments/payment-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { status: "SUCCESS", amount: 1 } })
+    });
+    assert.equal(unsafe.status, 400);
+    assert.equal(db.data.payments.get("payment-1").status, "INITIATED");
+    assert.equal(db.data.payments.get("payment-1").amount, 100);
+
+    const note = await fetch(base + "/api/owner/payments/payment-1", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ values: { ownerNote: "Reconciliation checked" } })
+    });
+    assert.equal(note.status, 200);
+    assert.equal(db.data.payments.get("payment-1").ownerNote, "Reconciliation checked");
+    assert.equal(db.data.payments.get("payment-1").status, "INITIATED");
+  });
+});
+
+test("generic Owner settings API cannot add raw payment secrets", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/settings", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        values: {
+          masterConfig: {
+            ownerControl: {
+              editableValues: {
+                "payment.razorpayKeySecret": "raw-secret-should-never-be-stored"
+              }
+            }
+          }
+        }
+      })
+    });
+    assert.equal(response.status, 200);
+    const editable = db.data.ownerSettings.get("global").masterConfig.ownerControl.editableValues;
+    assert.equal(editable["payment.razorpayKeySecret"], undefined);
   });
 });
 
