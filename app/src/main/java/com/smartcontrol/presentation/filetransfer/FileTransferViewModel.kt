@@ -131,7 +131,12 @@ class FileTransferViewModel @Inject constructor(
             return@launch
         }
         val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
-        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = try {
+            repository.get(transferId)
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not load the transfer for download."
+            return@launch
+        } ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.READY) {
             _status.value = "Only the intended receiver can download a ready transfer."
             return@launch
