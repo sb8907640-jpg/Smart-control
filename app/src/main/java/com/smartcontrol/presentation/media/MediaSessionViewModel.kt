@@ -135,13 +135,15 @@ class MediaSessionViewModel @Inject constructor(
                 camera = MediaCapability.CAMERA in session.capabilities,
                 microphone = MediaCapability.MICROPHONE in session.capabilities
             )
+            if (MediaCapability.SCREEN_SHARING in session.capabilities) {
+                MediaProjectionForegroundService.start(context)
+            }
         } catch (error: Exception) {
+            MediaProjectionForegroundService.stop(context)
+            FamilySafetyService.setIdle(context)
             signaling.stopSession(session.sessionId)
             lastError.value = error.message ?: "The foreground media session could not start."
             return@launch
-        }
-        if (MediaCapability.SCREEN_SHARING in session.capabilities) {
-            MediaProjectionForegroundService.start(context)
         }
         val iceServers = try {
             resolveIceServers(session.sessionId)
