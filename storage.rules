@@ -14,9 +14,14 @@ service firebase.storage {
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
         && transferDoc().data.status in ['APPROVED', 'UPLOADING']
-        && request.resource.size <= 104857600
-        && (transferDoc().data.sizeBytes <= 0
-            || request.resource.size == transferDoc().data.sizeBytes);
+        && (
+          request.resource == null
+          || (
+            request.resource.size <= 104857600
+            && (transferDoc().data.sizeBytes <= 0
+                || request.resource.size == transferDoc().data.sizeBytes)
+          )
+        );
 
       allow read: if request.auth != null
         && (
