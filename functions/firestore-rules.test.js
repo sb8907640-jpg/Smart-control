@@ -109,6 +109,26 @@ async function main() {
       senderRole: "Mother",
       receiverRole: "Daughter"
     }));
+    const createToken = "g".repeat(48);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "pairingCodes", createToken), {
+        deviceUid: "new-target",
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        createdAt: Date.now(),
+        expiryMinutes: 10,
+        expiryMode: "PLAN",
+        senderRole: "Mother",
+        receiverRole: "Daughter"
+      });
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "devices", "new-target"), {
+      controllerUid: "controller-user",
+      pairingToken: createToken,
+      pairedAt: now,
+      pairingActive: true,
+      senderRole: "Mother",
+      receiverRole: "Daughter"
+    }));
     await assertSucceeds(getDoc(doc(target.firestore(), "pairingCodes", claimToken)));
     await assertFails(deleteDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
     await assertSucceeds(deleteDoc(doc(target.firestore(), "pairingCodes", claimToken)));
