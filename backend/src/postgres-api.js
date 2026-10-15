@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 
-function installPostgresRoutes(app, { pool }) {
+function installPostgresRoutes(app, { pool, authenticate = (_req, _res, next) => next() }) {
   const auth = (req, res, next) => {
     const uid = req.user?.uid;
     if (!uid) return res.status(401).json({ error: "Authentication required." });
@@ -17,7 +17,7 @@ function installPostgresRoutes(app, { pool }) {
     }
   });
 
-  app.get("/api/postgres/devices", auth, async (req, res, next) => {
+  app.get("/api/postgres/devices", authenticate, auth, async (req, res, next) => {
     try {
       const q = await pool.query(
         "SELECT id,device_key,platform,name,created_at,updated_at FROM devices WHERE owner_uid=$1 ORDER BY updated_at DESC LIMIT 100",
@@ -27,7 +27,7 @@ function installPostgresRoutes(app, { pool }) {
     } catch (e) { next(e); }
   });
 
-  app.post("/api/postgres/devices", auth, async (req, res, next) => {
+  app.post("/api/postgres/devices", authenticate, auth, async (req, res, next) => {
     try {
       const { deviceKey, platform, name } = req.body || {};
       if (!deviceKey || !platform) return res.status(400).json({ error: "deviceKey and platform are required." });
@@ -39,7 +39,7 @@ function installPostgresRoutes(app, { pool }) {
     } catch (e) { next(e); }
   });
 
-  app.post("/api/postgres/groups", auth, async (req, res, next) => {
+  app.post("/api/postgres/groups", authenticate, auth, async (req, res, next) => {
     const client = await pool.connect();
     try {
       const name = String(req.body?.name || "").trim().slice(0, 120);
@@ -79,7 +79,7 @@ function installPostgresRoutes(app, { pool }) {
     }
   });
 
-  app.post("/api/postgres/groups/join", auth, async (req, res, next) => {
+  app.post("/api/postgres/groups/join", authenticate, auth, async (req, res, next) => {
     const client = await pool.connect();
     try {
       const code = String(req.body?.joinCode || "").trim();
@@ -120,7 +120,7 @@ function installPostgresRoutes(app, { pool }) {
     }
   });
 
-  app.get("/api/postgres/groups", auth, async (req, res, next) => {
+  app.get("/api/postgres/groups", authenticate, auth, async (req, res, next) => {
     try {
       const q = await pool.query(
         `SELECT g.id,g.owner_uid,g.name,g.join_code,g.max_clients,g.created_at,
