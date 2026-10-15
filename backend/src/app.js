@@ -14,7 +14,7 @@ const { installOwnerPanelRoutes } = require("./owner-panel");
 function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
-  const sensitiveRemoteConfigKey = /(?:secret|password|private|credential|webhook|access[_-]?token|refresh[_-]?token|encryption[_-]?key)/i;
+  const sensitiveRemoteConfigKey = /(?:secret|pass(?:word|wd)?|private|credential|webhook|(?:access|refresh|id|auth|bearer)?[_-]?token|(?:api|client|service)[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?account|turn[_-]?server)/i;
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
