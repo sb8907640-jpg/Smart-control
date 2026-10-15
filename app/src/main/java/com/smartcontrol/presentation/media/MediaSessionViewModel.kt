@@ -1,7 +1,11 @@
 package com.smartcontrol.presentation.media
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.functions.FirebaseFunctions
@@ -91,6 +95,11 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     fun startPublishing(session: MediaSession, projectionIntent: Intent?) = viewModelScope.launch {
+        if (!notificationsAllowed()) {
+            signaling.stopSession(session.sessionId)
+            lastError.value = "Enable notifications before starting a visible media session."
+            return@launch
+        }
         if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId)) {
             lastError.value = "This session includes a feature disabled by the owner."
             signaling.stopSession(session.sessionId)
@@ -122,6 +131,10 @@ class MediaSessionViewModel @Inject constructor(
                 lastError.value = it.message
             }
     }
+
+    private fun notificationsAllowed(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     private suspend fun capabilitiesAllowed(
         capabilities: Set<MediaCapability>,
@@ -187,6 +200,12 @@ class MediaSessionViewModel @Inject constructor(
     fun eglBase() = engine.eglBase()
 
     fun connectViewer(session: MediaSession, sink: VideoSink?) = viewModelScope.launch {
+        if (!notificationsAllowed()) {
+            signaling.stopSession(session.sessionId)
+            FamilySafetyService.setIdle(context)
+            lastError.value = "Enable notifications before starting a visible media session."
+            return@launch
+        }
         if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId)) {
             lastError.value = "This session includes a feature disabled by the owner."
             return@launch
