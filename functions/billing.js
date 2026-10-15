@@ -1021,13 +1021,19 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         // The activation transaction already persisted SUCCESS and verification
         // metadata. A second write here could overwrite a concurrent REFUND_PENDING.
       } else if (eventName === "payment.failed") {
-        if (payment.status === "PENDING") {
-          await paymentDoc.ref.update({
+        // Webhooks can arrive out of order. Re-read inside a transaction so a
+        // delayed failure event cannot overwrite a captured SUCCESS payment.
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "PENDING") return;
+          tx.update(paymentDoc.ref, {
             status: "FAILED",
             gatewayReference: razorpayPaymentId || null,
             updatedAtEpochMs: now
           });
-        }
+        });
       } else if (eventName === "refund.created") {
         const refundId = String(entity.id || "").trim();
         if (!refundId) {
