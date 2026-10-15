@@ -51,6 +51,9 @@ const interfaceChecks = [
     fs.readFileSync(path.join(root, "backend/src/pairing-api.js"), "utf8").includes('pairingActive: true')],
   ["Remote Config backend", /api\/config/.test(backend)],
   ["Web dashboard treats Remote Config as optional", web.includes('.catch(() => ({ values: {} as Record<string, unknown> }))')],
+  ["iOS dashboard treats Remote Config as optional",
+    ios.includes("let fetchedConfig = try? await configResult") &&
+    ios.includes("fetchedConfig?.values ?? [:]")],
   ["Residency policy enforcement", /getResidencyPolicy\(\)/.test(backend) && /residency/.test(backend)]
 ];
 

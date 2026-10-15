@@ -138,7 +138,10 @@ final class AppSession: ObservableObject {
             devices = deviceResult.devices
             systemStatus = try await status
             residency = try await residencyResult
-            remoteConfig = (try await configResult).values.compactMapValues { $0 }
+            // Remote Config is supplemental. Its outage must not turn an otherwise
+            // successful authenticated dashboard refresh into an error state.
+            let fetchedConfig = try? await configResult
+            remoteConfig = (fetchedConfig?.values ?? [:]).compactMapValues { $0 }
         } catch {
             if let clientError = error as? ClientError, case .authentication(_) = clientError {
                 tokenStore.delete()
