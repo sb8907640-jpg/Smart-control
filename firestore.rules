@@ -56,10 +56,10 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Payment records are written only by trusted billing callables/webhooks.
+      allow create, update, delete: if false;
       allow read: if request.auth != null
         && (request.auth.token.admin == true || resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
