@@ -47,6 +47,7 @@ class WebRtcMediaEngine(
     private lateinit var factory: PeerConnectionFactory
 
     @Synchronized
+    @Synchronized
     fun initialize() {
         if (initialized.get()) return
         PeerConnectionFactory.initialize(
