@@ -78,7 +78,7 @@ function seedDb() {
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
     pairingCodes: { "JOIN-CODE": { ownerUid: "user-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
     subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
-    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "INITIATED" } },
+    payments: { "payment-1": { userId: "user-1", subscriptionId: "sub-1", amountMinor: 100, status: "VERIFIED" } },
     sosAlerts: { "sos-1": { userId: "user-1", status: "TRIGGERED" } },
     freeAccessGrants: { "grant-1": { userId: "user-1", status: "ACTIVE" } }
   });
@@ -132,6 +132,10 @@ function queryFor(endpoint) {
   await new Promise(resolve => server.once("listening", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
   const results = [];
+  const expectedSecureRefusals = new Map([
+    ["POST /api/payment/initiate", 503],
+    ["POST /api/payment/verify", 409]
+  ]);
   const planResponse = await fetch(base + "/api/plans", { headers: { authorization: "Bearer integration-token" } });
   assert.equal(planResponse.status, 200);
   const planPayload = await planResponse.json();
@@ -175,6 +179,14 @@ function queryFor(endpoint) {
         body: method === "GET" ? undefined : JSON.stringify(requestBody(endpoint))
       });
       const body = await response.text();
+      const expectedRefusal = expectedSecureRefusals.get(route);
+      if (expectedRefusal !== undefined) {
+        if (response.status !== expectedRefusal) {
+          throw new Error(route + " expected safe refusal HTTP " + expectedRefusal + " but received HTTP " + response.status + ": " + body.slice(0, 500));
+        }
+        results.push({ route, status: response.status, ok: true, securelyRefused: true });
+        continue;
+      }
       const ok = response.status >= 200 && response.status < 300;
       results.push({ route, status: response.status, ok });
       if (!ok) throw new Error(route + " returned HTTP " + response.status + ": " + body.slice(0, 500));
@@ -184,5 +196,6 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
+  const secureRefusals = results.filter(result => result.securelyRefused).length;
+  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned expected responses (" + secureRefusals + " payment endpoints fail closed until trusted provider verification is configured).");
 })();
