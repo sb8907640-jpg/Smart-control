@@ -15,11 +15,15 @@ const CONFIG_REF = db.doc("ownerSettings/global");
 const IMPLEMENTED_PROVIDERS = new Set(["RAZORPAY"]);
 
 function requireSignedIn(request) {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in first.");
 }
 
 async function requireOwner(request) {
   requireSignedIn(request);
+  const userSnapshot = await db.collection("users").doc(request.auth.uid).get();
+  if (userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
+    throw new HttpsError("permission-denied", "This account is suspended.");
+  }
   const claims = request.auth.token || {};
   if (claims.owner === true || String(claims.role || "").toUpperCase() === "OWNER") return;
 
