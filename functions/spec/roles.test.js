@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { ROLES, normalizeRole, canManageRole, canManageUser } = require("./roles");
+const { ROLES, normalizeRole, canManageRole, canManageUser, canManageOwnerAccounts } = require("./roles");
 
 test("role normalization rejects unknown roles", () => {
   assert.equal(normalizeRole("owner"), "OWNER");
@@ -21,4 +21,12 @@ test("user-management authorization rejects self-targeting and role escalation",
   assert.equal(canManageUser("owner-user", "other-user", "OWNER", "USER", "SUPER_ADMIN"), false);
   assert.equal(canManageUser("admin-user", "other-user", "ADMIN", "USER", "USER"), true);
   assert.equal(canManageUser("admin-user", "owner-user", "ADMIN", "OWNER", "USER"), false);
+});
+
+test("owner-account synchronization is not authorized by a generic admin claim alone", () => {
+  assert.equal(canManageOwnerAccounts({ admin: true, role: "ADMIN", email: "admin@example.test" }, [], []), false);
+  assert.equal(canManageOwnerAccounts({ role: "OWNER" }, [], []), true);
+  assert.equal(canManageOwnerAccounts({ role: "SUPER_ADMIN" }, [], []), true);
+  assert.equal(canManageOwnerAccounts({ email: "owner@example.test" }, ["OWNER@example.test"], []), true);
+  assert.equal(canManageOwnerAccounts({ phone_number: "+15551234567" }, [], ["+15551234567"]), true);
 });
