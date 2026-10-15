@@ -64,3 +64,38 @@ test("PostgreSQL device API uses parameterized queries and requires authenticati
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("PostgreSQL group routes forward connection failures to Express error handling", async () => {
+  const app = express();
+  app.use(express.json());
+  const authenticate = (req, _res, next) => {
+    req.user = { uid: "u1" };
+    next();
+  };
+  const pool = {
+    query: async () => ({ rowCount: 1, rows: [{ ok: 1 }] }),
+    connect: async () => { throw new Error("database unavailable"); }
+  };
+  installPostgresRoutes(app, { pool, authenticate });
+  app.use((error, _req, res, _next) => res.status(503).json({ error: error.message }));
+  const server = app.listen(0);
+  await new Promise(resolve => server.once("listening", resolve));
+  const base = "http://127.0.0.1:" + server.address().port;
+  try {
+    let response = await fetch(base + "/api/postgres/groups", {
+      method: "POST",
+      headers: { authorization: "Bearer valid", "content-type": "application/json" },
+      body: JSON.stringify({ name: "Family" })
+    });
+    assert.equal(response.status, 503);
+
+    response = await fetch(base + "/api/postgres/groups/join", {
+      method: "POST",
+      headers: { authorization: "Bearer valid", "content-type": "application/json" },
+      body: JSON.stringify({ joinCode: "ABCDEFG1234" })
+    });
+    assert.equal(response.status, 503);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
