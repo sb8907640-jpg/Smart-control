@@ -66,6 +66,19 @@ check("Manual reference verification cannot activate real-gateway payments",
 check("Owner panel exposes permanent permit and secret entry fields",
   ownerPanel.includes("PaymentGatewayPermitPanel") && ownerPanel.includes("savePaymentGatewayPermit") &&
   ownerPanel.includes("Razorpay Webhook Secret"));
+const razorpayVerifyBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.verifyRazorpayPayment"),
+  billingFunctions.indexOf("exports.applyEmi")
+);
+const razorpayWebhookBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.razorpayWebhook"),
+  billingFunctions.indexOf("exports.paymentGatewayWebhook")
+);
+check("Verified payment activation cannot overwrite a concurrent refund lock",
+  !/activateSubscriptionForPayment[\\s\\S]{0,500}await ref\\.update\\(\\{\\s*status:\\s*"SUCCESS"/.test(razorpayVerifyBlock) &&
+    !/activateSubscriptionForPayment[\\s\\S]{0,500}paymentDoc\\.ref\\.update\\(\\{\\s*status:\\s*"SUCCESS"/.test(razorpayWebhookBlock),
+  "The activation transaction persists success atomically; no redundant follow-up write may revert REFUND_PENDING.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",
