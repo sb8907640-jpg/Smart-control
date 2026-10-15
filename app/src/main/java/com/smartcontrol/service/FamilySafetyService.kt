@@ -25,7 +25,7 @@ class FamilySafetyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
+        setRunning(true)
         createChannel()
         startVisibleForeground()
         startHealthLoop()
@@ -165,7 +165,7 @@ class FamilySafetyService : Service() {
     }
 
     override fun onDestroy() {
-        isRunning = false
+        setRunning(false)
         scope.cancel()
         super.onDestroy()
     }
@@ -175,6 +175,10 @@ class FamilySafetyService : Service() {
     companion object {
         @Volatile var isRunning: Boolean = false
             private set
+
+        private fun setRunning(value: Boolean) {
+            isRunning = value
+        }
 
         const val CHANNEL = "family_safety"
         const val NOTIFICATION_ID = 1001
