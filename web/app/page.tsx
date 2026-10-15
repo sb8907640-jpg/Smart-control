@@ -172,12 +172,15 @@ export default function Home() {
         apiGet<BackendSession>("/api/auth/session", user),
         apiGet<{ devices: Device[] }>("/api/devices", user),
         apiGet<SystemStatus>("/api/system/status", user),
+        // Remote Config is supplemental. Its outage must not block authentication
+        // or the core device/system dashboard.
         apiGet<{ values: Record<string, unknown> }>("/api/config", user)
+          .catch(() => ({ values: {} as Record<string, unknown> }))
       ]);
       setSession(nextSession);
       setDevices(deviceResponse.devices);
       setSystem(nextSystem);
-      setRemoteConfig(configResponse.values);
+      setRemoteConfig(configResponse.values || {});
       setStatus("Backend session verified");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Backend request failed");
