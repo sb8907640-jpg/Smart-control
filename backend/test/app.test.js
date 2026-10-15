@@ -26,6 +26,9 @@ function makeOwnerTestDb() {
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
     freeAccessGrants: new Map(),
+    featurePolicy: new Map(),
+    featurePolicyUsers: new Map(),
+    ownerSettingsHistory: [],
     permissionHistory: new Map(),
     consentHistory: new Map()
   };
@@ -310,6 +313,30 @@ test("WhatsApp support endpoint uses private Owner destination and creates a tic
       method: "POST", headers: { authorization: "Bearer owner-token" }
     });
     assert.equal(throttled.status, 429);
+  });
+});
+
+test("generic Owner settings API cannot add raw payment secrets", async () => {
+  const db = makeOwnerTestDb();
+  await withOwnerServer(db, async base => {
+    const response = await fetch(base + "/api/owner/settings", {
+      method: "PATCH",
+      headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        values: {
+          masterConfig: {
+            ownerControl: {
+              editableValues: {
+                "payment.razorpayKeySecret": "raw-secret-should-never-be-stored"
+              }
+            }
+          }
+        }
+      })
+    });
+    assert.equal(response.status, 200);
+    const editable = db.data.ownerSettings.get("global").masterConfig.ownerControl.editableValues;
+    assert.equal(editable["payment.razorpayKeySecret"], undefined);
   });
 });
 
