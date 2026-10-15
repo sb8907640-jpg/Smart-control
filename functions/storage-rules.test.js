@@ -1,0 +1,81 @@
+const fs = require("node:fs");
+const path = require("node:path");
+const {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds
+} = require("@firebase/rules-unit-testing");
+const { doc, setDoc } = require("firebase/firestore");
+const { ref, uploadBytes } = require("firebase/storage");
+
+async function main() {
+  const projectId = process.env.GCLOUD_PROJECT || "demo-family-suraksha";
+  const env = await initializeTestEnvironment({
+    projectId,
+    firestore: {
+      rules: fs.readFileSync(path.join(__dirname, "../firestore.rules"), "utf8")
+    },
+    storage: {
+      rules: fs.readFileSync(path.join(__dirname, "../storage.rules"), "utf8")
+    }
+  });
+
+  try {
+    await env.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "fileTransfers", "transfer-known"), {
+        senderDeviceId: "sender",
+        receiverDeviceId: "receiver",
+        sizeBytes: 4,
+        status: "APPROVED"
+      });
+      await setDoc(doc(db, "fileTransfers", "transfer-unknown"), {
+        senderDeviceId: "sender",
+        receiverDeviceId: "receiver",
+        sizeBytes: -1,
+        status: "APPROVED"
+      });
+      await setDoc(doc(db, "fileTransfers", "transfer-pending"), {
+        senderDeviceId: "sender",
+        receiverDeviceId: "receiver",
+        sizeBytes: 4,
+        status: "REQUESTED"
+      });
+    });
+
+    const senderStorage = env.authenticatedContext("sender").storage();
+    await assertSucceeds(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-known/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+    await assertFails(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-known/wrong-size.bin"),
+      new Uint8Array([1, 2, 3])
+    ));
+    await assertFails(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-known/too-large.bin"),
+      new Uint8Array([1, 2, 3, 4, 5])
+    ));
+    await assertSucceeds(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-unknown/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+    await assertFails(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-pending/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+    await assertFails(uploadBytes(
+      ref(env.authenticatedContext("attacker").storage(), "fileTransfers/sender/transfer-known/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+
+    console.log("STORAGE_RULES_VERIFY=PASS");
+  } finally {
+    await env.cleanup();
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
