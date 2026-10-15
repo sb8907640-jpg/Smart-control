@@ -273,16 +273,34 @@ service cloud.firestore {
     }
 
     match /devices/{uid} {
-      allow create: if request.auth != null
-        && request.resource.data.controllerUid == request.auth.uid
-        && request.resource.data.pairingToken is string
-        && request.resource.data.pairedAt is int
-        && request.resource.data.pairingActive == true
-        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
-        && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+      allow create: if request.auth != null && (
+        (
+          // Permit an opt-in health-only document before this device has been paired.
+          request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['health'])
+          && request.resource.data.health is map
+          && request.resource.data.health.keys().hasOnly(['serviceAlive', 'lastHeartbeatAt', 'permissions'])
+          && request.resource.data.health.serviceAlive is bool
+          && request.resource.data.health.lastHeartbeatAt is int
+          && request.resource.data.health.permissions is map
+          && request.resource.data.health.permissions.keys().hasOnly(['camera', 'microphone', 'location', 'notifications'])
+          && request.resource.data.health.permissions.camera is bool
+          && request.resource.data.health.permissions.microphone is bool
+          && request.resource.data.health.permissions.location is bool
+          && request.resource.data.health.permissions.notifications is bool
+        )
+        ||
+        (
+                  && request.resource.data.pairingToken is string
+                  && request.resource.data.pairedAt is int
+                  && request.resource.data.pairingActive == true
+                  && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
+                  && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+                  && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+                  && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
+                  && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
+        )
+      );
 
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
