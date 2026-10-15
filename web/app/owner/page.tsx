@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -350,6 +350,7 @@ export default function OwnerPanel() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
   const [linkPlanId, setLinkPlanId] = useState("");
   const [freeGrantText, setFreeGrantText] = useState(jsonText({ userName: "", email: "", mobile: "", userId: "", durationPreset: "CUSTOM", startsAt: Date.now(), endsAt: Date.now() + 7 * 86400000, all19: true, features: [], reason: "" }));
   const currentTab = useMemo(() => TABS.find(tab => tab.id === active) ?? TABS[0], [active]);
@@ -367,7 +368,7 @@ export default function OwnerPanel() {
 
   useEffect(() => {
     const auth = authClient();
-    return onAuthStateChanged(auth, async nextUser => {
+    const unsubscribe = onAuthStateChanged(auth, async nextUser => {
       setUser(nextUser);
       setPanel(null);
       setRows([]);
@@ -386,6 +387,11 @@ export default function OwnerPanel() {
         setStatus(e instanceof Error ? e.message : "OWNER verification failed.");
       }
     });
+    return () => {
+      unsubscribe();
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+    };
   }, []);
 
   const loadTab = useCallback(async (tabId: TabId, selectedUser = user) => {
@@ -534,11 +540,16 @@ export default function OwnerPanel() {
     }
     setError(""); setStatus("Sending verification code…");
     try {
-      const verifier = new RecaptchaVerifier(authClient(), "owner-recaptcha-container", { size: "invisible" });
-      const result = await signInWithPhoneNumber(authClient(), normalized, verifier);
+      const auth = authClient();
+      if (!recaptchaRef.current) {
+        recaptchaRef.current = new RecaptchaVerifier(auth, "owner-recaptcha-container", { size: "invisible" });
+      }
+      const result = await signInWithPhoneNumber(auth, normalized, recaptchaRef.current);
       setConfirmation(result);
       setStatus("Verification code sent. Enter the code to finish sign-in.");
     } catch (e) {
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setError(e instanceof Error ? e.message : "Phone verification could not start.");
       setStatus("Phone sign-in did not complete.");
     }
@@ -551,6 +562,8 @@ export default function OwnerPanel() {
     setError(""); setStatus("Verifying phone identity…");
     try {
       await confirmation.confirm(otp.trim());
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setConfirmation(null); setOtp("");
       setStatus("Phone verified. Checking OWNER permissions…");
     } catch (e) {
