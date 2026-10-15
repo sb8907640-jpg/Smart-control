@@ -431,7 +431,9 @@ function installOwnerPanelRoutes(app, { db }) {
           if (Object.prototype.hasOwnProperty.call(existingEditable, key)) {
             // Redacted values are display-only; never replace the server secret with a marker.
             submittedEditable[key] = existingEditable[key];
-          } else if (submittedEditable[key] === "[REDACTED]") {
+          } else {
+            // Never accept a new payment secret through the generic settings API.
+            // Secrets must be saved via the dedicated encrypted gateway-permit flow.
             delete submittedEditable[key];
           }
         }
