@@ -68,6 +68,14 @@ fun MediaSessionPanel(
     val renderer = remember { SurfaceViewRenderer(context) }
     var pendingStart by remember { mutableStateOf<com.smartcontrol.domain.media.MediaSession?>(null) }
 
+    session?.let { current ->
+        LaunchedEffect(current.sessionId, current.status) {
+            if (current.status == MediaSessionStatus.STOPPED) {
+                viewModel.cleanupStoppedSession(current.sessionId)
+            }
+        }
+    }
+
     val projectionLauncher = rememberMediaProjectionConsentLauncher { result ->
         pendingStart?.let { current -> if (result != null) viewModel.startPublishing(current, result) }
         pendingStart = null
