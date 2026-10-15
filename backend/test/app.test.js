@@ -529,3 +529,22 @@ test("disconnect and reconnect reject devices unrelated to the authenticated use
     }
   });
 });
+
+test("legacy payment endpoints return Gone and direct callers to the verified billing flow", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "sample-user", email: "sample@example.test" })
+  });
+  await withServer(app, async base => {
+    for (const [route, body] of [
+      ["/api/payment/initiate", { subscriptionId: "sample-subscription", amountMinor: 0 }],
+      ["/api/payment/verify", { paymentId: "sample-payment" }]
+    ]) {
+      const response = await fetch(base + route, {
+        method: "POST",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      assert.equal(response.status, 410, route);
+    }
+  });
+});
