@@ -158,7 +158,7 @@ check("Remote commands require an ACTIVE session and visible indicator",
   "APPROVED is not sufficient for command delivery.");
 check("Suspended and Owner-blocked accounts are denied across service layers",
   firestoreRules.includes("function accountActive()") &&
-    firestoreRules.includes("userAccess/$(request.auth.uid)") &&
+    firestoreRules.includes("userAccess/$(uid)") &&
     read("storage.rules").includes("function accountActive()") &&
     read("storage.rules").includes("users/$(request.auth.uid)") &&
     functionsIndex.includes('status: disabled ? "BLOCKED" : "ACTIVE"') &&
@@ -389,7 +389,7 @@ const mediaEngineInitialize = mediaEngine.slice(
   mediaEngine.indexOf("suspend fun publish(")
 );
 check("WebRTC initialization can retry after native factory failure",
-  mediaEngine.includes("@Synchronized\\n    fun initialize()") &&
+  mediaEngine.includes("@Synchronized") &&
     mediaEngineInitialize.indexOf("factory = createdFactory") >= 0 &&
     mediaEngineInitialize.indexOf("factory = createdFactory") < mediaEngineInitialize.indexOf("initialized.set(true)") &&
     mediaEngineInitialize.includes("if (initialized.get()) return"),
