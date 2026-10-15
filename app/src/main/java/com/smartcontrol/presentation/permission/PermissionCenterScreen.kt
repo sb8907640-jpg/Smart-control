@@ -2,6 +2,8 @@ package com.smartcontrol.presentation.permission
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -87,7 +89,18 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     }
 
     fun open(action: String) {
-        runCatching { context.startActivity(Intent(action)) }
+        val intent = Intent(action)
+        if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
+            intent.data = Uri.fromParts("package", context.packageName, null)
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                Toast.makeText(
+                    context,
+                    "Could not open Android settings. Please open Settings manually.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
     }
 
     // Keep status reads tied to Compose state so the row updates after every system dialog.
