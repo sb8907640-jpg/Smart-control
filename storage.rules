@@ -9,6 +9,31 @@ service firebase.storage {
         && (!firestore.exists(/databases/(default)/documents/userAccess/$(request.auth.uid))
           || firestore.get(/databases/(default)/documents/userAccess/$(request.auth.uid)).data.get('blocked', false) != true);
     }
+
+    function featureEnabledFor(uid) {
+      let globalPath = /databases/(default)/documents/featurePolicy/global;
+      let userPath = /databases/(default)/documents/featurePolicyUsers/$(uid);
+      let globalExists = firestore.exists(globalPath);
+      let globalPolicy = globalExists ? firestore.get(globalPath).data : {};
+      let userExists = firestore.exists(userPath);
+      let userPolicy = userExists ? firestore.get(userPath).data : {};
+      let expiry = userPolicy.get('expiresAtEpochMs', null);
+      return globalExists
+        && globalPolicy.get('globalFeaturesEnabled', false) == true
+        && globalPolicy.get('globalEnabled', false) == true
+        && globalPolicy.get('featureOverrides', {}).get('FILE_TRANSFER', true) != false
+        && globalPolicy.get('globalFeatureOverrides', {}).get('FILE_TRANSFER', true) != false
+        && userPolicy.get('enabled', true) == true
+        && userPolicy.get('ownerEnabled', true) == true
+        && userPolicy.get('featureOverrides', {}).get('FILE_TRANSFER', true) != false
+        && (!userExists || expiry == null || (expiry is int && (expiry <= 0 || expiry > request.time.toMillis())));
+    }
+
+    function fileTransferAllowed() {
+      let transfer = transferDoc().data;
+      return featureEnabledFor(transfer.senderDeviceId)
+        && featureEnabledFor(transfer.receiverDeviceId);
+    }
     match /fileTransfers/{senderUid}/{transferId}/{fileName} {
       function transferDoc() {
         return firestore.get(/databases/(default)/documents/fileTransfers/$(transferId));
@@ -18,6 +43,7 @@ service firebase.storage {
       // known size, the stored object must match it; unknown provider sizes (-1)
       // remain supported but are still capped.
       allow create, update: if accountActive()
+        && fileTransferAllowed()
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
         && transferDoc().data.status in ['APPROVED', 'UPLOADING']
@@ -31,6 +57,7 @@ service firebase.storage {
         && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
 
       allow read: if accountActive()
+        && fileTransferAllowed()
         && (
           request.auth.uid == senderUid
           || (
