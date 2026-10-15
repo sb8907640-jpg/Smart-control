@@ -1,6 +1,7 @@
 package com.smartcontrol
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -25,6 +26,7 @@ import com.razorpay.PaymentResultWithDataListener
 import com.smartcontrol.domain.billing.Payment
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
 import org.json.JSONObject
 import android.widget.Toast
@@ -69,6 +71,14 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private var pendingRazorpayPaymentId: String? = null
+
+    @Suppress("DEPRECATION")
+    private fun isFamilySafetyServiceRunning(): Boolean {
+        val manager = getSystemService(ActivityManager::class.java) ?: return false
+        return manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == FamilySafetyService::class.java.name
+        }
+    }
 
     private fun startRazorpayCheckout(payment: Payment) {
         val orderId = payment.gatewayOrderId?.takeIf { it.isNotBlank() }
@@ -191,7 +201,15 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         .getString("mode", null) != null
                 )
             }
-            var running by remember { mutableStateOf(false) }
+            var running by remember { mutableStateOf(isFamilySafetyServiceRunning()) }
+            LaunchedEffect(Unit) {
+                // Keep Start/Stop controls aligned with the actual service after activity
+                // recreation or the notification's Stop Sync action.
+                while (true) {
+                    running = isFamilySafetyServiceRunning()
+                    delay(1_500)
+                }
+            }
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
