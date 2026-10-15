@@ -367,6 +367,9 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   const target = await getAuth().getUser(uid);
   const action = typeof request.data?.action === "string" ? request.data.action : "set";
+  if (action === "set" && typeof request.data?.role !== "string") {
+    throw new HttpsError("invalid-argument", "A target role is required.");
+  }
   const role = normalizeRole(request.data?.role);
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
@@ -388,7 +391,14 @@ exports.updateOwnerUser = onCall(async (request) => {
 
   if (action === "set") {
     const access = request.data?.access === true;
-    const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
+    const rawExpiry = request.data?.accessExpiresAtEpochMs;
+    const expiresAtEpochMs = rawExpiry == null || rawExpiry === "" ? 0 : Number(rawExpiry);
+    if (!Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs < 0) {
+      throw new HttpsError("invalid-argument", "Access expiry must be a non-negative epoch-millisecond integer.");
+    }
+    if (access && expiresAtEpochMs > 0 && expiresAtEpochMs <= Date.now()) {
+      throw new HttpsError("invalid-argument", "Access expiry must be in the future.");
+    }
     const claims = { ...(target.customClaims || {}), role, access };
     if (role === "SUPER_ADMIN") {
       claims.admin = true;
