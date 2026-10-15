@@ -152,6 +152,42 @@ test("browser origins require an explicit CORS allowlist", async () => {
   }
 });
 
+test("Owner Accounts allowlist grants backend Owner routes", async () => {
+  const db = makeOwnerTestDb();
+  db.data.ownerAccounts = new Map([["config", {
+    emails: ["owner@example.test"],
+    mobiles: []
+  }]]);
+  const previousEmails = process.env.OWNER_EMAILS;
+  const previousMobiles = process.env.OWNER_MOBILE_NUMBERS;
+  delete process.env.OWNER_EMAILS;
+  delete process.env.OWNER_MOBILE_NUMBERS;
+  try {
+    const app = createApp({
+      db,
+      verifyIdToken: async () => ({
+        uid: "owner-1",
+        email: "owner@example.test",
+        role: "USER",
+        admin: true
+      })
+    });
+    await withServer(app, async base => {
+      const response = await fetch(base + "/api/owner/panel", {
+        headers: { authorization: "Bearer test-token" }
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.owner, true);
+    });
+  } finally {
+    if (previousEmails === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = previousEmails;
+    if (previousMobiles === undefined) delete process.env.OWNER_MOBILE_NUMBERS;
+    else process.env.OWNER_MOBILE_NUMBERS = previousMobiles;
+  }
+});
+
 test("protected API accepts a verified Firebase identity", async () => {
   const app = createApp({ verifyIdToken: async token => {
     assert.equal(token, "test-token");
