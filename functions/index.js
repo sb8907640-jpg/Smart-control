@@ -110,9 +110,16 @@ exports.approveMediaSession = onCall(async (request) => {
     }
 
     const deviceSnapshot = await transaction.get(db.collection("devices").doc(session.targetDeviceId));
+    const controllerUserSnapshot = await transaction.get(db.collection("users").doc(session.controllerUid));
+    const targetUserSnapshot = await transaction.get(db.collection("users").doc(session.targetDeviceId));
     const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
     if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
       throw new HttpsError("failed-precondition", "The device pairing is no longer active.");
+    }
+    const isActiveAccount = (snapshot) =>
+      !snapshot.exists || String(snapshot.data()?.status || "ACTIVE").toUpperCase() === "ACTIVE";
+    if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot)) {
+      throw new HttpsError("permission-denied", "A suspended account cannot approve media sessions.");
     }
 
     const globalPolicySnapshot = await transaction.get(globalPolicyRef);
