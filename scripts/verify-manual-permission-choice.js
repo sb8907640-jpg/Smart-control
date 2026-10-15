@@ -71,6 +71,17 @@ check("Sensitive Android permissions remain declared", [
   "android.permission.POST_NOTIFICATIONS"
 ].every(p => manifest.includes(p)));
 
+const permissionScreen = read("app/src/main/java/com/smartcontrol/presentation/permission/PermissionCenterScreen.kt");
+check("Allow All skips skipped and already-granted permissions",
+  permissionScreen.includes("skippedItems.contains(index)") &&
+    permissionScreen.includes("!granted(permissionItems[index])") &&
+    permissionScreen.includes("requestedItemIndex + 1"),
+  "The sequential permission flow advances after the actual requested item and never reopens a skipped or granted item.");
+check("Approximate location permission is represented correctly",
+  permissionScreen.includes("anyPermissionSuffices = true") &&
+    permissionScreen.includes("Allowed (approximate)"),
+  "Android 12+ approximate-location grants count as granted without misreporting precise access.");
+
 runtime("Allow All — manual tap", "Physical device must show the button and require the user to tap it.");
 runtime("Allow All — sequential permission dialogs", "Physical Android evidence is required for the complete user-driven permission sequence.");
 runtime("One-by-One — manual tap", "Physical device must show the button and require the user to tap it.");
