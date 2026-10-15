@@ -61,9 +61,13 @@ function gatewaySecret(config, provider) {
 
 async function requireAuth(request) {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in first.");
-  const userSnapshot = await db.collection("users").doc(request.auth.uid).get();
-  if (userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
-    throw new HttpsError("permission-denied", "This account is suspended.");
+  const [userSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(request.auth.uid).get(),
+    db.collection("userAccess").doc(request.auth.uid).get()
+  ]);
+  if ((userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") ||
+      (accessSnapshot.exists && accessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "This account is suspended or blocked.");
   }
 }
 
