@@ -59,12 +59,16 @@ function gatewaySecret(config, provider) {
   return String(config["payment.webhookSecret"] || config["payment.encryptionKey"] || "");
 }
 
-function requireAuth(request) {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+async function requireAuth(request) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const userSnapshot = await db.collection("users").doc(request.auth.uid).get();
+  if (userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
+    throw new HttpsError("permission-denied", "This account is suspended.");
+  }
 }
 
-function requireAdmin(request) {
-  requireAuth(request);
+async function requireAdmin(request) {
+  await requireAuth(request);
   if (request.auth.token?.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
   }
@@ -231,12 +235,12 @@ async function incrementCouponUsage(code) {
 }
 
 exports.getPaymentConfig = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   return { config: await readPaymentConfig() };
 });
 
 exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const planId = String(request.data?.planId || "").trim();
   if (!planId) throw new HttpsError("invalid-argument", "Plan ID is required.");
 
@@ -370,7 +374,7 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gat
 });
 
 exports.verifyPayment = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const reference = String(request.data?.gatewayReference || "").trim();
   if (!paymentId || !reference) {
@@ -402,7 +406,7 @@ exports.verifyPayment = onCall(async (request) => {
 });
 
 exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const orderId = String(request.data?.razorpayOrderId || "").trim();
   const razorpayPaymentId = String(request.data?.razorpayPaymentId || "").trim();
@@ -481,7 +485,7 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
 });
 
 exports.applyEmi = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const tenureMonths = Number(request.data?.tenureMonths || 0);
   if (!paymentId || !Number.isInteger(tenureMonths) || tenureMonths <= 0) {
@@ -532,7 +536,7 @@ exports.applyEmi = onCall(async (request) => {
 exports.refundPayment = onCall(
   { secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] },
   async (request) => {
-    requireAdmin(request);
+    await requireAdmin(request);
     const paymentId = String(request.data?.paymentId || "").trim();
     if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
 
@@ -686,7 +690,7 @@ exports.refundPayment = onCall(
 );
 
 exports.createCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
     throw new HttpsError("invalid-argument", "Coupon code is invalid.");
@@ -715,7 +719,7 @@ exports.createCoupon = onCall(async (request) => {
 });
 
 exports.updateCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   const allowed = ["discountPercent","discountMinor","usageLimit","enabled","expiresAtEpochMs"];
@@ -730,7 +734,7 @@ exports.updateCoupon = onCall(async (request) => {
 });
 
 exports.deleteCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   await db.collection("coupons").doc(code).delete();
@@ -738,21 +742,21 @@ exports.deleteCoupon = onCall(async (request) => {
 });
 
 exports.listPaymentLedger = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("payments").orderBy("createdAtEpochMs", "desc").limit(limit).get();
   return { payments: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.listSubscriptions = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("subscriptions").orderBy("updatedAtEpochMs", "desc").limit(limit).get();
   return { subscriptions: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.updateSubscription = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const id = String(request.data?.subscriptionId || "").trim();
   const action = String(request.data?.action || "").toUpperCase();
   if (!id || !["CANCEL","EXTEND","UPGRADE","DOWNGRADE","PAUSE","RESUME"].includes(action)) {
@@ -786,7 +790,7 @@ exports.updateSubscription = onCall(async (request) => {
 });
 
 exports.getPaymentReport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
@@ -810,7 +814,7 @@ exports.getPaymentReport = onCall(async (request) => {
 });
 
 exports.recordPayout = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const amountMinor = money(request.data?.amountMinor || 0);
   if (amountMinor <= 0) throw new HttpsError("invalid-argument", "Payout amount must be positive.");
   const ref = db.collection("payouts").doc();
@@ -828,14 +832,14 @@ exports.recordPayout = onCall(async (request) => {
 });
 
 exports.listPayouts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const snap = await db.collection("payouts").orderBy("createdAtEpochMs", "desc").limit(500).get();
   return { payouts: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 
 exports.getPublicPlans = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const snap = await db.collection("plans")
     .where("enabled", "==", true)
     .orderBy("displayOrder", "asc")
@@ -846,7 +850,7 @@ exports.getPublicPlans = onCall(async (request) => {
 });
 
 exports.getMySubscription = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const snap = await db.collection("subscriptions")
     .where("userId", "==", request.auth.uid)
     .orderBy("updatedAtEpochMs", "desc")
@@ -857,7 +861,7 @@ exports.getMySubscription = onCall(async (request) => {
 });
 
 exports.duplicatePlan = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const sourceId = String(request.data?.sourcePlanId || "").trim();
   const newId = String(request.data?.newPlanId || "").trim();
   if (!sourceId || !newId) throw new HttpsError("invalid-argument", "Source and new plan IDs are required.");
@@ -873,7 +877,7 @@ exports.duplicatePlan = onCall(async (request) => {
 
 
 exports.getPaymentInvoice = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
   const snap = await db.collection("invoices").doc(paymentId).get();
@@ -886,7 +890,7 @@ exports.getPaymentInvoice = onCall(async (request) => {
 });
 
 exports.getPaymentReportExport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
