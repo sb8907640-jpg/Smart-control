@@ -6,9 +6,15 @@ import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.domain.safety.SafetyAlert
 import com.smartcontrol.domain.safety.SafetyAlertRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
@@ -20,18 +26,37 @@ class SafetyAlertsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _alerts = MutableStateFlow<List<SafetyAlert>>(emptyList())
     val alerts: StateFlow<List<SafetyAlert>> = _alerts.asStateFlow()
+    private val _status = MutableStateFlow<String?>(null)
+    val status: StateFlow<String?> = _status.asStateFlow()
     private val deviceId get() = auth.currentUser?.uid.orEmpty()
 
     init {
-        if (deviceId.isNotBlank()) {
-            viewModelScope.launch {
-                repository.observe(deviceId).collect { _alerts.value = it }
-            }
+        viewModelScope.launch {
+            callbackFlow {
+                val listener = FirebaseAuth.AuthStateListener { state ->
+                    trySend(state.currentUser?.uid.orEmpty())
+                }
+                auth.addAuthStateListener(listener)
+                trySend(auth.currentUser?.uid.orEmpty())
+                awaitClose { auth.removeAuthStateListener(listener) }
+            }.distinctUntilChanged()
+                .flatMapLatest { uid ->
+                    // Clear the previous account's alerts immediately while the next
+                    // account's Firestore listener starts.
+                    _alerts.value = emptyList()
+                    _status.value = null
+                    if (uid.isBlank()) {
+                        flowOf(emptyList())
+                    } else {
+                        repository.observe(uid).catch { error ->
+                            _status.value = error.message ?: "Could not load safety alerts."
+                            emit(emptyList())
+                        }
+                    }
+                }
+                .collect { _alerts.value = it }
         }
     }
-
-    private val _status = MutableStateFlow<String?>(null)
-    val status: StateFlow<String?> = _status.asStateFlow()
 
     fun triggerSos() = createAlert(
         type = "SOS",
