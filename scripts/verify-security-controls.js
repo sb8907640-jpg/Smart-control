@@ -384,6 +384,16 @@ check("Viewer policy denial stops the approved session and visible services",
     viewerGateBlock.includes("if (!privacyPrefs.getBoolean(\"allow_media_sharing\", true))"),
   "An approved session is not left hanging when the viewer's owner policy or privacy setting blocks connection.");
 
+const mediaEngineInitialize = mediaEngine.slice(
+  mediaEngine.indexOf("fun initialize()"),
+  mediaEngine.indexOf("suspend fun publish(")
+);
+check("WebRTC initialization can retry after native factory failure",
+  mediaEngineInitialize.includes("@Synchronized") &&
+    mediaEngineInitialize.indexOf("factory = createdFactory") < mediaEngineInitialize.indexOf("initialized.set(true)") &&
+    mediaEngineInitialize.includes("if (initialized.get()) return"),
+  "The engine marks itself initialized only after the native factory is successfully created.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
