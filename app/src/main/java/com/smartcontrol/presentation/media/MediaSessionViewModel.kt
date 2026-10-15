@@ -103,7 +103,7 @@ class MediaSessionViewModel @Inject constructor(
         if (MediaCapability.SCREEN_SHARING in session.capabilities) {
             MediaProjectionForegroundService.start(context)
         }
-        engine.publish(session.sessionId, session.capabilities, projectionIntent, resolveIceServers())
+        engine.publish(session.sessionId, session.capabilities, projectionIntent, resolveIceServers(session.sessionId))
             .onSuccess { FamilySafetyService.setSyncing(context) }
             .onFailure {
                 signaling.stopSession(session.sessionId)
@@ -137,12 +137,12 @@ class MediaSessionViewModel @Inject constructor(
         }.getOrDefault(false)
     }
 
-    private suspend fun resolveIceServers(): List<IceServerConfig> {
+    private suspend fun resolveIceServers(sessionId: String): List<IceServerConfig> {
         val fallback = WebRtcMediaEngine.defaultIceServers()
         return try {
             val payload = FirebaseFunctions.getInstance()
                 .getHttpsCallable("getWebRtcIceServers")
-                .call()
+                .call(mapOf("sessionId" to sessionId))
                 .await()
                 .getData() as? Map<*, *> ?: error("ICE server response is invalid")
             val rawServers = payload["iceServers"] as? List<*> ?: emptyList<Any>()
@@ -184,7 +184,7 @@ class MediaSessionViewModel @Inject constructor(
             lastError.value = "Media sharing is disabled in Privacy Controls."
             return@launch
         }
-        engine.view(session.sessionId, sink, resolveIceServers()).onFailure { lastError.value = it.message }
+        engine.view(session.sessionId, sink, resolveIceServers(session.sessionId)).onFailure { lastError.value = it.message }
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
