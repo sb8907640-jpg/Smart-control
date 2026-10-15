@@ -71,12 +71,20 @@ class FileTransferViewModel @Inject constructor(
         val sender = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
         val receiver = controlledDevice.value?.deviceUid ?: run { _status.value = "Pair a client device first."; return@launch }
         val resolver = context.contentResolver
-        val fileName = resolver.query(uri, null, null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
-        } ?: "selected-file"
-        val mime = resolver.getType(uri)
-        val size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        val fileName: String
+        val mime: String?
+        val size: Long
+        try {
+            fileName = resolver.query(uri, null, null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
+            } ?: "selected-file"
+            mime = resolver.getType(uri)
+            size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not read the selected file details."
+            return@launch
+        }
         val id = UUID.randomUUID().toString()
         try {
             repository.request(FileTransferRequest(id, sender, receiver, fileName, mime, size, System.currentTimeMillis(), FileTransferRequest.Status.REQUESTED))
@@ -97,7 +105,12 @@ class FileTransferViewModel @Inject constructor(
 
     fun approve(transferId: String) = viewModelScope.launch {
         val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
-        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = try {
+            repository.get(transferId)
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not load the transfer request."
+            return@launch
+        } ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.REQUESTED) {
             _status.value = "Only the intended receiver can approve a pending transfer."
             return@launch
@@ -140,7 +153,12 @@ class FileTransferViewModel @Inject constructor(
             _status.value = "File transfers are disabled in Privacy Controls."
             return@launch
         }
-        val request = repository.get(id) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = try {
+            repository.get(id)
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not load the pending transfer."
+            return@launch
+        } ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.status != FileTransferRequest.Status.APPROVED) {
             _status.value = "Receiver approval is required first."
             return@launch
