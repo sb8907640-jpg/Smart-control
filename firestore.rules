@@ -271,28 +271,47 @@ service cloud.firestore {
     }
 
     match /devices/{uid} {
+      function validHealth(health) {
+        return health is map
+          && health.keys().hasOnly(['serviceAlive', 'lastHeartbeatAt', 'permissions'])
+          && health.serviceAlive is bool
+          && health.lastHeartbeatAt is int
+          && health.permissions is map
+          && health.permissions.keys().hasOnly(['camera', 'microphone', 'location', 'notifications'])
+          && health.permissions.camera is bool
+          && health.permissions.microphone is bool
+          && health.permissions.location is bool
+          && health.permissions.notifications is bool;
+      }
+
+      // Device owners may publish only their own health/permission snapshot.
+      // Pairing link fields are written by the server-side claimPairingCode callable.
       allow create: if request.auth != null
-        && request.resource.data.controllerUid == request.auth.uid
-        && request.resource.data.pairingToken is string
-        && request.resource.data.pairedAt is int
-        && request.resource.data.pairingActive == true
-        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
-        && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['health'])
+        && validHealth(request.resource.data.health);
 
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
 
       // Pairing claims are server-only and atomically consume a token through
-      // claimPairingCode. Clients may only clear an existing link as either participant.
-      allow update: if request.auth != null
-        && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid)
-        && resource.data.controllerUid is string
-        && request.resource.data.controllerUid == null
-        && request.resource.data.pairingActive == false
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingActive']);
+      // claimPairingCode. Device owners can update only the health snapshot;
+      // either participant may clear an existing pairing link.
+      allow update: if request.auth != null && (
+        (
+          request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health'])
+          && validHealth(request.resource.data.health)
+        )
+        ||
+        (
+          (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid)
+          && resource.data.controllerUid is string
+          && request.resource.data.controllerUid == null
+          && request.resource.data.pairingActive == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingActive'])
+        )
+      );
 
       match /sharedLocation/{locationId} {
         allow create, update: if request.auth != null && request.auth.uid == uid;
