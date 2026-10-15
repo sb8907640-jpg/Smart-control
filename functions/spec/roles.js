@@ -31,4 +31,14 @@ function canManageUser(actorUid, targetUid, actorRole, currentTargetRole, reques
   return requestedRole == null || canManageRole(actorRole, requestedRole);
 }
 
-module.exports = { ROLES, normalizeRole, canManageRole, canManageUser };
+function canManageOwnerAccounts(claims = {}, ownerEmails = [], ownerMobiles = []) {
+  const role = normalizeRole(claims.role);
+  if (claims.owner === true || role === "OWNER" || role === "SUPER_ADMIN") return true;
+  const email = String(claims.email || "").trim().toLowerCase();
+  const phone = String(claims.phone_number || "").trim();
+  const emails = ownerEmails.map(value => String(value).trim().toLowerCase());
+  const mobiles = ownerMobiles.map(value => String(value).trim());
+  return Boolean((email && emails.includes(email)) || (phone && mobiles.includes(phone)));
+}
+
+module.exports = { ROLES, normalizeRole, canManageRole, canManageUser, canManageOwnerAccounts };
