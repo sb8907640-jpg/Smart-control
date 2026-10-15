@@ -70,8 +70,10 @@ function apiBase() {
   return url.toString().replace(/\/$/, "");
 }
 async function apiRequest<T>(path: string, user: User, method = "GET", payload?: unknown): Promise<T> {
+  const base = apiBase();
+  if (!base) throw new Error("Smart Control API URL is not configured.");
   const token = await user.getIdToken();
-  const response = await fetch(apiBase() + path, {
+  const response = await fetch(base + path, {
     method,
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(payload === undefined ? {} : { "Content-Type": "application/json" }) },
     body: payload === undefined ? undefined : JSON.stringify(payload),
