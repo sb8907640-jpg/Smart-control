@@ -53,7 +53,21 @@ function authClient() {
   return getAuth(app);
 }
 function apiBase() {
-  return (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").replace(/\/$/, "");
+  const raw = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").trim();
+  if (!raw) return "";
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("Smart Control API URL is invalid.");
+  }
+  const host = url.hostname.toLowerCase();
+  const isLocalHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+  if (url.username || url.password || (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalHost))) {
+    throw new Error("Smart Control API must use HTTPS. HTTP is allowed only for localhost development.");
+  }
+  if (url.search || url.hash) throw new Error("Smart Control API URL cannot contain a query or fragment.");
+  return url.toString().replace(/\/$/, "");
 }
 async function apiRequest<T>(path: string, user: User, method = "GET", payload?: unknown): Promise<T> {
   const token = await user.getIdToken();
