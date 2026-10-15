@@ -91,6 +91,12 @@ check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
   "Target publishes offer SDP; controller publishes answer SDP.");
+const featurePolicyRepository = read("app/src/main/java/com/smartcontrol/data/owner/FirestoreFeaturePolicyRepository.kt");
+check("Missing global feature policy fails closed",
+  featurePolicyRepository.includes('data["globalFeaturesEnabled"] as? Boolean ?: false') &&
+    featurePolicyRepository.includes('data["globalEnabled"] as? Boolean ?: false'),
+  "An absent or malformed Owner policy cannot default all features to enabled.");
+
 const featureAccessViewModel = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureAccessViewModel.kt");
 check("Feature policy refreshes when the signed-in UID changes",
   featureAccessViewModel.includes("state.currentUser?.uid") &&
