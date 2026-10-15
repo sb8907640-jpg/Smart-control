@@ -102,6 +102,21 @@ async function main() {
     });
     const mediaController = env.authenticatedContext("media-controller");
     const mediaTarget = env.authenticatedContext("media-target");
+    const targetDeviceRef = doc(mediaTarget.firestore(), "devices", "media-target");
+    await assertSucceeds(updateDoc(targetDeviceRef, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: Date.now(),
+        permissions: {
+          camera: true,
+          microphone: false,
+          location: false,
+          notifications: true
+        }
+      }
+    }));
+    await assertFails(updateDoc(targetDeviceRef, { controllerUid: "attacker-user" }));
+
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
     await assertSucceeds(setDoc(sessionRef, {
       controllerUid: "media-controller",
