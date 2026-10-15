@@ -167,6 +167,12 @@ check("File transfer requests require an active paired receiver",
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
   "Transfers cannot be opened to arbitrary unrelated accounts.");
 
+check("Sender can cancel an approved transfer before upload starts",
+  firestoreRules.includes("resource.data.status == 'APPROVED'") &&
+    firestoreRules.includes("request.resource.data.status == 'CANCELLED'") &&
+    read("functions/firestore-rules.test.js").includes("approved-cancelled-transfer"),
+  "A failed upload can cancel an approved-but-not-uploading request instead of leaving it stuck.");
+
 check("Location, SOS, and health sharing enforce Owner policy server-side",
   firestoreRules.includes("featureEnabledFor(uid, 'LOCATION')") &&
     firestoreRules.includes("featureEnabledFor(uid, 'SOS_ALERTS')") &&

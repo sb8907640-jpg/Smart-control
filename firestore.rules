@@ -334,6 +334,13 @@ service cloud.firestore {
             request.auth.uid == resource.data.senderDeviceId
             && (
               (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
+              // The sender may cancel after receiver approval but before upload
+              // starts; this prevents a failed local upload from leaving an APPROVED
+              // request permanently stuck.
+              || (
+                resource.data.status == 'APPROVED'
+                && request.resource.data.status == 'CANCELLED'
+              )
               || (
                 resource.data.status == 'APPROVED'
                 && request.resource.data.status == 'UPLOADING'

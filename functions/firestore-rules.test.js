@@ -483,6 +483,21 @@ async function main() {
       status: "APPROVED"
     }));
 
+    const approvedCancelRef = doc(controller.firestore(), "fileTransfers", "approved-cancelled-transfer");
+    await assertSucceeds(setDoc(approvedCancelRef, {
+      senderDeviceId: "controller-user",
+      receiverDeviceId: "target-user",
+      fileName: "retry.bin",
+      mimeType: "application/octet-stream",
+      sizeBytes: 10,
+      createdAtEpochMs: Date.now(),
+      status: "REQUESTED"
+    }));
+    await assertSucceeds(updateDoc(doc(target.firestore(), "fileTransfers", "approved-cancelled-transfer"), {
+      status: "APPROVED"
+    }));
+    await assertSucceeds(updateDoc(approvedCancelRef, { status: "CANCELLED" }));
+
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "controller-user"), {
         enabled: true,
