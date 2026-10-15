@@ -91,7 +91,7 @@ function seedDb() {
       "user-1": { uid: "user-1", status: "ACTIVE" },
       "owner-1": { uid: "owner-1", status: "ACTIVE", role: "OWNER" }
     },
-    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
+    devices: { "device-1": { userId: "user-1", controllerUid: "user-1", pairingActive: true, targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
