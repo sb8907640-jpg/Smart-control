@@ -539,6 +539,7 @@ export default function OwnerPanel() {
       return;
     }
     setError(""); setStatus("Sending verification code…");
+    setBusy(true);
     try {
       const auth = authClient();
       if (!recaptchaRef.current) {
@@ -552,6 +553,8 @@ export default function OwnerPanel() {
       recaptchaRef.current = null;
       setError(e instanceof Error ? e.message : "Phone verification could not start.");
       setStatus("Phone sign-in did not complete.");
+    } finally {
+      setBusy(false);
     }
   };
   const verifyPhoneOtp = async () => {
@@ -560,6 +563,7 @@ export default function OwnerPanel() {
       return;
     }
     setError(""); setStatus("Verifying phone identity…");
+    setBusy(true);
     try {
       await confirmation.confirm(otp.trim());
       recaptchaRef.current?.clear();
@@ -568,6 +572,8 @@ export default function OwnerPanel() {
       setStatus("Phone verified. Checking OWNER permissions…");
     } catch (e) {
       setError(e instanceof Error ? e.message : "The verification code was rejected.");
+    } finally {
+      setBusy(false);
     }
   };
 
