@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 
@@ -61,8 +61,18 @@ async function initiateWhatsAppSupport(user: User) {
   if (!base) throw new Error("Smart Control API URL is not configured.");
   const response = await fetch(base + "/api/support/whatsapp/initiate", { method: "POST", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.url) throw new Error(body.error ?? "WhatsApp support is unavailable.");
-  window.location.assign(body.url as string);
+  const supportUrl = typeof body.whatsappUrl === "string" ? body.whatsappUrl : "";
+  if (!response.ok || !supportUrl) throw new Error(body.error ?? "WhatsApp support is unavailable.");
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(supportUrl);
+  } catch {
+    throw new Error("The support service returned an invalid WhatsApp URL.");
+  }
+  if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "wa.me") {
+    throw new Error("The support service returned an untrusted destination.");
+  }
+  window.location.assign(parsedUrl.toString());
 }
 
 export default function Home() {
@@ -77,6 +87,7 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const recaptchaVerifier = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     const client = authClient();
@@ -84,10 +95,18 @@ export default function Home() {
     return onAuthStateChanged(client, setUser);
   }, []);
 
+  useEffect(() => () => {
+    recaptchaVerifier.current?.clear();
+    recaptchaVerifier.current = null;
+  }, []);
+
   async function signIn() {
+    if (!auth) {
+      setStatus("Authentication is still initializing. Try again in a moment.");
+      return;
+    }
     setBusy(true);
     setStatus("Signing in with Google...");
-    if (!auth) return;
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       setStatus("Signed in. Verifying backend session...");
@@ -107,11 +126,14 @@ export default function Home() {
     }
     setBusy(true);
     try {
-      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      const verifier = recaptchaVerifier.current ?? new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      recaptchaVerifier.current = verifier;
       const result = await signInWithPhoneNumber(auth, normalized, verifier);
       setConfirmation(result);
       setStatus("OTP sent. Enter the verification code.");
     } catch (error) {
+      recaptchaVerifier.current?.clear();
+      recaptchaVerifier.current = null;
       setStatus(error instanceof Error ? error.message : "OTP request failed");
     } finally {
       setBusy(false);
