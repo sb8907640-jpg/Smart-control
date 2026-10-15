@@ -135,7 +135,7 @@ fun FeatureCenterScreen(
         }
         item { OutlinedButton(onClick = onLocation, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.LOCATION, userId), modifier = Modifier.fillMaxWidth()) { Text("Location Sharing") } }
         item { OutlinedButton(onClick = onDeviceStatus, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.BATTERY_NETWORK, userId), modifier = Modifier.fillMaxWidth()) { Text("Battery & Network Status") } }
-        item { OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded && (featureAccess.isEnabled(FeatureId.CAMERA, userId) || featureAccess.isEnabled(FeatureId.MICROPHONE, userId) || featureAccess.isEnabled(FeatureId.SCREEN_SHARE, userId)), modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") } }
+        item { OutlinedButton(onClick = onMediaSession, enabled = settingsLoaded && (featureAccess.isGloballyEnabled(FeatureId.CAMERA) || featureAccess.isGloballyEnabled(FeatureId.MICROPHONE) || featureAccess.isGloballyEnabled(FeatureId.SCREEN_SHARE)), modifier = Modifier.fillMaxWidth()) { Text("Consent-Based Camera / Microphone / Screen Session") } }
         item { OutlinedButton(onClick = onScreenRecording, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.SCREEN_RECORDING, userId), modifier = Modifier.fillMaxWidth()) { Text("Record Screen (local, consent required)") } }
         item { OutlinedButton(onClick = onFileTransfer, enabled = settingsLoaded && featureAccess.isEnabled(FeatureId.FILE_TRANSFER, userId), modifier = Modifier.fillMaxWidth()) { Text("Approved File Transfer") } }
         item { OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text("Permission Center") } }
