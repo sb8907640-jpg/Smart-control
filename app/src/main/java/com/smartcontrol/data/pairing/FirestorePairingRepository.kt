@@ -127,27 +127,22 @@ class FirestorePairingRepository @Inject constructor(
 
     override suspend fun claimPairingCode(token: String): Result<PairedDevice> = runCatching {
         val controllerUid = auth.currentUser?.uid ?: error("Sign in first")
-        require(token.length >= 32) { "Invalid pairing token" }
-        val ref = db.collection("pairingCodes").document(token)
-        val deviceUid = db.runTransaction { tx ->
-            val snap = tx.get(ref)
-            val deviceUid = snap.getString("deviceUid") ?: error("Invalid pairing token")
-            val expires = snap.getLong("expiresAt") ?: 0L
-            require(expires > System.currentTimeMillis()) { "Pairing token expired" }
-            val senderRole = snap.getString("senderRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
-            val receiverRole = snap.getString("receiverRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
-            tx.set(db.collection("devices").document(deviceUid), mapOf(
-                "controllerUid" to controllerUid,
-                "pairingToken" to token,
-                "pairedAt" to System.currentTimeMillis(),
-                "pairingActive" to true,
-                "senderRole" to senderRole,
-                "receiverRole" to receiverRole
-            ), SetOptions.merge())
-            tx.delete(ref)
-            Triple(deviceUid, senderRole, receiverRole)
-        }.await()
-        PairedDevice(deviceUid.first, controllerUid, System.currentTimeMillis(), true, deviceUid.second, deviceUid.third)
+        require(token.matches(Regex("^[a-fA-F0-9]{48}$"))) { "Invalid pairing token" }
+
+        val response = FirebaseFunctions.getInstance()
+            .getHttpsCallable("claimPairingCode")
+            .call(mapOf("token" to token))
+            .await()
+        val data = response.getData() as? Map<*, *> ?: error("Pairing response is invalid")
+        val deviceUid = data["deviceUid"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: error("Pairing response did not include a device")
+        val returnedControllerUid = data["controllerUid"]?.toString()
+        require(returnedControllerUid == controllerUid) { "Pairing response controller mismatch" }
+        val pairedAt = (data["pairedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        val senderRole = data["senderRole"]?.toString()?.takeIf { it in ROLE_TYPES } ?: "Other"
+        val receiverRole = data["receiverRole"]?.toString()?.takeIf { it in ROLE_TYPES } ?: "Other"
+
+        PairedDevice(deviceUid, controllerUid, pairedAt, true, senderRole, receiverRole)
     }
 
     override suspend fun unpair(): Result<Unit> = runCatching {
