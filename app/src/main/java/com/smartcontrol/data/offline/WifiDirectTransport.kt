@@ -1,6 +1,7 @@
 package com.smartcontrol.data.offline
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.wifi.p2p.WifiP2pConfig
@@ -11,6 +12,9 @@ import android.os.Looper
 import androidx.core.content.ContextCompat
 import java.io.Closeable
 
+// Each public operation verifies the API-level-appropriate nearby/location
+// permission before calling WifiP2pManager; Lint cannot infer the helper check.
+@SuppressLint("MissingPermission")
 class WifiDirectTransport(private val context: Context) : Closeable {
     private val manager = context.getSystemService(WifiP2pManager::class.java)
         ?: error("Wi-Fi Direct is not available on this device.")
