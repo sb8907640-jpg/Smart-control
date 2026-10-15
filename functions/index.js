@@ -131,7 +131,8 @@ exports.verifyParentPin = onCall(async (request) => {
 
   const salt = secretSnap.get("salt");
   const expected = secretSnap.get("pinHash");
-  if (typeof salt !== "string" || typeof expected !== "string") {
+  if (typeof salt !== "string" || !/^[0-9a-f]{32}$/i.test(salt) ||
+      typeof expected !== "string" || !/^[0-9a-f]{64}$/i.test(expected)) {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
@@ -375,6 +376,15 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  // Persist the latest configured owner list so removed identifiers can be
+  // detected and their admin claims revoked on the next synchronization.
+  await db.collection("ownerAccounts").doc("config").set({
+    emails,
+    mobiles,
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  }, { merge: true });
 
   return { ok: true, granted, revoked, unresolved };
 });
