@@ -263,8 +263,12 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 running = false
             }
 
-            LaunchedEffect(autoStart, modeSelected, signedIn, consented, ageVerified) {
-                if (autoStart && signedIn && consented && ageVerified && modeSelected && !running) {
+            LaunchedEffect(autoStart, modeSelected, signedIn, consented, ageVerified, consentSyncState) {
+                // Local consent alone must not auto-start the service while the server-side
+                // consent record is still pending or has failed to synchronize.
+                if (autoStart && signedIn && consented && ageVerified && modeSelected &&
+                    consentSyncState == "SYNCED" && !running
+                ) {
                     startServiceFromUserAction()
                 }
             }
