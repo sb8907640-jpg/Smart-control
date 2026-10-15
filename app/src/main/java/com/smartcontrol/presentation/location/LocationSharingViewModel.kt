@@ -3,6 +3,7 @@ package com.smartcontrol.presentation.location
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
@@ -44,7 +45,16 @@ class LocationSharingViewModel @Inject constructor(
         get() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    private val privacyListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "allow_location_sharing" &&
+            !privacyPrefs.getBoolean("allow_location_sharing", true)
+        ) {
+            stopSharing()
+        }
+    }
+
     init {
+        privacyPrefs.registerOnSharedPreferenceChangeListener(privacyListener)
         viewModelScope.launch {
             pairingRepository.observeControlledDevices()
                 .map { devices -> devices.map { it.deviceUid }.filter(String::isNotBlank).distinct() }
@@ -75,5 +85,10 @@ class LocationSharingViewModel @Inject constructor(
         val uid = auth.currentUser?.uid ?: return@launch
         repository.stopSharing(uid)
         _sharing.value = false
+    }
+
+    override fun onCleared() {
+        privacyPrefs.unregisterOnSharedPreferenceChangeListener(privacyListener)
+        super.onCleared()
     }
 }
