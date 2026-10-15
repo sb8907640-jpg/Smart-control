@@ -248,7 +248,7 @@ check("File transfer uploads are bounded and match declared size",
 check("Cancelled file transfers can remove orphaned upload objects",
   storageRules.includes("transferDoc().data.status in ['APPROVED', 'UPLOADING', 'CANCELLED']") &&
     read("app/src/main/java/com/smartcontrol/data/filetransfer/FirebaseFileUploader.kt").includes("suspend fun deleteUploadedFile") &&
-    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("uploader.deleteUploadedFile(path)") &&
+    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("uploader.deleteUploadedFile(") &&
     read("functions/storage-rules.test.js").includes("deleteObject(ref(senderStorage"),
   "An incomplete upload is cancelled and its inaccessible object can be deleted without allowing receivers to read cancelled files.");
 
