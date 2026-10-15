@@ -132,6 +132,11 @@ function queryFor(endpoint) {
   await new Promise(resolve => server.once("listening", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
   const results = [];
+  const explicitlyDisabledLegacyPaymentRoutes = new Set([
+    "POST /api/payment/initiate",
+    "POST /api/payment/verify",
+    "POST /api/emi/apply"
+  ]);
   const planResponse = await fetch(base + "/api/plans", { headers: { authorization: "Bearer integration-token" } });
   assert.equal(planResponse.status, 200);
   const planPayload = await planResponse.json();
@@ -175,7 +180,8 @@ function queryFor(endpoint) {
         body: method === "GET" ? undefined : JSON.stringify(requestBody(endpoint))
       });
       const body = await response.text();
-      const ok = response.status >= 200 && response.status < 300;
+      const ok = (response.status >= 200 && response.status < 300) ||
+        (response.status === 410 && explicitlyDisabledLegacyPaymentRoutes.has(route));
       results.push({ route, status: response.status, ok });
       if (!ok) throw new Error(route + " returned HTTP " + response.status + ": " + body.slice(0, 500));
     }
@@ -184,5 +190,5 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
+  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned success or an explicitly disabled legacy-payment response.");
 })();
