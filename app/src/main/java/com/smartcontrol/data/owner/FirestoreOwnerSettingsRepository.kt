@@ -164,6 +164,12 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
             ?: error("History snapshot not found.")
         val typed = raw.entries.filter { it.value != null }.associate { it.key.toString() to it.value!! }
         val restored = decode(typed)
+        val currentSettings = firestore.collection("ownerSettings").document("global").get().await().data.orEmpty()
+        val currentMaster = currentSettings["masterConfig"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val currentAccess = currentMaster["access"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val currentPerUser = currentAccess["perUser"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val removedUserIds = currentPerUser.keys.map { it.toString() }.toSet() -
+            restored.masterConfig.access.perUser.keys
         val batch = firestore.batch()
         batch.set(
             firestore.collection("ownerSettings").document("global"),
@@ -172,14 +178,24 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         )
         batch.set(
             firestore.collection("featurePolicy").document("global"),
-            encodeFeaturePolicy(restored),
-            SetOptions.merge()
+            encodeFeaturePolicy(restored)
+        )
+        val ownerPolicyFields = listOf(
+            FieldPath.of("ownerEnabled"),
+            FieldPath.of("featureOverrides")
         )
         restored.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
             batch.set(
                 firestore.collection("featurePolicyUsers").document(userId),
                 encodeUserFeaturePolicy(userPolicy),
-                SetOptions.merge()
+                SetOptions.mergeFields(ownerPolicyFields)
+            )
+        }
+        removedUserIds.forEach { userId ->
+            batch.set(
+                firestore.collection("featurePolicyUsers").document(userId),
+                mapOf("ownerEnabled" to false, "featureOverrides" to emptyMap<String, Boolean>()),
+                SetOptions.mergeFields(ownerPolicyFields)
             )
         }
         batch.commit().await()
