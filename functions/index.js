@@ -1,12 +1,13 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
 const { ROLES, normalizeRole, canManageUser, canManageOwnerAccounts } = require("./spec/roles");
 const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
+const { globalFileTransferEnabled, userFileTransferEnabled } = require("./spec/file-transfer-policy");
 
 initializeApp();
 const db = getFirestore();
@@ -480,6 +481,14 @@ exports.updateOwnerUser = onCall(async (request) => {
     const disabled = action === "block";
     await getAuth().updateUser(uid, { disabled });
     const updatedAtEpochMs = Date.now();
+    // Storage Rules can check only two unique Firestore documents per request:
+    // the account status and the transfer record. Keep block state in this profile
+    // document as well as in the richer per-user feature policy projection.
+    await db.collection("users").doc(uid).set({
+      status: disabled ? "BLOCKED" : "ACTIVE",
+      updatedAtEpochMs,
+      updatedBy: request.auth.uid
+    }, { merge: true });
     if (disabled) {
       await db.collection("featurePolicyUsers").doc(uid).set({
         enabled: false,
@@ -633,6 +642,68 @@ exports.getPaymentGatewayProviderCatalog = gatewayPermitFunctions.getPaymentGate
 exports.savePaymentGatewayProviderDraft = gatewayPermitFunctions.savePaymentGatewayProviderDraft;
 Object.assign(exports, require("./ice-servers"));
 
+
+const ACTIVE_FILE_TRANSFER_STATUSES = ["REQUESTED", "APPROVED", "UPLOADING"];
+
+async function cancelFileTransferDocs(documents, reason) {
+  const unique = new Map();
+  for (const doc of documents) {
+    if (ACTIVE_FILE_TRANSFER_STATUSES.includes(String(doc.get("status") || ""))) {
+      unique.set(doc.ref.path, doc);
+    }
+  }
+  const docs = [...unique.values()];
+  for (let offset = 0; offset < docs.length; offset += 450) {
+    const batch = db.batch();
+    docs.slice(offset, offset + 450).forEach((doc) => batch.update(doc.ref, {
+      status: "CANCELLED",
+      cancellationReason: reason,
+      updatedAt: Date.now()
+    }));
+    await batch.commit();
+  }
+}
+
+async function cancelAllActiveFileTransfers(reason) {
+  while (true) {
+    const snapshot = await db.collection("fileTransfers")
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .limit(450)
+      .get();
+    if (snapshot.empty) return;
+    await cancelFileTransferDocs(snapshot.docs, reason);
+    if (snapshot.size < 450) return;
+  }
+}
+
+async function cancelActiveFileTransfersForUser(uid) {
+  const [sent, received] = await Promise.all([
+    db.collection("fileTransfers")
+      .where("senderDeviceId", "==", uid)
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .get(),
+    db.collection("fileTransfers")
+      .where("receiverDeviceId", "==", uid)
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .get()
+  ]);
+  await cancelFileTransferDocs([...sent.docs, ...received.docs], "USER_FILE_TRANSFER_POLICY_DISABLED");
+}
+
+exports.enforceGlobalFileTransferPolicy = onDocumentWritten("featurePolicy/global", async (event) => {
+  const after = event.data?.after;
+  const policy = after?.exists ? after.data() || {} : null;
+  if (globalFileTransferEnabled(policy)) return;
+  await cancelAllActiveFileTransfers("GLOBAL_FILE_TRANSFER_POLICY_DISABLED");
+});
+
+exports.enforcePerUserFileTransferPolicy = onDocumentWritten("featurePolicyUsers/{uid}", async (event) => {
+  const after = event.data?.after;
+  // Deleting a per-user override returns to the documented global-policy default.
+  if (!after?.exists) return;
+  if (userFileTransferEnabled(after.data() || {})) return;
+  await cancelActiveFileTransfersForUser(event.params.uid);
+});
 
 exports.detectConsentAnomaly = onDocumentCreated("auditLogs/{eventId}", async (event) => {
   const snapshot = event.data;
