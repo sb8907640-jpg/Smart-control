@@ -214,6 +214,25 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             }
             val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
 
+            DisposableEffect(Unit) {
+                val auth = FirebaseAuth.getInstance()
+                val listener = FirebaseAuth.AuthStateListener { state ->
+                    val currentUser = state.currentUser
+                    signedIn = currentUser != null
+                    if (currentUser == null) {
+                        val legalPreferences = getSharedPreferences("legal_consent", MODE_PRIVATE)
+                        consented = legalPreferences.getBoolean("accepted", false) &&
+                            legalPreferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION
+                        ageVerified = legalPreferences.getBoolean("age_verified", false)
+                        modeSelected = getSharedPreferences("smart_control_mode", MODE_PRIVATE)
+                            .getString("mode", null) != null
+                        consentSyncState = "WAITING"
+                    }
+                }
+                auth.addAuthStateListener(listener)
+                onDispose { auth.removeAuthStateListener(listener) }
+            }
+
             LaunchedEffect(signedIn, consented, consentSyncAttempt) {
                 if (!signedIn || !consented) {
                     consentSyncState = "WAITING"
