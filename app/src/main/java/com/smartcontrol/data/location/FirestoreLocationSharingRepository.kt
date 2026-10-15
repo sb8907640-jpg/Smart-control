@@ -56,8 +56,8 @@ class FirestoreLocationSharingRepository @Inject constructor(
                             deviceId = deviceId,
                             latitude = latitude,
                             longitude = longitude,
-                            accuracyMeters = (data["accuracyMeters"] as? Number)?.toFloat(),
-                            capturedAtEpochMs = (data["capturedAtEpochMs"] as? Number)?.toLong() ?: 0L
+                            accuracyMeters = (data?.get("accuracyMeters") as? Number)?.toFloat(),
+                            capturedAtEpochMs = (data?.get("capturedAtEpochMs") as? Number)?.toLong() ?: 0L
                         )
                     )
                 } else {
