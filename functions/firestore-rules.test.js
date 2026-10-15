@@ -43,6 +43,20 @@ async function main() {
     // A signed-in user must not be able to enumerate other users' pairing tokens.
     await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
 
+    // Financial records must be created by trusted callable functions only.
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "forged-payment"), {
+      userId: "normal-user",
+      status: "SUCCESS",
+      amountMinor: 1,
+      createdAtEpochMs: now
+    }));
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-emi"), {
+      userId: "normal-user",
+      paymentId: "forged-payment",
+      tenureMonths: 12,
+      status: "PENDING"
+    }));
+
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "f".repeat(48)), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
