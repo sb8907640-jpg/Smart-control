@@ -74,6 +74,10 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         val previousEditable = previousOwnerControl["editableValues"] as? Map<*, *> ?: emptyMap<Any, Any>()
         val removedEditableKeys = previousEditable.keys.map { it.toString() }.toSet() -
             sanitizedEditableValues.keys
+        val previousAccess = previousMaster["access"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val previousPerUser = previousAccess["perUser"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val removedUserIds = previousPerUser.keys.map { it.toString() }.toSet() -
+            settings.masterConfig.access.perUser.keys
         if (safeSettings.masterConfig.ownerControl.changeLogEnabled) {
             firestore.collection("ownerSettingsHistory").document().set(
                 mapOf(
@@ -97,16 +101,28 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
                 FieldValue.delete()
             )
         }
+        // The public policy projection is fully replaced so removed feature override
+        // keys cannot linger as stale denials/enables from an earlier configuration.
         batch.set(
             firestore.collection("featurePolicy").document("global"),
-            encodeFeaturePolicy(settings),
-            SetOptions.merge()
+            encodeFeaturePolicy(settings)
+        )
+        val ownerPolicyFields = listOf(
+            FieldPath.of("ownerEnabled"),
+            FieldPath.of("featureOverrides")
         )
         settings.masterConfig.access.perUser.forEach { (userId, userPolicy) ->
             batch.set(
                 firestore.collection("featurePolicyUsers").document(userId),
                 encodeUserFeaturePolicy(userPolicy),
-                SetOptions.merge()
+                SetOptions.mergeFields(ownerPolicyFields)
+            )
+        }
+        removedUserIds.forEach { userId ->
+            batch.set(
+                firestore.collection("featurePolicyUsers").document(userId),
+                mapOf("ownerEnabled" to false, "featureOverrides" to emptyMap<String, Boolean>()),
+                SetOptions.mergeFields(ownerPolicyFields)
             )
         }
         batch.commit().await()
