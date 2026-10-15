@@ -75,6 +75,31 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     }
     req.user = applyOwnerRole(verifiedUser);
 
+    // Owner Accounts is the server-managed allowlist shared with Firebase Functions.
+    // Resolve it for admin-claim accounts so a newly configured Owner is recognized
+    // consistently by the web Owner panel without trusting a client-supplied role.
+    const currentRole = String(req.user?.role || "").toUpperCase();
+    if (db && req.user?.admin === true && req.user.owner !== true &&
+        currentRole !== "OWNER" && currentRole !== "SUPER_ADMIN") {
+      try {
+        const ownerConfigSnap = await db.collection("ownerAccounts").doc("config").get();
+        const ownerConfig = ownerConfigSnap.exists ? ownerConfigSnap.data() || {} : {};
+        const email = String(req.user.email || "").trim().toLowerCase();
+        const phone = String(req.user.phone_number || req.user.phoneNumber || "").trim();
+        const ownerEmails = Array.isArray(ownerConfig.emails)
+          ? ownerConfig.emails.map(value => String(value).trim().toLowerCase())
+          : [];
+        const ownerMobiles = Array.isArray(ownerConfig.mobiles)
+          ? ownerConfig.mobiles.map(value => String(value).trim())
+          : [];
+        if ((email && ownerEmails.includes(email)) || (phone && ownerMobiles.includes(phone))) {
+          req.user = { ...req.user, role: "OWNER", owner: true, admin: true };
+        }
+      } catch (_) {
+        // Never infer Owner authority from a failed allowlist lookup.
+      }
+    }
+
     // Owner suspend/block controls must be enforced by the server, not just
     // displayed in the UI. Missing user profiles remain compatible with older
     // installations; a configured Firestore status lookup failure fails closed.
