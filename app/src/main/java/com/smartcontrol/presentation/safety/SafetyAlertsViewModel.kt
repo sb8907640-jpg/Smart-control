@@ -30,9 +30,15 @@ class SafetyAlertsViewModel @Inject constructor(
         }
     }
 
+    private val _status = MutableStateFlow<String?>(null)
+    val status: StateFlow<String?> = _status.asStateFlow()
+
     fun triggerSos() {
         val id = deviceId
-        if (id.isBlank()) return
+        if (id.isBlank()) {
+            _status.value = "Sign in before sending an SOS alert."
+            return
+        }
         viewModelScope.launch {
             repository.create(
                 SafetyAlert(
@@ -42,13 +48,44 @@ class SafetyAlertsViewModel @Inject constructor(
                     "SOS alert triggered by the signed-in device user.",
                     System.currentTimeMillis()
                 )
-            )
+            ).onSuccess {
+                _status.value = "SOS alert sent."
+            }.onFailure {
+                _status.value = it.message ?: "Could not send the SOS alert."
+            }
         }
     }
 
-    fun createTestAlert() = triggerSos()
+    fun createTestAlert() {
+        val id = deviceId
+        if (id.isBlank()) {
+            _status.value = "Sign in before creating a test alert."
+            return
+        }
+        viewModelScope.launch {
+            repository.create(
+                SafetyAlert(
+                    UUID.randomUUID().toString(),
+                    id,
+                    "TEST",
+                    "This is a test safety alert; no emergency was reported.",
+                    System.currentTimeMillis()
+                )
+            ).onSuccess {
+                _status.value = "Test alert created."
+            }.onFailure {
+                _status.value = it.message ?: "Could not create the test alert."
+            }
+        }
+    }
 
     fun acknowledge(alertId: String) {
-        viewModelScope.launch { repository.acknowledge(alertId) }
+        viewModelScope.launch {
+            repository.acknowledge(alertId).onSuccess {
+                _status.value = "Alert acknowledged."
+            }.onFailure {
+                _status.value = it.message ?: "Could not acknowledge this alert."
+            }
+        }
     }
 }
