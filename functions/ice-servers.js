@@ -55,7 +55,16 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     .map((value) => value.trim())
     .filter(Boolean);
   const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
-  const sharedSecret = turnSharedSecret.value();
+  let sharedSecret = "";
+  if (turnUrls.length > 0) {
+    try {
+      sharedSecret = turnSharedSecret.value();
+    } catch (_) {
+      // Missing TURN secret leaves a safe STUN-only configuration; it never
+      // causes the authorization-checked callable itself to fail.
+      sharedSecret = "";
+    }
+  }
   let turnConfigured = false;
   let expiresAtEpochSeconds = null;
 
