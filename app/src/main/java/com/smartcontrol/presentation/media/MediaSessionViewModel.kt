@@ -80,6 +80,7 @@ class MediaSessionViewModel @Inject constructor(
                     lastError.value = null
                     MediaProjectionForegroundService.stop(context)
                     FamilySafetyService.setIdle(context)
+                    FamilySafetyService.stop(context)
                 }
             }
         }
