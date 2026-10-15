@@ -6,8 +6,10 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc
@@ -101,6 +103,7 @@ async function main() {
     // Pairing tokens are private to their creator. A controller must use the
     // authenticated claimPairingCode callable instead of reading/listing codes.
     await assertFails(getDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertFails(getDocs(collection(controller.firestore(), "pairingCodes")));
     await assertFails(updateDoc(doc(controller.firestore(), "devices", "target-user"), {
       controllerUid: "controller-user",
       pairingToken: claimToken,
