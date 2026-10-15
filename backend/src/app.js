@@ -20,7 +20,10 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
+      // Non-browser clients may omit Origin. Browser origins must be explicitly
+      // allowlisted; an unset CORS_ORIGIN must never silently allow every site.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("CORS origin is not allowed."));
     },
     credentials: true
