@@ -55,6 +55,7 @@ class LocationSharingViewModel @Inject constructor(
 
     init {
         privacyPrefs.registerOnSharedPreferenceChangeListener(privacyListener)
+        if (!privacyPrefs.getBoolean("allow_location_sharing", true)) stopSharing()
         viewModelScope.launch {
             pairingRepository.observeControlledDevices()
                 .map { devices -> devices.map { it.deviceUid }.filter(String::isNotBlank).distinct() }
