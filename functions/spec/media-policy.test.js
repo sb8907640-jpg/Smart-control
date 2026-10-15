@@ -27,5 +27,6 @@ test("media policy honors global and per-user feature overrides and expiry", () 
   assert.equal(mediaCapabilitiesAllowed(["CAMERA"], enabledPolicy, { enabled: false }), false);
   assert.equal(mediaCapabilitiesAllowed(["CAMERA"], enabledPolicy, { ownerEnabled: false }), false);
   assert.equal(mediaCapabilitiesAllowed(["CAMERA"], enabledPolicy, { expiresAtEpochMs: 999 }, 1000), false);
+  assert.equal(mediaCapabilitiesAllowed(["CAMERA"], enabledPolicy, { expiresAtEpochMs: "not-a-date" }), false);
   assert.equal(mediaCapabilitiesAllowed(["CAMERA"], enabledPolicy, { featureOverrides: { CAMERA: false } }), false);
 });
