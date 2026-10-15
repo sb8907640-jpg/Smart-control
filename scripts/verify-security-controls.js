@@ -165,6 +165,16 @@ check("Location, SOS, and health sharing enforce Owner policy server-side",
     read("functions/firestore-rules.test.js").includes("dataCollectionEnabled: false"),
   "Direct Firestore writes cannot bypass disabled location/SOS features or health data-sharing policy.");
 
+const safetyAlertsViewModel = read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt");
+const safetyAlertsScreen = read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsScreen.kt");
+check("Test safety alert cannot trigger a real SOS and outcomes are visible",
+  safetyAlertsViewModel.includes('type = "TEST"') &&
+    !safetyAlertsViewModel.includes("fun createTestAlert() = triggerSos()") &&
+    safetyAlertsViewModel.includes("Could not create the safety alert.") &&
+    safetyAlertsScreen.includes("viewModel.status.collectAsState()") &&
+    firestoreRules.includes("request.resource.data.type in ['SOS', 'TEST']"),
+  "The test button creates a labeled non-emergency event, while SOS/acknowledgement failures are shown to the user.");
+
 check("Owner feature policy is enforced across file-transfer operations",
   firestoreRules.includes("fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)") &&
     functionsIndex.includes('exports.enforceGlobalFileTransferPolicy') &&
