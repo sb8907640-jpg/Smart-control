@@ -32,6 +32,8 @@ async function main() {
       await setDoc(doc(context.firestore(), "featurePolicy", "global"), {
         globalFeaturesEnabled: true,
         globalEnabled: true,
+        dataCollectionEnabled: true,
+        dataShareAllowed: true,
         featureOverrides: {},
         globalFeatureOverrides: {}
       });
@@ -166,6 +168,97 @@ async function main() {
         }
       }
     }));
+
+    const locationRef = doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-1");
+    await assertSucceeds(setDoc(locationRef, {
+      latitude: 26.8,
+      longitude: 80.9,
+      accuracyMeters: 15,
+      sharedAtEpochMs: Date.now()
+    }));
+    const sosRef = doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "sos-1");
+    await assertSucceeds(setDoc(sosRef, {
+      alertId: "sos-1",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Test alert",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        dataCollectionEnabled: true,
+        dataShareAllowed: true,
+        featureOverrides: { LOCATION: false },
+        globalFeatureOverrides: {}
+      });
+    });
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-disabled-global"), {
+      latitude: 26.8,
+      longitude: 80.9,
+      sharedAtEpochMs: Date.now()
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        dataCollectionEnabled: true,
+        dataShareAllowed: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
+        ownerEnabled: true,
+        featureOverrides: { LOCATION: false }
+      });
+    });
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-disabled-user"), {
+      latitude: 26.8,
+      longitude: 80.9,
+      sharedAtEpochMs: Date.now()
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
+        ownerEnabled: true,
+        featureOverrides: {}
+      });
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        dataCollectionEnabled: false,
+        dataShareAllowed: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
+    });
+    await assertFails(updateDoc(targetDeviceRef, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: Date.now(),
+        permissions: {
+          camera: true,
+          microphone: false,
+          location: false,
+          notifications: true
+        }
+      }
+    }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        dataCollectionEnabled: true,
+        dataShareAllowed: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
+    });
     await assertFails(updateDoc(targetDeviceRef, { controllerUid: "attacker-user" }));
 
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
