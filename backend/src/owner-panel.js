@@ -1,4 +1,4 @@
-function installOwnerPanelRoutes(app, { db }) {
+function installOwnerPanelRoutes(app, { db, auth }) {
   const collection = (name) => db.collection(name);
   const crypto = require("node:crypto");
   const { getLinkValidity, calculateExpiry } = require("./plan-policy");
@@ -150,8 +150,18 @@ function installOwnerPanelRoutes(app, { db }) {
     const ref = collection("users").doc(id);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: "User not found." });
-    const targetRole = String(snap.data()?.role || "USER").toUpperCase();
-    if (targetRole === "SUPER_ADMIN") {
+    const profileRole = String(snap.data()?.role || "USER").toUpperCase();
+    let authRole = null;
+    if (auth && typeof auth.getUser === "function") {
+      try {
+        const targetAuthUser = await auth.getUser(id);
+        const claims = targetAuthUser.customClaims || {};
+        authRole = String(claims.role || (claims.admin === true ? "SUPER_ADMIN" : "USER")).toUpperCase();
+      } catch (error) {
+        if (error.code !== "auth/user-not-found") throw error;
+      }
+    }
+    if (profileRole === "SUPER_ADMIN" || authRole === "SUPER_ADMIN") {
       return res.status(403).json({ error: "Owner accounts cannot change a Super Admin account status." });
     }
     const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
