@@ -242,6 +242,13 @@ async function main() {
       acknowledged: false,
       createdBy: "media-target"
     }));
+    await assertSucceeds(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "permission-revoked"), {
+      type: "PERMISSION_REVOKED",
+      permission: "camera",
+      message: "Camera permission was revoked.",
+      createdAt: Date.now(),
+      read: false
+    }));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
