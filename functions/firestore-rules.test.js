@@ -173,7 +173,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, pairing-token privacy, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry/privacy, server-only pairing claims, device health writes, server-only billing records, SDP permissions, and paired-device file transfers.");
   } finally {
     await env.cleanup();
   }
