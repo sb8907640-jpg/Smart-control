@@ -29,6 +29,18 @@ async function main() {
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
+    await assertFails(setDoc(doc(normal.firestore(), "payments", "client-forged-payment"), {
+      userId: "normal-user",
+      status: "PAID",
+      amountMinor: 1,
+      currency: "INR"
+    }));
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "client-forged-schedule"), {
+      userId: "normal-user",
+      status: "ACTIVE",
+      amountMinor: 1
+    }));
+
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
