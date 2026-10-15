@@ -224,6 +224,26 @@ async function main() {
     }));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        dataCollectionEnabled: true,
+        dataShareAllowed: true,
+        featureOverrides: { SOS_ALERTS: false },
+        globalFeatureOverrides: {}
+      });
+    });
+    await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "sos-disabled"), {
+      alertId: "sos-disabled",
+      deviceId: "media-target",
+      type: "SOS",
+      message: "Blocked by owner policy",
+      createdAt: Date.now(),
+      acknowledged: false,
+      createdBy: "media-target"
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "media-target"), {
         ownerEnabled: true,
         featureOverrides: {}
