@@ -78,10 +78,12 @@ check("Pairing codes enforce Owner-only no-expiry",
     firestoreRules.includes("request.auth.token.role == 'OWNER'") &&
     firestoreRules.includes("request.resource.data.expiryMode == 'NO_EXPIRY'"),
   "Non-owner pairing codes are limited to 60 minutes.");
-check("Pairing claim consumes code only with matching atomic device link",
-  firestoreRules.includes("getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid))") &&
-    firestoreRules.includes("pairingToken == token"),
-  "A controller cannot delete a pairing code without the matching linked-device write.");
+check("Pairing tokens are private and claimed by the authenticated server callable",
+  firestoreRules.includes("resource.data.deviceUid == request.auth.uid") &&
+    functionsIndex.includes("exports.claimPairingCode") &&
+    functionsIndex.includes("transaction.delete(codeRef)") &&
+    pairingRepo.includes('getHttpsCallable("claimPairingCode")'),
+  "Clients cannot list/read other devices' pairing tokens; the server validates and consumes a token atomically with the device link.");
 check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
