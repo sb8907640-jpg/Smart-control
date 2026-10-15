@@ -72,7 +72,7 @@ class FirestoreMediaSignalingRepository @Inject constructor(
             }
             s?.documentChanges
                 ?.filter { it.type.name == "ADDED" }
-                ?.filter { change -> change.document.getString("senderUid") != localUid }
+                ?.filter { change -> change.document.getString("senderUid")?.let { it != localUid } == true }
                 ?.forEach { change ->
                     trySend(IceCandidateModel(
                         change.document.getString("candidate").orEmpty(),
