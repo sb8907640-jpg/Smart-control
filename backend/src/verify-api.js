@@ -205,6 +205,16 @@ function queryFor(endpoint) {
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
+  const unsafePaymentEdit = await fetch(base + "/api/owner/payments/payment-1", {
+    method: "PATCH",
+    headers: {
+      authorization: "Bearer integration-token",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ values: { status: "SUCCESS" } })
+  });
+  assert.equal(unsafePaymentEdit.status, 400, "owner REST edits must not forge payment status");
+
   const paymentAfterLegacyVerify = await db.collection("payments").doc("payment-1").get();
   const subscriptionAfterLegacyVerify = await db.collection("subscriptions").doc("sub-pending").get();
   assert.equal(paymentAfterLegacyVerify.data().status, "INITIATED", "legacy verification must not mark an unverified payment successful");
