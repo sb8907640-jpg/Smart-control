@@ -229,6 +229,7 @@ async function main() {
       capturedAtEpochMs: Date.now(),
       sharingActive: true
     }));
+    await assertFails(getDoc(doc(mediaController.firestore(), "devices", "media-target", "sharedLocation", "location-1")));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
@@ -245,10 +246,13 @@ async function main() {
       });
     });
     await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-disabled-user"), {
+      deviceId: "media-target",
       latitude: 26.8,
       longitude: 80.9,
-      sharedAtEpochMs: Date.now()
+      capturedAtEpochMs: Date.now(),
+      sharingActive: true
     }));
+    await assertFails(getDoc(doc(mediaController.firestore(), "devices", "media-target", "sharedLocation", "location-1")));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
