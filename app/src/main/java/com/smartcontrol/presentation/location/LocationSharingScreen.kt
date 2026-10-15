@@ -13,6 +13,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewModel = hiltViewModel()) {
     val sharing by viewModel.sharing.collectAsState()
     val last by viewModel.lastLocation.collectAsState()
+    val remoteLocations by viewModel.remoteLocations.collectAsState()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (viewModel.hasPermission) viewModel.publishCurrentLocation()
     }
@@ -31,6 +32,22 @@ fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewMode
                     Text("Latitude: ${location.latitude}")
                     Text("Longitude: ${location.longitude}")
                     Text("Accuracy: ${location.accuracyMeters ?: -1f} m")
+                }
+            }
+        }
+        Text("Active locations shared by paired devices", style = MaterialTheme.typography.titleMedium)
+        if (remoteLocations.isEmpty()) {
+            Text("No paired device is currently sharing its location.")
+        } else {
+            remoteLocations.forEach { location ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Device: ${location.deviceId}", style = MaterialTheme.typography.titleMedium)
+                        Text("Latitude: ${location.latitude}")
+                        Text("Longitude: ${location.longitude}")
+                        Text("Accuracy: ${location.accuracyMeters ?: -1f} m")
+                        Text("Updated: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(location.capturedAtEpochMs))}")
+                    }
                 }
             }
         }
