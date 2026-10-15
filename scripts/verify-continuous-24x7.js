@@ -19,6 +19,7 @@ function runtime(name, detail) {
 }
 
 const service = read("app/src/main/java/com/smartcontrol/service/FamilySafetyService.kt");
+const bootReceiver = read("app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt");
 const manifest = read("app/src/main/AndroidManifest.xml");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
 const docs = read("docs/master-specification.md");
@@ -72,9 +73,13 @@ check(
 );
 
 check(
-  "Foreground service remains restart-oriented",
-  service.includes("return START_STICKY"),
-  "START_STICKY supports service restart when Android permits it."
+  "Service restart cannot bypass consent or opt-in",
+  service.includes("return START_NOT_STICKY") &&
+    service.includes("isStartupAllowed(intent)") &&
+    service.includes("ACTION_AUTO_START") &&
+    bootReceiver.includes("ACTION_AUTO_START") &&
+    bootReceiver.includes("auto_start_service"),
+  "A null-intent process restart stops safely; reboot recovery is an explicit opt-in action and revalidates consent before starting."
 );
 
 check(
