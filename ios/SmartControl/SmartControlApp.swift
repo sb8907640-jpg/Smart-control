@@ -1,6 +1,23 @@
 import SwiftUI
 import Security
 
+private func validatedBackendURL(_ value: String) -> URL? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let url = URL(string: normalized),
+          let scheme = url.scheme?.lowercased(),
+          let host = url.host?.lowercased(),
+          url.user == nil,
+          url.password == nil else {
+        return nil
+    }
+    let isLocalHost = ["localhost", "127.0.0.1", "::1"].contains(host)
+    guard scheme == "https" || (scheme == "http" && isLocalHost) else {
+        return nil
+    }
+    return url
+}
+
 @main
 struct SmartControlApp: App {
     @StateObject private var session = AppSession()
@@ -30,8 +47,14 @@ final class AppSession: ObservableObject {
     private var client = BackendClient()
 
     init() {
-        apiBaseURL = UserDefaults.standard.string(forKey: "smartcontrol.apiBaseURL") ?? ""
-        client.setBaseURL(apiBaseURL)
+        let savedURL = UserDefaults.standard.string(forKey: "smartcontrol.apiBaseURL") ?? ""
+        if let validURL = validatedBackendURL(savedURL) {
+            apiBaseURL = validURL.absoluteString
+            client.setBaseURL(apiBaseURL)
+        } else {
+            apiBaseURL = ""
+            UserDefaults.standard.removeObject(forKey: "smartcontrol.apiBaseURL")
+        }
         if let token = tokenStore.read() {
             client.setBearerToken(token)
             authenticated = true
@@ -39,7 +62,11 @@ final class AppSession: ObservableObject {
     }
 
     func saveBaseURL(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let validURL = validatedBackendURL(value) else {
+            errorMessage = "Backend URL must use HTTPS. HTTP is allowed only for localhost development."
+            return
+        }
+        let normalized = validURL.absoluteString
         apiBaseURL = normalized
         UserDefaults.standard.set(normalized, forKey: "smartcontrol.apiBaseURL")
         client.setBaseURL(normalized)
@@ -171,8 +198,7 @@ final class BackendClient {
     private let decoder = JSONDecoder()
 
     func setBaseURL(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        baseURL = URL(string: normalized.isEmpty ? "" : normalized)
+        baseURL = validatedBackendURL(value)
     }
 
     func setBearerToken(_ token: String) {
