@@ -57,7 +57,12 @@ class ScreenRecordingService : Service() {
                 stopRecording()
                 return START_NOT_STICKY
             }
-            ACTION_START -> startRecording(intent)
+            ACTION_START -> {
+                // Ignore duplicate starts so a rapid second tap cannot replace an
+                // active projection/recorder or leak its file descriptor.
+                if (recordingStarted || projection != null || stopping) return START_NOT_STICKY
+                startRecording(intent)
+            }
             else -> return START_NOT_STICKY
         }
         return START_NOT_STICKY
