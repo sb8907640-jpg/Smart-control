@@ -35,35 +35,41 @@ class FileTransferViewModel @Inject constructor(
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
 
-    val controlledDevice = pairingRepository.observeControlledDevice()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val incoming = callbackFlow {
+    private val signedInUid = callbackFlow {
         val listener = FirebaseAuth.AuthStateListener { state ->
-            trySend(state.currentUser?.uid)
+            trySend(state.currentUser?.uid.orEmpty())
         }
         auth.addAuthStateListener(listener)
-        trySend(auth.currentUser?.uid)
+        trySend(auth.currentUser?.uid.orEmpty())
         awaitClose { auth.removeAuthStateListener(listener) }
-    }.distinctUntilChanged()
-        .flatMapLatest { uid ->
-            if (uid.isNullOrBlank()) {
-                flowOf(emptyList<FileTransferRequest>())
-            } else {
-                repository.observeIncoming(uid).catch {
-                    // Clear stale transfer metadata and keep the auth observer alive
-                    // when Firestore denies access or the network is unavailable.
-                    emit(emptyList())
-                }
+    }.distinctUntilChanged().stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        auth.currentUser?.uid.orEmpty()
+    )
+
+    val controlledDevice = signedInUid.flatMapLatest { uid ->
+        if (uid.isBlank()) flowOf(null) else pairingRepository.observeControlledDevice()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val incoming = signedInUid.flatMapLatest { uid ->
+        if (uid.isBlank()) {
+            flowOf(emptyList<FileTransferRequest>())
+        } else {
+            repository.observeIncoming(uid).catch {
+                // Clear stale transfer metadata and keep the auth observer alive
+                // when Firestore denies access or the network is unavailable.
+                emit(emptyList())
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status
     private val pendingTransferPrefs by lazy {
         context.getSharedPreferences("file_transfer_pending", Context.MODE_PRIVATE)
     }
+    private var pendingOwnerUid = auth.currentUser?.uid.orEmpty()
     private var pendingTransferId: String? = null
     private var pendingUri: Uri? = null
     private val _hasPendingUpload = MutableStateFlow(false)
@@ -84,6 +90,19 @@ class FileTransferViewModel @Inject constructor(
             _hasPendingUpload.value = true
         } else {
             pendingTransferPrefs.edit().clear().apply()
+        }
+
+        viewModelScope.launch {
+            signedInUid.collect { uid ->
+                if (uid != pendingOwnerUid) {
+                    pendingOwnerUid = uid
+                    pendingTransferId = null
+                    pendingUri = null
+                    _hasPendingUpload.value = false
+                    pendingTransferPrefs.edit().clear().apply()
+                    _status.value = null
+                }
+            }
         }
     }
 
