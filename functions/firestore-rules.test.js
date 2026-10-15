@@ -29,6 +29,26 @@ async function main() {
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
+    // Health heartbeats are writable only by the device owner and cannot mutate pairing data.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "devices", "health-user"), { pairingActive: false });
+      await setDoc(doc(ctx.firestore(), "devices", "health-target"), {
+        controllerUid: "health-controller", pairingActive: true
+      });
+    });
+    const healthUser = env.authenticatedContext("health-user");
+    const healthController = env.authenticatedContext("health-controller");
+    const healthPayload = {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: Date.now(),
+        permissions: { camera: false, microphone: false, location: true, notifications: true }
+      }
+    };
+    await assertSucceeds(updateDoc(doc(healthUser.firestore(), "devices/health-user"), healthPayload));
+    await assertFails(updateDoc(doc(healthController.firestore(), "devices/health-target"), healthPayload));
+    await assertFails(updateDoc(doc(healthUser.firestore(), "devices/health-user"), { controllerUid: "attacker" }));
+
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
