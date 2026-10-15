@@ -14,7 +14,7 @@ import com.google.firebase.auth.FirebaseAuth
 @Composable
 fun BillingScreen(
     onBack: () -> Unit,
-    onRazorpayCheckout: (Payment) -> Unit = {},
+    onRazorpayCheckout: (Payment) -> Unit,
     viewModel: BillingViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val plans by viewModel.plans.collectAsState()
