@@ -568,6 +568,10 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     if (resolvedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
     if (!user) continue;
+    // An account may remain configured through its phone number after its email
+    // identifier is removed (or vice versa). Never revoke claims from a user who
+    // is still present in the resolved allowlist under another verified identifier.
+    if (resolvedUsers.has(user.uid)) continue;
     if (user.uid === request.auth.uid) {
       const actorClaims = request.auth.token || {};
       const actorRole = normalizeRole(actorClaims.role);
