@@ -156,6 +156,15 @@ check("File transfer requests require an active paired receiver",
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
   "Transfers cannot be opened to arbitrary unrelated accounts.");
 
+check("Location, SOS, and health sharing enforce Owner policy server-side",
+  firestoreRules.includes("featureEnabledFor(uid, 'LOCATION')") &&
+    firestoreRules.includes("featureEnabledFor(uid, 'SOS_ALERTS')") &&
+    firestoreRules.includes("healthSharingAllowed()") &&
+    read("functions/firestore-rules.test.js").includes("location-disabled-global") &&
+    read("functions/firestore-rules.test.js").includes("sos-disabled") &&
+    read("functions/firestore-rules.test.js").includes("dataCollectionEnabled: false"),
+  "Direct Firestore writes cannot bypass disabled location/SOS features or health data-sharing policy.");
+
 check("Owner feature policy is enforced across file-transfer operations",
   firestoreRules.includes("fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)") &&
     functionsIndex.includes('exports.enforceGlobalFileTransferPolicy') &&
