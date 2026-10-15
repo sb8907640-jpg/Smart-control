@@ -32,10 +32,15 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     throw new HttpsError("failed-precondition", "TURN credentials are only available for approved or active sessions.");
   }
 
-  const [globalPolicySnapshot, userPolicySnapshot] = await Promise.all([
+  const [deviceSnapshot, globalPolicySnapshot, userPolicySnapshot] = await Promise.all([
+    db.collection("devices").doc(session.targetDeviceId).get(),
     db.collection("featurePolicy").doc("global").get(),
     db.collection("featurePolicyUsers").doc(session.targetDeviceId).get()
   ]);
+  const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
+  if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
+    throw new HttpsError("failed-precondition", "The device pairing is no longer active.");
+  }
   const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
   if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
     session.capabilities,
