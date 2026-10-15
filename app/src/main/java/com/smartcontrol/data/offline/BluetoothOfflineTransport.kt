@@ -1,6 +1,7 @@
 package com.smartcontrol.data.offline
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothServerSocket
@@ -16,6 +17,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 
+@SuppressLint("MissingPermission")
 data class BluetoothOfflineConnection(
     val socket: BluetoothSocket,
     val input: InputStream,
@@ -26,6 +28,9 @@ data class BluetoothOfflineConnection(
     }
 }
 
+// Every Bluetooth operation below checks BLUETOOTH_CONNECT immediately before
+// calling the Android API. Lint cannot follow the shared permission guard helper.
+@SuppressLint("MissingPermission")
 class BluetoothOfflineTransport(
     private val context: Context,
     private val adapter: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java)?.adapter
