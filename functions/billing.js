@@ -1292,41 +1292,55 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
     }
     const payment = snap.data() || {};
     if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
-      const activation = await activateSubscriptionForPayment(paymentId, payment);
-      await ref.update({
-        status: "SUCCESS",
+      // Persist the provider reference inside the same transaction that activates
+      // the subscription. A follow-up write could otherwise overwrite a concurrent refund lock.
+      await activateSubscriptionForPayment(paymentId, payment, {
         gatewayReference: reference,
-        subscriptionId: activation.subscriptionId,
-        verifiedAtEpochMs: Date.now(),
-        updatedAtEpochMs: Date.now()
+        verifiedAtEpochMs: Date.now()
       });
     } else if (status === "FAILED" || status === "CANCELLED") {
-      await ref.update({
-        status: status === "CANCELLED" ? "FAILED" : "FAILED",
-        gatewayReference: reference,
-        updatedAtEpochMs: Date.now()
+      await db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return;
+        const latestPayment = latestSnap.data() || {};
+        // A delayed failure event must not downgrade a payment that has already
+        // succeeded, entered refund reconciliation, or been refunded.
+        if (latestPayment.status !== "PENDING") return;
+        tx.update(ref, {
+          status: "FAILED",
+          gatewayReference: reference,
+          updatedAtEpochMs: Date.now()
+        });
       });
     } else if (status === "REFUNDED") {
-      await ref.update({
-        status: "REFUNDED",
-        gatewayReference: reference,
-        refundAmountMinor: Number(payment.amountMinor || 0),
-        refundedAtEpochMs: Date.now(),
-        updatedAtEpochMs: Date.now()
+      await db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return;
+        const latestPayment = latestSnap.data() || {};
+        if (latestPayment.status === "REFUNDED") return;
+        const now = Date.now();
+        if (latestPayment.subscriptionId) {
+          tx.set(db.collection("subscriptions").doc(latestPayment.subscriptionId), {
+            status: "CANCELLED",
+            cancelledAtEpochMs: now,
+            updatedAtEpochMs: now
+          }, { merge: true });
+        }
+        // Payment and subscription state move together. A later success webhook
+        // cannot reactivate this payment because activation rejects REFUNDED.
+        tx.update(ref, {
+          status: "REFUNDED",
+          gatewayReference: reference,
+          refundAmountMinor: Number(latestPayment.amountMinor || 0),
+          refundedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
       });
-      if (payment.subscriptionId) {
-        await db.collection("subscriptions").doc(payment.subscriptionId).set({
-          status: "CANCELLED",
-          cancelledAtEpochMs: Date.now(),
-          updatedAtEpochMs: Date.now()
-        }, { merge: true });
-      }
     } else {
-      await ref.update({
-        status: "PENDING",
-        gatewayReference: reference,
-        updatedAtEpochMs: Date.now()
-      });
+      // Unknown/intermediate provider states are acknowledged but never reset a
+      // terminal or successful payment back to PENDING.
+      res.status(200).json({ ok: true, ignored: true });
+      return;
     }
 
     res.status(200).json({ ok: true });

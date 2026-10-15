@@ -79,6 +79,18 @@ check("Verified payment activation cannot overwrite a concurrent refund lock",
     !/activateSubscriptionForPayment[\s\S]{0,500}paymentDoc\.ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayWebhookBlock),
   "The activation transaction persists success atomically; no redundant follow-up write may revert REFUND_PENDING.");
 
+const genericPaymentWebhookBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.paymentGatewayWebhook")
+);
+check("Generic payment webhook cannot downgrade successful or refund-locked payments",
+  genericPaymentWebhookBlock.includes("activateSubscriptionForPayment(paymentId, payment, {") &&
+    genericPaymentWebhookBlock.includes('latestPayment.status !== "PENDING"') &&
+    genericPaymentWebhookBlock.includes('if (latestPayment.status === "REFUNDED") return;') &&
+    genericPaymentWebhookBlock.includes("tx.set(db.collection(\"subscriptions\").doc(latestPayment.subscriptionId)") &&
+    !/await ref\.update\(\{\s*status:\s*"SUCCESS"/.test(genericPaymentWebhookBlock) &&
+    !/status:\s*"PENDING"/.test(genericPaymentWebhookBlock),
+  "Success metadata is atomic, failures only change PENDING records, refunds cancel subscriptions transactionally, and unknown states never reset payment status.");
+
 const paymentFailedWebhookBlock = razorpayWebhookBlock.slice(
   razorpayWebhookBlock.indexOf('eventName === "payment.failed"'),
   razorpayWebhookBlock.indexOf('eventName === "refund.created"')
