@@ -545,7 +545,11 @@ exports.syncOwnerAccounts = onCall(async (request) => {
       }
     }
     const claims = { ...(user.customClaims || {}) };
+    const currentRole = normalizeRole(claims.role);
+    if (currentRole === "SUPER_ADMIN") continue;
     delete claims.admin;
+    delete claims.owner;
+    if (currentRole === "OWNER") claims.role = "USER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
