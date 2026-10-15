@@ -13,6 +13,33 @@ service cloud.firestore {
     function accountActive() {
       return request.auth != null && profileActive(request.auth.uid);
     }
+
+    // File transfer policy is enforced by Firestore and Storage Rules, not only
+    // by Compose button visibility. Missing global policy fails closed; a missing
+    // per-user override means no additional restriction, matching the client policy.
+    function featureEnabledFor(uid, featureId) {
+      let globalPath = /databases/$(database)/documents/featurePolicy/global;
+      let userPath = /databases/$(database)/documents/featurePolicyUsers/$(uid);
+      let globalExists = exists(globalPath);
+      let globalPolicy = globalExists ? get(globalPath).data : {};
+      let userExists = exists(userPath);
+      let userPolicy = userExists ? get(userPath).data : {};
+      let expiry = userPolicy.get('expiresAtEpochMs', null);
+      return globalExists
+        && globalPolicy.get('globalFeaturesEnabled', false) == true
+        && globalPolicy.get('globalEnabled', false) == true
+        && globalPolicy.get('featureOverrides', {}).get(featureId, true) != false
+        && globalPolicy.get('globalFeatureOverrides', {}).get(featureId, true) != false
+        && userPolicy.get('enabled', true) == true
+        && userPolicy.get('ownerEnabled', true) == true
+        && userPolicy.get('featureOverrides', {}).get(featureId, true) != false
+        && (!userExists || expiry == null || (expiry is int && (expiry <= 0 || expiry > request.time.toMillis())));
+    }
+
+    function fileTransferAllowed(senderUid, receiverUid) {
+      return featureEnabledFor(senderUid, 'FILE_TRANSFER')
+        && featureEnabledFor(receiverUid, 'FILE_TRANSFER');
+    }
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if accountActive() && request.auth.uid == uid;
     }
@@ -254,7 +281,8 @@ service cloud.firestore {
         && profileActive(request.resource.data.receiverDeviceId)
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
-        && request.resource.data.status == 'REQUESTED';
+        && request.resource.data.status == 'REQUESTED'
+        && fileTransferAllowed(request.auth.uid, request.resource.data.receiverDeviceId);
 
       allow read: if accountActive()
         && profileActive(resource.data.senderDeviceId)
@@ -272,19 +300,26 @@ service cloud.firestore {
             request.auth.uid == resource.data.receiverDeviceId
             && resource.data.status == 'REQUESTED'
             && request.resource.data.status in ['APPROVED', 'REJECTED']
+            && (request.resource.data.status != 'APPROVED'
+                || fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId))
           )
           ||
           (
             request.auth.uid == resource.data.senderDeviceId
             && (
               (resource.data.status == 'REQUESTED' && request.resource.data.status == 'CANCELLED')
-              || (resource.data.status == 'APPROVED' && request.resource.data.status == 'UPLOADING')
+              || (
+                resource.data.status == 'APPROVED'
+                && request.resource.data.status == 'UPLOADING'
+                && fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)
+              )
               || (
                 resource.data.status == 'UPLOADING'
                 && (
                   request.resource.data.status == 'CANCELLED'
                   || (
                     request.resource.data.status == 'READY'
+                    && fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)
                     && request.resource.data.storagePath is string
                     && request.resource.data.storagePath.split('/').size() == 4
                     && request.resource.data.storagePath.matches('^fileTransfers/' + request.auth.uid + '/' + transferId + '/[^/]+')
