@@ -90,6 +90,8 @@ function pathFor(endpoint) {
   if (endpoint.startsWith("/api/devices/:id")) return "/api/devices/device-1";
   if (endpoint.startsWith("/api/permissions/:id")) return "/api/permissions/permission-1";
   if (endpoint.startsWith("/api/plans/:id")) return "/api/plans/plan-1";
+  if (endpoint === "/api/owner/payments/:id") return "/api/owner/payments/payment-1";
+  if (endpoint === "/api/owner/subscriptions/:id") return "/api/owner/subscriptions/sub-1";
   return endpoint;
 }
 function requestBody(endpoint) {
@@ -110,6 +112,8 @@ function requestBody(endpoint) {
   if (endpoint.includes("/admin/free-access/edit") || endpoint.includes("/admin/free-access/revoke")) return { grantId: "grant-1", reason: "integration test" };
   if (endpoint.includes("/admin/user/ban") || endpoint.includes("/admin/user/unban")) return { userId: "user-2" };
   if (endpoint.includes("/admin/system/config")) return { values: { testMode: true } };
+  if (endpoint === "/api/owner/payments/:id") return { values: { ownerNote: "integration test note" } };
+  if (endpoint === "/api/owner/subscriptions/:id") return { values: { ownerNote: "integration test note" } };
   if (endpoint.includes("/support/ticket/create")) return { subject: "Integration test", body: "HTTP verification" };
   if (endpoint.includes("/sos/cancel")) return { alertId: "sos-1" };
   if (endpoint.includes("/sos/trigger")) return { message: "integration test", latitude: 0, longitude: 0 };
