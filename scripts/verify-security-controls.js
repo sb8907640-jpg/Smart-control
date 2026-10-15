@@ -147,7 +147,8 @@ check("Composite indexes cover subscription, expiry, transfer, and session queri
     hasCompositeIndex("freeAccessGrants", ["userId", "status"]) &&
     hasCompositeIndex("mediaSessions", ["targetDeviceId", "status"]) &&
     hasCompositeIndex("mediaSessions", ["targetDeviceId", "controllerUid", "status"]) &&
-    hasCompositeIndex("fileTransfers", ["receiverDeviceId", "status"]),
+    hasCompositeIndex("fileTransfers", ["receiverDeviceId", "status"]) &&
+    hasCompositeIndex("fileTransfers", ["senderDeviceId", "status"]),
   "Compound Firestore queries have explicit deployed indexes rather than failing at runtime.");
 
 check("File transfer requests require an active paired receiver",
