@@ -9,6 +9,7 @@ const {
   doc,
   setDoc,
   updateDoc,
+  getDoc,
   runTransaction
 } = require("firebase/firestore");
 
@@ -171,11 +172,26 @@ async function main() {
 
     const locationRef = doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-1");
     await assertSucceeds(setDoc(locationRef, {
+      deviceId: "media-target",
       latitude: 26.8,
       longitude: 80.9,
       accuracyMeters: 15,
-      sharedAtEpochMs: Date.now()
+      capturedAtEpochMs: Date.now(),
+      sharingActive: true
     }));
+    await assertSucceeds(getDoc(locationRef));
+    await assertSucceeds(getDoc(doc(mediaController.firestore(), "devices", "media-target", "sharedLocation", "location-1")));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "devices", "media-target", "sharedLocation", "location-stale"), {
+        deviceId: "media-target",
+        latitude: 26.8,
+        longitude: 80.9,
+        accuracyMeters: 15,
+        capturedAtEpochMs: Date.now() - 11 * 60 * 1000,
+        sharingActive: true
+      });
+    });
+    await assertFails(getDoc(doc(mediaController.firestore(), "devices", "media-target", "sharedLocation", "location-stale")));
     const sosRef = doc(mediaTarget.firestore(), "devices", "media-target", "statusAlerts", "sos-1");
     await assertSucceeds(setDoc(sosRef, {
       alertId: "sos-1",
@@ -207,9 +223,11 @@ async function main() {
       });
     });
     await assertFails(setDoc(doc(mediaTarget.firestore(), "devices", "media-target", "sharedLocation", "location-disabled-global"), {
+      deviceId: "media-target",
       latitude: 26.8,
       longitude: 80.9,
-      sharedAtEpochMs: Date.now()
+      capturedAtEpochMs: Date.now(),
+      sharingActive: true
     }));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
