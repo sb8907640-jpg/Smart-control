@@ -371,6 +371,19 @@ check("Singleton WebRTC engine remains reusable after ViewModel cleanup",
     !mediaEngineRelease.includes("initialized.set(false)"),
   "ViewModel cleanup releases active sessions but does not destroy the process-wide EGL/factory instance reused by later screens.");
 
+const mediaViewModelSource = read("app/src/main/java/com/smartcontrol/presentation/media/MediaSessionViewModel.kt");
+const viewerGateBlock = mediaViewModelSource.slice(
+  mediaViewModelSource.indexOf("fun connectViewer("),
+  mediaViewModelSource.indexOf("fun stop(")
+);
+check("Viewer policy denial stops the approved session and visible services",
+  viewerGateBlock.includes("if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId))") &&
+    viewerGateBlock.includes("signaling.stopSession(session.sessionId)") &&
+    viewerGateBlock.includes("MediaProjectionForegroundService.stop(context)") &&
+    viewerGateBlock.includes("FamilySafetyService.setIdle(context)") &&
+    viewerGateBlock.includes("if (!privacyPrefs.getBoolean(\"allow_media_sharing\", true))"),
+  "An approved session is not left hanging when the viewer's owner policy or privacy setting blocks connection.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
