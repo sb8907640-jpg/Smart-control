@@ -50,6 +50,14 @@ async function main() {
       senderRole: "Father",
       receiverRole: "Son"
     }));
+    await assertFails(setDoc(doc(normal.firestore(), "devices", "normal-user"), {
+      controllerUid: "normal-user",
+      pairingToken: token,
+      pairedAt: now,
+      pairingActive: true,
+      senderRole: "Father",
+      receiverRole: "Son"
+    }));
 
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "f".repeat(48)), {
       deviceUid: "normal-user",
