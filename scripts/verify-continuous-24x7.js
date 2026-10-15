@@ -74,12 +74,12 @@ check(
 
 check(
   "Service restart cannot bypass consent or opt-in",
-  service.includes("return START_NOT_STICKY") &&
+  service.includes("return START_STICKY") &&
     service.includes("isStartupAllowed(intent)") &&
     service.includes("ACTION_AUTO_START") &&
     bootReceiver.includes("ACTION_AUTO_START") &&
     bootReceiver.includes("auto_start_service"),
-  "A null-intent process restart stops safely; reboot recovery is an explicit opt-in action and revalidates consent before starting."
+  "A null-intent process restart revalidates consent and requires auto-start opt-in; reboot recovery uses an explicit action."
 );
 
 check(
