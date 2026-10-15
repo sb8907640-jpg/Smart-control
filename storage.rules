@@ -29,10 +29,8 @@ service firebase.storage {
         && (!userExists || expiry == null || (expiry is int && (expiry <= 0 || expiry > request.time.toMillis())));
     }
 
-    function fileTransferAllowed() {
-      let transfer = transferDoc().data;
-      return featureEnabledFor(transfer.senderDeviceId)
-        && featureEnabledFor(transfer.receiverDeviceId);
+    function fileTransferAllowed(senderUid, receiverUid) {
+      return featureEnabledFor(senderUid) && featureEnabledFor(receiverUid);
     }
     match /fileTransfers/{senderUid}/{transferId}/{fileName} {
       function transferDoc() {
@@ -43,7 +41,7 @@ service firebase.storage {
       // known size, the stored object must match it; unknown provider sizes (-1)
       // remain supported but are still capped.
       allow create, update: if accountActive()
-        && fileTransferAllowed()
+        && fileTransferAllowed(transferDoc().data.senderDeviceId, transferDoc().data.receiverDeviceId)
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
         && transferDoc().data.status in ['APPROVED', 'UPLOADING']
