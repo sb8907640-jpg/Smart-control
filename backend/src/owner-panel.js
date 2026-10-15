@@ -164,6 +164,16 @@ function installOwnerPanelRoutes(app, { db, auth }) {
     if (profileRole === "SUPER_ADMIN" || authRole === "SUPER_ADMIN") {
       return res.status(403).json({ error: "Owner accounts cannot change a Super Admin account status." });
     }
+    if (auth && typeof auth.updateUser === "function") {
+      try {
+        await auth.updateUser(id, { disabled: status !== "ACTIVE" });
+        if (status !== "ACTIVE" && typeof auth.revokeRefreshTokens === "function") {
+          await auth.revokeRefreshTokens(id);
+        }
+      } catch (error) {
+        if (error.code !== "auth/user-not-found") throw error;
+      }
+    }
     const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
     const timestamp = now();
     const statusFields = status === "ACTIVE"
