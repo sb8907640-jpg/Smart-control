@@ -379,13 +379,23 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedRequested = [];
 
+  // Resolve every requested identity before changing any claims. A typo must
+  // not leave a partially synchronized owner list or revoke previous owners.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+    if (!user) unresolved.push(identifier);
+    else resolvedRequested.push({ identifier, user });
+  }
+  if (unresolved.length > 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      "These owner accounts are not registered in Firebase Auth: " + unresolved.join(", ")
+    );
+  }
+
+  for (const { user } of resolvedRequested) {
     const previousClaims = user.customClaims || {};
     const role = previousClaims.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
     const claims = { ...previousClaims, role, admin: true };
