@@ -91,6 +91,14 @@ check("Media offer and answer SDP are participant-owned",
   firestoreRules.includes("affectedKeys().hasOnly(['offerSdp'])") &&
     firestoreRules.includes("affectedKeys().hasOnly(['answerSdp'])"),
   "Target publishes offer SDP; controller publishes answer SDP.");
+const featureAccessViewModel = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureAccessViewModel.kt");
+check("Feature policy refreshes when the signed-in UID changes",
+  featureAccessViewModel.includes("state.currentUser?.uid") &&
+    featureAccessViewModel.includes("repository.observe(uid)") &&
+    featureAccessViewModel.includes("_settingsUserId.value != userId") &&
+    featureAccessViewModel.includes("_settings.value = null"),
+  "A previous account's per-user feature policy cannot remain active after account switching.");
+
 check("Media approval is server-authorized and policy-gated",
   read("functions/index.js").includes("exports.approveMediaSession") &&
     read("functions/spec/media-policy.js").includes("globalFeaturesEnabled !== true") &&
