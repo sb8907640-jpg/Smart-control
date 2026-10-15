@@ -20,7 +20,9 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.length === 0 && process.env.NODE_ENV !== "production") return callback(null, true);
       return callback(new Error("CORS origin is not allowed."));
     },
     credentials: true
