@@ -143,10 +143,22 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    private val serviceRunning = mutableStateOf(false)
+
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            FamilySafetyService.start(this)
-            FamilySafetyService.setSyncing(this)
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                FamilySafetyService.start(this)
+                FamilySafetyService.setSyncing(this)
+                serviceRunning.value = true
+            } else {
+                serviceRunning.value = false
+                Toast.makeText(
+                    this,
+                    "Notifications are required to show the foreground service status. The service was not started.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -178,7 +190,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         .getString("mode", null) != null
                 )
             }
-            var running by remember { mutableStateOf(false) }
+            var running by serviceRunning
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
@@ -235,10 +247,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    FamilySafetyService.start(this@MainActivity)
-                    FamilySafetyService.setSyncing(this@MainActivity)
+                    return
                 }
+                FamilySafetyService.start(this@MainActivity)
+                FamilySafetyService.setSyncing(this@MainActivity)
                 running = true
             }
 
