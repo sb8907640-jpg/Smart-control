@@ -54,7 +54,20 @@ fun AppInstallScreen(onBack: () -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { selected ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-                pendingApkUri = selected
+                val retained = runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        selected,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }.isSuccess
+                pendingApkUri = if (retained) selected else null
+                if (!retained) {
+                    Toast.makeText(
+                        context,
+                        "Allow install access in Settings, then select the APK again because this provider did not allow persistent file access.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
                 val settingsIntent = Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:${context.packageName}")
