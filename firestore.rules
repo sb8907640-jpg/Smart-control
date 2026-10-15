@@ -1,6 +1,32 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function mediaCapabilityEnabled(targetUid, featureName) {
+      let globalPath = /databases/$(database)/documents/featurePolicy/global;
+      let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
+      let globalPolicy = exists(globalPath) ? get(globalPath).data : {};
+      let userPolicy = exists(userPath) ? get(userPath).data : {};
+      let featureOverrides = globalPolicy.get('featureOverrides', {});
+      let globalFeatureOverrides = globalPolicy.get('globalFeatureOverrides', {});
+      let userFeatureOverrides = userPolicy.get('featureOverrides', {});
+      let expiresAt = userPolicy.get('expiresAtEpochMs', 0);
+      return globalPolicy.get('globalFeaturesEnabled', true) == true
+        && globalPolicy.get('globalEnabled', true) == true
+        && featureOverrides.get(featureName, true) == true
+        && globalFeatureOverrides.get(featureName, true) == true
+        && userPolicy.get('enabled', true) == true
+        && userPolicy.get('ownerEnabled', true) == true
+        && (expiresAt == 0 || expiresAt > request.time.toMillis())
+        && userFeatureOverrides.get(featureName, true) == true;
+    }
+
+    function requestedMediaCapabilitiesAllowed(targetUid, capabilities) {
+      return capabilities is list
+        && (!capabilities.hasAny(['CAMERA']) || mediaCapabilityEnabled(targetUid, 'CAMERA'))
+        && (!capabilities.hasAny(['MICROPHONE']) || mediaCapabilityEnabled(targetUid, 'MICROPHONE'))
+        && (!capabilities.hasAny(['SCREEN_SHARING']) || mediaCapabilityEnabled(targetUid, 'SCREEN_SHARE'));
+    }
+
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
     }
@@ -137,7 +163,8 @@ service cloud.firestore {
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
-        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true
+        && requestedMediaCapabilitiesAllowed(request.resource.data.targetDeviceId, request.resource.data.capabilities);
 
       allow read: if request.auth != null
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
@@ -155,9 +182,18 @@ service cloud.firestore {
             (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
               && (
-                (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
-                || (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                (resource.data.status == 'REQUESTED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'APPROVED'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'APPROVED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'ACTIVE'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
               )
             )
             || (
@@ -165,6 +201,7 @@ service cloud.firestore {
               && resource.data.status == 'APPROVED'
               && request.resource.data.status == resource.data.status
               && request.resource.data.offerSdp is string
+              && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities)
             )
           )
         )
@@ -179,8 +216,14 @@ service cloud.firestore {
             (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
               && (
-                (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                (resource.data.status == 'APPROVED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'ACTIVE'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
                 || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
               )
             )
@@ -189,6 +232,7 @@ service cloud.firestore {
               && resource.data.status == 'APPROVED'
               && request.resource.data.status == resource.data.status
               && request.resource.data.answerSdp is string
+              && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities)
             )
           )
         )
