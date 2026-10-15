@@ -22,14 +22,19 @@ function createRealtimeServer({ app, verifyToken, firestore }) {
       if (!token) return next(new Error("Authentication required."));
       const verifiedUser = await verifyToken(token, true);
       if (firestore && typeof firestore.collection === "function" && verifiedUser?.uid) {
-        const account = await firestore.collection("users").doc(verifiedUser.uid).get();
+        const [account, access] = await Promise.all([
+          firestore.collection("users").doc(verifiedUser.uid).get(),
+          firestore.collection("userAccess").doc(verifiedUser.uid).get()
+        ]);
         const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
-        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+        const accessBlocked = access.exists && access.data()?.blocked === true;
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus) || accessBlocked) {
+          const blockReason = accessBlocked ? "OWNER_BLOCKED" : accountStatus;
           try {
             await firestore.collection("securityEvents").add({
               event: "SOCKET_REJECTED_ACCOUNT_STATUS",
               userId: verifiedUser.uid,
-              status: accountStatus,
+              status: blockReason,
               createdAtEpochMs: Date.now()
             });
           } catch (_) {
