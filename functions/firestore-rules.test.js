@@ -66,6 +66,22 @@ async function main() {
       expiryMode: "NO_EXPIRY"
     }));
 
+    const healthDoc = doc(normal.firestore(), "devices", "normal-user");
+    await assertSucceeds(setDoc(healthDoc, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: now,
+        permissions: { camera: true, microphone: false, location: true, notifications: true }
+      }
+    }));
+    await assertSucceeds(updateDoc(healthDoc, {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: now + 1,
+        permissions: { camera: true, microphone: false, location: true, notifications: true }
+      }
+    }));
+
     const claimToken = "d".repeat(48);
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "pairingCodes", claimToken), {
@@ -77,10 +93,22 @@ async function main() {
         senderRole: "Mother",
         receiverRole: "Daughter"
       });
+      await setDoc(doc(ctx.firestore(), "devices", "target-user"), {
+        controllerUid: null,
+        pairingActive: false
+      });
     });
     // Pairing tokens are private to their creator. A controller must use the
     // authenticated claimPairingCode callable instead of reading/listing codes.
     await assertFails(getDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertFails(updateDoc(doc(controller.firestore(), "devices", "target-user"), {
+      controllerUid: "controller-user",
+      pairingToken: claimToken,
+      pairedAt: now,
+      pairingActive: true,
+      senderRole: "Mother",
+      receiverRole: "Daughter"
+    }));
     await assertSucceeds(getDoc(doc(target.firestore(), "pairingCodes", claimToken)));
     await assertFails(deleteDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
     await assertSucceeds(deleteDoc(doc(target.firestore(), "pairingCodes", claimToken)));
