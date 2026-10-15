@@ -151,6 +151,9 @@ function installCatalogRoutes(app, { db, requireAuth }) {
       if (req.body?.consent !== true) {
         return res.status(400).json({error:"Explicit receiver consent is required before joining a device link."});
       }
+      if (!db || typeof db.runTransaction !== "function") {
+        return res.status(503).json({error:"Pairing data service is unavailable."});
+      }
       const code=String(req.body?.code||"").trim().toUpperCase();
       if(!/^[A-Z0-9_-]{8,32}$/.test(code)) return res.status(400).json({error:"A valid pairing code is required."});
       const ref=firestoreCollection("pairingCodes").doc(code);
