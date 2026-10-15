@@ -16,6 +16,12 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,7 +38,25 @@ class FileTransferViewModel @Inject constructor(
     val controlledDevice = pairingRepository.observeControlledDevice()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val incoming = repository.observeIncoming(auth.currentUser?.uid.orEmpty())
+    val incoming = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid)
+        }
+        auth.addAuthStateListener(listener)
+        trySend(auth.currentUser?.uid)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid.isNullOrBlank()) {
+                flowOf(emptyList())
+            } else {
+                repository.observeIncoming(uid).catch {
+                    // Clear stale transfer metadata and keep the auth observer alive
+                    // when Firestore denies access or the network is unavailable.
+                    emit(emptyList())
+                }
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _status = MutableStateFlow<String?>(null)
