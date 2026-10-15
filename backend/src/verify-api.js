@@ -95,6 +95,11 @@ function seedDb() {
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
     permissionGrants: { "permission-1": { userId: "user-1", permission: "CAMERA", granted: true } },
+    permissionStates: Object.fromEntries([
+      "LOCATION","NOTIFICATIONS","BATTERY_NETWORK","CAMERA","MICROPHONE","GALLERY",
+      "SCREEN_SHARE","SCREEN_RECORDING","TOUCH_CONTROL","KEYBOARD_INPUT","APP_INSTALL_UNINSTALL",
+      "FILE_TRANSFER","CLIPBOARD_SYNC","FILES_ACCESS","CONTACTS","SMS","CALL_LOGS","APP_USAGE","SOS_ALERTS"
+    ].map(permission => ["user-1_" + permission, { userId: "user-1", permission, granted: true, updatedAt: Date.now() }])),
     mediaSessions: { "session-1": { controllerUid: "user-1", targetDeviceId: "device-1", status: "ACTIVE", consentGranted: true } },
     pairingCodes: { "JOIN-CODE": { ownerUid: "owner-1", status: "PENDING", expiresAt: Date.now() + 600000 } },
     subscriptions: { "sub-1": { userId: "user-1", planId: "plan-1", status: "ACTIVE" } },
@@ -118,7 +123,7 @@ function requestBody(endpoint) {
   if (endpoint.includes("/consent/save")) return { scope: ["CAMERA", "MICROPHONE"], version: "test" };
   if (endpoint.includes("/consent/verify")) return { consentId: "consent-1" };
   if (endpoint.includes("/control/")) return { sessionId: "session-1", payload: { test: true } };
-  if (endpoint.includes("/data/download") || endpoint.includes("/data/share")) return { scope: { test: true } };
+  if (endpoint.includes("/data/download") || endpoint.includes("/data/share")) return { scope: { CONTACTS: true } };
   if (endpoint === "/api/subscribe") return { planId: "plan-1" };
   if (endpoint === "/api/payment/initiate") return { subscriptionId: "sub-1", amountMinor: 100, provider: "TEST" };
   if (endpoint === "/api/payment/verify") return { paymentId: "payment-1" };
@@ -132,6 +137,32 @@ function requestBody(endpoint) {
   if (endpoint.includes("/sos/trigger")) return { message: "integration test", latitude: 0, longitude: 0 };
   if (endpoint.includes("/system/sync")) return { scope: { test: true } };
   return {};
+}
+function permissionsForRoute(route) {
+  const exact = {
+    "POST /api/control/touch": ["TOUCH_CONTROL"],
+    "POST /api/control/keyboard": ["KEYBOARD_INPUT"],
+    "POST /api/control/app/install": ["APP_INSTALL_UNINSTALL"],
+    "POST /api/control/app/uninstall": ["APP_INSTALL_UNINSTALL"],
+    "POST /api/control/file/transfer": ["FILE_TRANSFER"],
+    "POST /api/control/clipboard": ["CLIPBOARD_SYNC"],
+    "POST /api/control/screen/share": ["SCREEN_SHARE"],
+    "POST /api/control/screen/record": ["SCREEN_RECORDING"],
+    "POST /api/control/camera": ["CAMERA"],
+    "POST /api/control/mic": ["MICROPHONE"],
+    "POST /api/control/p2p/start": ["CAMERA", "MICROPHONE"],
+    "GET /api/data/location": ["LOCATION"],
+    "GET /api/data/contacts": ["CONTACTS"],
+    "GET /api/data/sms": ["SMS"],
+    "GET /api/data/call-logs": ["CALL_LOGS"],
+    "GET /api/data/files": ["FILES_ACCESS"],
+    "GET /api/data/gallery": ["GALLERY"],
+    "GET /api/data/app-usage": ["APP_USAGE"],
+    "GET /api/data/battery": ["BATTERY_NETWORK"],
+    "POST /api/data/download": ["CONTACTS"],
+    "POST /api/data/share": ["CONTACTS"]
+  };
+  return exact[route] || [];
 }
 function queryFor(endpoint) {
   if (endpoint.includes("/control/status") || endpoint.includes("/control/live")) return "?sessionId=session-1";
@@ -192,6 +223,13 @@ function queryFor(endpoint) {
     for (const route of API) {
       const [method, rawEndpoint] = route.split(" ");
       const endpoint = pathFor(rawEndpoint);
+      const permissionStates = db.data.get("permissionStates") || new Map();
+      db.data.set("permissionStates", permissionStates);
+      for (const permission of permissionsForRoute(route)) {
+        permissionStates.set("user-1_" + permission, {
+          userId: "user-1", permission, granted: true, updatedAt: Date.now()
+        });
+      }
       const url = base + endpoint + queryFor(endpoint);
       const response = await fetch(url, {
         method,
