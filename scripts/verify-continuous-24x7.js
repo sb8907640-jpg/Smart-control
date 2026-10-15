@@ -83,6 +83,14 @@ check(
 );
 
 check(
+  "Manual service start is independent of reboot auto-start preference",
+  service.includes('const val ACTION_USER_START = "com.smartcontrol.action.USER_START"') &&
+    service.includes("Intent(context, FamilySafetyService::class.java).setAction(ACTION_USER_START)") &&
+    service.includes("(intent == null || intent.action == ACTION_AUTO_START) && !autoStartEnabled"),
+  "User-initiated starts remain available while null-intent and reboot recovery still require explicit auto-start opt-in."
+);
+
+check(
   "Persistent link recovery state",
   recovery.includes("PersistentLinkState") &&
   recovery.includes("pairingToken") &&
