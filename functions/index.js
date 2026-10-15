@@ -57,7 +57,13 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   }
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  if (canManageOwnerAccounts(claims)) return { isOwner: true, expiryMinutes: 0 };
+
+  const ownerAccountsSnapshot = await db.collection("ownerAccounts").doc("config").get();
+  const ownerAccounts = ownerAccountsSnapshot.exists ? ownerAccountsSnapshot.data() || {} : {};
+  const ownerEmails = Array.isArray(ownerAccounts.emails) ? ownerAccounts.emails : [];
+  const ownerMobiles = Array.isArray(ownerAccounts.mobiles) ? ownerAccounts.mobiles : [];
+  const isOwner = canManageOwnerAccounts(claims, ownerEmails, ownerMobiles);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
