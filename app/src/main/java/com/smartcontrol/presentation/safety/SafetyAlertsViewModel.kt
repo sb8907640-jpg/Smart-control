@@ -30,25 +30,47 @@ class SafetyAlertsViewModel @Inject constructor(
         }
     }
 
-    fun triggerSos() {
+    private val _status = MutableStateFlow<String?>(null)
+    val status: StateFlow<String?> = _status.asStateFlow()
+
+    fun triggerSos() = createAlert(
+        type = "SOS",
+        message = "SOS alert triggered by the signed-in device user."
+    )
+
+    fun createTestAlert() = createAlert(
+        type = "TEST",
+        message = "Test safety alert. This is not an emergency."
+    )
+
+    private fun createAlert(type: String, message: String) {
         val id = deviceId
-        if (id.isBlank()) return
+        if (id.isBlank()) {
+            _status.value = "Sign in before creating a safety alert."
+            return
+        }
         viewModelScope.launch {
             repository.create(
                 SafetyAlert(
                     UUID.randomUUID().toString(),
                     id,
-                    "SOS",
-                    "SOS alert triggered by the signed-in device user.",
+                    type,
+                    message,
                     System.currentTimeMillis()
                 )
-            )
+            ).onSuccess {
+                _status.value = if (type == "SOS") "SOS alert created successfully." else "Test alert created. No emergency was reported."
+            }.onFailure { error ->
+                _status.value = error.message ?: "Could not create the safety alert."
+            }
         }
     }
 
-    fun createTestAlert() = triggerSos()
-
     fun acknowledge(alertId: String) {
-        viewModelScope.launch { repository.acknowledge(alertId) }
+        viewModelScope.launch {
+            repository.acknowledge(alertId)
+                .onSuccess { _status.value = "Alert acknowledged." }
+                .onFailure { error -> _status.value = error.message ?: "Could not acknowledge this alert." }
+        }
     }
 }
