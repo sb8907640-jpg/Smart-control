@@ -710,6 +710,15 @@ exports.refundPayment = onCall(
         if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) {
           throw new HttpsError("failed-precondition", "A different refund was completed; reconcile the gateway record.");
         }
+        if (latestPayment.subscriptionId) {
+          const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+          await tx.get(subscriptionRef);
+          tx.set(subscriptionRef, {
+            status: "CANCELLED",
+            cancelledAtEpochMs: Date.now(),
+            updatedAtEpochMs: Date.now()
+          }, { merge: true });
+        }
         return "REFUNDED";
       }
       if (latestPayment.status !== "REFUND_PENDING") {
@@ -718,6 +727,15 @@ exports.refundPayment = onCall(
       if ((latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) ||
           (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === gatewayRefundId)) {
         throw new HttpsError("failed-precondition", "A different or previous refund ID is active; reconcile before retrying.");
+      }
+      if (processed && latestPayment.subscriptionId) {
+        const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+        await tx.get(subscriptionRef);
+        tx.set(subscriptionRef, {
+          status: "CANCELLED",
+          cancelledAtEpochMs: Date.now(),
+          updatedAtEpochMs: Date.now()
+        }, { merge: true });
       }
       tx.update(ref, {
         status: processed ? "REFUNDED" : "REFUND_PENDING",
@@ -729,14 +747,6 @@ exports.refundPayment = onCall(
       });
       return processed ? "REFUNDED" : "REFUND_PENDING";
     });
-
-    if (finalStatus === "REFUNDED" && payment.subscriptionId) {
-      await db.collection("subscriptions").doc(payment.subscriptionId).set({
-        status: "CANCELLED",
-        cancelledAtEpochMs: Date.now(),
-        updatedAtEpochMs: Date.now()
-      }, { merge: true });
-    }
 
     return {
       ok: true,
