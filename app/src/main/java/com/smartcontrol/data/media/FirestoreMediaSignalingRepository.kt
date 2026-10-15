@@ -60,9 +60,17 @@ class FirestoreMediaSignalingRepository @Inject constructor(
     }
 
     override fun observeRemoteIceCandidates(sessionId: String): Flow<IceCandidateModel> = callbackFlow {
+        val currentUid = auth.currentUser?.uid ?: run {
+            close()
+            return@callbackFlow
+        }
         val registration = ref(sessionId).collection("iceCandidates").addSnapshotListener { s, e ->
             if (e != null) close(e)
             s?.documentChanges?.filter { it.type.name == "ADDED" }?.forEach { c ->
+                // Each peer writes to the same collection. Never feed our own local
+                // candidates back into PeerConnection as if they came from the remote peer.
+                val senderUid = c.document.getString("senderUid") ?: return@forEach
+                if (senderUid == currentUid) return@forEach
                 trySend(IceCandidateModel(
                     c.document.getString("candidate").orEmpty(),
                     c.document.getString("sdpMid"),
@@ -92,8 +100,12 @@ class FirestoreMediaSignalingRepository @Inject constructor(
     }.map { Unit }
 
     override suspend fun addLocalIceCandidate(sessionId: String, candidate: IceCandidateModel): Result<Unit> = runCatching {
+        val senderUid = auth.currentUser?.uid ?: error("Sign in first")
         ref(sessionId).collection("iceCandidates").add(mapOf(
-            "candidate" to candidate.candidate, "sdpMid" to candidate.sdpMid, "sdpMLineIndex" to candidate.sdpMLineIndex
+            "senderUid" to senderUid,
+            "candidate" to candidate.candidate,
+            "sdpMid" to candidate.sdpMid,
+            "sdpMLineIndex" to candidate.sdpMLineIndex
         )).await()
     }.map { Unit }
 
