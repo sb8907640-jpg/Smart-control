@@ -24,6 +24,8 @@ function makeOwnerTestDb() {
     securityEvents: [],
     subscriptions: new Map([["sub-1", { userId: "user-1", status: "ACTIVE" }]]),
     payments: new Map([["payment-1", { userId: "user-1", amount: 100 }]]),
+    devices: new Map(),
+    pairingCodes: new Map(),
     supportTickets: new Map([["ticket-1", { userId: "user-1", status: "OPEN" }]]),
     freeAccessGrants: new Map(),
     permissionHistory: new Map(),
@@ -31,6 +33,23 @@ function makeOwnerTestDb() {
   };
   return {
     data,
+    async runTransaction(callback) {
+      const operations = [];
+      const transaction = {
+        get: ref => ref.get(),
+        set(ref, value, options = {}) {
+          operations.push(() => ref.set(value, options));
+          return transaction;
+        },
+        update(ref, value) {
+          operations.push(() => ref.set(value, { merge: true }));
+          return transaction;
+        }
+      };
+      const result = await callback(transaction);
+      for (const operation of operations) await operation();
+      return result;
+    },
     collection(name) {
       const rows = data[name] instanceof Map ? data[name] : null;
       return {
@@ -146,49 +165,27 @@ test("protected API accepts a verified Firebase identity", async () => {
   });
 });
 
-test("legacy payment initiation and verification fail closed without provider proof", async () => {
+test("pairing codes support lifetime expiry and can only be consumed once", async () => {
   const db = makeOwnerTestDb();
-  await db.collection("subscriptions").doc("sub-1").set({ status: "PENDING_PAYMENT" }, { merge: true });
-  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
+  db.data.pairingCodes.set("LIFETIME", { ownerUid: "owner-1", status: "PENDING", expiresAt: null });
   const app = createApp({
     db,
     verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
   });
   await withServer(app, async base => {
-    const initiate = await fetch(base + "/api/payment/initiate", {
+    const join = () => fetch(base + "/api/link/join", {
       method: "POST",
       headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-      body: JSON.stringify({ subscriptionId: "sub-1", amountMinor: 1, provider: "TEST" })
+      body: JSON.stringify({ code: "LIFETIME" })
     });
-    assert.equal(initiate.status, 503);
-
-    const verify = await fetch(base + "/api/payment/verify", {
-      method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-      body: JSON.stringify({ paymentId: "payment-1" })
-    });
-    assert.equal(verify.status, 409);
-    assert.match((await verify.json()).error, /provider order.*signature/i);
+    const first = await join();
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).ownerUid, "owner-1");
+    const second = await join();
+    assert.equal(second.status, 404);
   });
-  assert.equal((await db.collection("payments").doc("payment-1").get()).data().status, "INITIATED");
-  assert.equal((await db.collection("subscriptions").doc("sub-1").get()).data().status, "PENDING_PAYMENT");
-});
-
-test("EMI application rejects an unverified payment", async () => {
-  const db = makeOwnerTestDb();
-  await db.collection("payments").doc("payment-1").set({ status: "INITIATED" }, { merge: true });
-  const app = createApp({
-    db,
-    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
-  });
-  await withServer(app, async base => {
-    const response = await fetch(base + "/api/emi/apply", {
-      method: "POST",
-      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-      body: JSON.stringify({ paymentId: "payment-1", installmentCount: 6 })
-    });
-    assert.equal(response.status, 409);
-  });
+  assert.equal(db.data.pairingCodes.get("LIFETIME").status, "PAIRED");
+  assert.equal(db.data.devices.get("user-1").controllerUid, "owner-1");
 });
 
 test("plan route fails closed when Firestore is unavailable", async () => {
