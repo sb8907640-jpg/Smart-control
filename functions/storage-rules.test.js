@@ -48,6 +48,14 @@ async function main() {
         status: "APPROVED"
       });
       await setDoc(doc(db, "users", "suspended-sender"), { status: "SUSPENDED" });
+      await setDoc(doc(db, "fileTransfers", "transfer-blocked"), {
+        senderDeviceId: "blocked-sender",
+        receiverDeviceId: "receiver",
+        sizeBytes: 4,
+        status: "APPROVED"
+      });
+      await setDoc(doc(db, "users", "blocked-sender"), { status: "ACTIVE" });
+      await setDoc(doc(db, "userAccess", "blocked-sender"), { blocked: true });
     });
 
     const senderStorage = env.authenticatedContext("sender").storage();
@@ -77,6 +85,10 @@ async function main() {
     ));
     await assertFails(uploadBytes(
       ref(env.authenticatedContext("suspended-sender").storage(), "fileTransfers/suspended-sender/transfer-suspended/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+    await assertFails(uploadBytes(
+      ref(env.authenticatedContext("blocked-sender").storage(), "fileTransfers/blocked-sender/transfer-blocked/file.bin"),
       new Uint8Array([1, 2, 3, 4])
     ));
 
