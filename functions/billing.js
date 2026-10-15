@@ -1081,24 +1081,29 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         }
       } else if (eventName === "refund.failed") {
         const refundId = String(entity.id || "").trim();
-        if (payment.status === "REFUND_PENDING" &&
-            payment.gatewayRefundId &&
-            payment.gatewayRefundId === refundId) {
-          // A failed refund remains auditable and can be retried by an Owner.
-          await paymentDoc.ref.update({
-            status: "SUCCESS",
-            gatewayRefundStatus: "failed",
-            refundError: "RAZORPAY_REFUND_FAILED",
-            updatedAtEpochMs: now
-          });
-        } else if (payment.status === "REFUND_PENDING") {
-          // If this event races the API response, do not clear the lock until the
-          // active refund ID can be matched; reconciliation is safer than a duplicate.
-          await paymentDoc.ref.update({
-            refundError: "RAZORPAY_REFUND_FAILURE_REQUIRES_RECONCILIATION",
-            updatedAtEpochMs: now
-          });
-        }
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "REFUND_PENDING") return;
+          if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId === refundId) {
+            // Restore SUCCESS only while this exact refund is still pending.
+            // A processed/refunded webhook that won the race must never be reverted.
+            tx.update(paymentDoc.ref, {
+              status: "SUCCESS",
+              gatewayRefundStatus: "failed",
+              refundError: "RAZORPAY_REFUND_FAILED",
+              updatedAtEpochMs: now
+            });
+          } else {
+            // If this event races the API response, keep the lock until the active
+            // refund ID can be matched; reconciliation is safer than a duplicate.
+            tx.update(paymentDoc.ref, {
+              refundError: "RAZORPAY_REFUND_FAILURE_REQUIRES_RECONCILIATION",
+              updatedAtEpochMs: now
+            });
+          }
+        });
       } else if (eventName === "payment.refunded") {
         await paymentDoc.ref.update({
           status: "REFUNDED",
