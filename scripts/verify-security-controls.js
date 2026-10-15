@@ -160,9 +160,12 @@ check("Location, SOS, and health sharing enforce Owner policy server-side",
   firestoreRules.includes("featureEnabledFor(uid, 'LOCATION')") &&
     firestoreRules.includes("featureEnabledFor(uid, 'SOS_ALERTS')") &&
     firestoreRules.includes("healthSharingAllowed()") &&
+    firestoreRules.includes("capturedAtEpochMs > request.time.toMillis() - 600000") &&
     read("functions/firestore-rules.test.js").includes("location-disabled-global") &&
+    read("functions/firestore-rules.test.js").includes("location-stale") &&
     read("functions/firestore-rules.test.js").includes("sos-disabled") &&
-    read("functions/firestore-rules.test.js").includes("dataCollectionEnabled: false"),
+    read("functions/firestore-rules.test.js").includes("dataCollectionEnabled: false") &&
+    read("app/src/main/java/com/smartcontrol/data/location/FirestoreLocationSharingRepository.kt").includes('.update("sharingActive", false'),
   "Direct Firestore writes cannot bypass disabled location/SOS features or health data-sharing policy.");
 
 const safetyAlertsViewModel = read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt");
