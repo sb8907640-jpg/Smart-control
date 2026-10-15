@@ -6,6 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -24,6 +26,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import com.smartcontrol.MainActivity
 import java.io.File
 import java.text.SimpleDateFormat
@@ -69,6 +72,13 @@ class ScreenRecordingService : Service() {
     }
 
     private fun startRecording(intent: Intent) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            failureMessage = "Notification permission is required for visibly indicated screen recording."
+            stopRecording()
+            return
+        }
         try {
             createChannel()
             val notification = buildNotification()
