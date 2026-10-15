@@ -271,6 +271,16 @@ check("Payment secrets remain outside generic owner settings editor",
     ownerAdmin.includes("legacyGatewaySecretKeys"),
   "Generic configuration editor blocks legacy payment secret keys; gateway changes use the dedicated secure panel.");
 
+const messagingService = read("app/src/main/java/com/smartcontrol/service/SmartControlMessagingService.kt");
+check("FCM token registration rejects insecure API URLs",
+  messagingService.includes("URL(base)") &&
+    messagingService.includes("parsedBase.userInfo != null") &&
+    messagingService.includes("parsedBase.query != null") &&
+    messagingService.includes("parsedBase.ref != null") &&
+    messagingService.includes('parsedBase.protocol != "https"') &&
+    messagingService.includes("parsedBase.host"),
+  "Firebase ID tokens are only posted to HTTPS endpoints, with HTTP allowed for local development only.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
