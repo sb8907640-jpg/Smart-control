@@ -938,6 +938,18 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         res.status(401).send("Invalid signature.");
         return;
       }
+      // Provider retries can arrive out of order. Never let a late failure
+      // or capture event overwrite a final refund, or let a late failure undo
+      // a payment that has already been confirmed successful.
+      if (payment.status === "REFUNDED" && eventName !== "payment.refunded") {
+        res.status(200).json({ ok: true, ignored: true });
+        return;
+      }
+      if (eventName === "payment.failed" && ["SUCCESS", "REFUNDING"].includes(payment.status)) {
+        res.status(200).json({ ok: true, ignored: true });
+        return;
+      }
+
       const now = Date.now();
       if (eventName === "payment.captured") {
         if (Number(entity.amount || payment.amountMinor) !== Number(payment.amountMinor) ||
@@ -1039,6 +1051,19 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       return;
     }
     const payment = snap.data() || {};
+    if (!["SUCCESS", "PAID", "CAPTURED", "FAILED", "CANCELLED", "REFUNDED", "PENDING"].includes(status)) {
+      res.status(400).send("Unsupported payment status.");
+      return;
+    }
+    if (payment.status === "REFUNDED" && status !== "REFUNDED") {
+      res.status(200).json({ ok: true, ignored: true });
+      return;
+    }
+    if (["FAILED", "CANCELLED", "PENDING"].includes(status) &&
+        ["SUCCESS", "REFUNDING", "REFUNDED"].includes(payment.status)) {
+      res.status(200).json({ ok: true, ignored: true });
+      return;
+    }
     if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
       const activation = await activateSubscriptionForPayment(paymentId, payment);
       await ref.update({
@@ -1050,7 +1075,7 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
       });
     } else if (status === "FAILED" || status === "CANCELLED") {
       await ref.update({
-        status: status === "CANCELLED" ? "FAILED" : "FAILED",
+        status: "FAILED",
         gatewayReference: reference,
         updatedAtEpochMs: Date.now()
       });
