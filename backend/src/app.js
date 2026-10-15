@@ -382,8 +382,14 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
 
   app.use((error, _req, res, _next) => {
     if (error?.message === "CORS origin is not allowed.") return res.status(403).json({ error: error.message });
-    console.error("smart-control-backend", error);
-    return res.status(500).json({ error: "Internal server error." });
+    const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500
+      ? error.statusCode
+      : 500;
+    if (statusCode === 500) {
+      console.error("smart-control-backend", error);
+      return res.status(500).json({ error: "Internal server error." });
+    }
+    return res.status(statusCode).json({ error: error.message || "Request failed." });
   });
 
   return app;
