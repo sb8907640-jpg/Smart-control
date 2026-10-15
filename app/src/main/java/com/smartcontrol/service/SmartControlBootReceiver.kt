@@ -41,6 +41,17 @@ class SmartControlBootReceiver : BroadcastReceiver() {
         ).getString("mode", null)
         if (selectedMode.isNullOrBlank()) return
 
+        // Android 15+ forbids starting a dataSync foreground service directly
+        // from BOOT_COMPLETED for apps targeting API 35+. Surface the limitation
+        // instead of silently attempting a start that the OS will reject.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            BackgroundRecoveryNotifier.show(
+                context,
+                "Android restricts automatic background sync after reboot. Open Family Suraksha to resume if needed."
+            )
+            return
+        }
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(Intent(context, FamilySafetyService::class.java).setAction(FamilySafetyService.ACTION_AUTO_START))

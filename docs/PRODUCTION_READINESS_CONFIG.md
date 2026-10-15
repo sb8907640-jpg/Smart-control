@@ -56,3 +56,7 @@ Linux AppImage packaging is automated in CI. Windows/macOS packaging and real de
 8. Verify blockchain anchor transactions and recorded on-chain roots.
 
 No item is considered production-verified merely because these variables exist; the live service and end-to-end behavior must be observed.
+
+## Android background-service limits
+
+The Android family-safety service uses a visible foreground notification and rechecks consent, sign-in, and the user's auto-start choice. Android 15+ (for apps targeting API 35 or later) limits `dataSync` foreground services to six hours per 24-hour period and blocks starting that service directly from `BOOT_COMPLETED`. The app therefore stops cleanly at timeout and posts a resume notification when notifications are allowed; after reboot, the notification asks the user to open the app. Continuous 24x7 execution is **not guaranteed** by source code or CI and must not be advertised as unrestricted. Real-device/OEM testing and user-approved recovery are required.

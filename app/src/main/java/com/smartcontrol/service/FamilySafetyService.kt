@@ -273,13 +273,25 @@ class FamilySafetyService : Service() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        // Android 15+ dataSync foreground services have a rolling 6-hour/24-hour limit.
-        // Stop promptly and let the persisted pairing/recovery layer reconnect when allowed.
+        // Android 15+ limits dataSync foreground services to six hours per 24-hour
+        // period. Stop within the platform deadline and tell the user how to resume.
+        runCatching {
+            BackgroundRecoveryNotifier.show(
+                this,
+                "Android paused long-running background sync. Open Family Suraksha to resume."
+            )
+        }
         stopSelf(startId)
     }
 
     @Suppress("DEPRECATION")
     override fun onTimeout(startId: Int) {
+        runCatching {
+            BackgroundRecoveryNotifier.show(
+                this,
+                "Android paused a background service. Open Family Suraksha to resume."
+            )
+        }
         stopSelf(startId)
     }
 

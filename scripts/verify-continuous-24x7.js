@@ -73,6 +73,15 @@ check(
 );
 
 check(
+  "Android 15 background-start and dataSync timeout limitations are surfaced",
+  bootReceiver.includes("Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM") &&
+    bootReceiver.includes("BackgroundRecoveryNotifier.show") &&
+    service.includes("override fun onTimeout(startId: Int, fgsType: Int)") &&
+    service.includes("BackgroundRecoveryNotifier.show"),
+  "API 35+ cannot launch dataSync from BOOT_COMPLETED and has a six-hour/24-hour dataSync limit; the app notifies the user instead of claiming unrestricted 24x7 execution."
+);
+
+check(
   "Service restart cannot bypass consent or opt-in",
   service.includes("return START_STICKY") &&
     service.includes("isStartupAllowed(intent)") &&
@@ -187,6 +196,10 @@ runtime(
 runtime(
   "Physical reboot recovery",
   "Requires device restart followed by eligible service/pairing recovery; Android may restrict background starts."
+);
+runtime(
+  "Android 15+ background-service recovery",
+  "A dataSync foreground service cannot start directly from BOOT_COMPLETED on target API 35+ and has a six-hour-per-24-hour limit; the user must reopen the app to resume after the OS stops or blocks it."
 );
 runtime(
   "Internet OFF/ON",
