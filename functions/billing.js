@@ -503,6 +503,9 @@ exports.applyEmi = onCall(async (request) => {
     throw new HttpsError("not-found", "Payment not found.");
   }
   const payment = paymentSnap.data();
+  if (payment.status !== "SUCCESS") {
+    throw new HttpsError("failed-precondition", "EMI can only be applied after the payment is confirmed successful.");
+  }
   if (String(payment.paymentMethod || "").toUpperCase() !== "EMI") {
     throw new HttpsError("failed-precondition", "EMI can only be applied to an EMI payment.");
   }
