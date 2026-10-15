@@ -35,7 +35,7 @@ fun LocationSharingScreen(onBack: () -> Unit, viewModel: LocationSharingViewMode
             else launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }, Modifier.fillMaxWidth()) { Text(if (sharing) "Update shared location" else "Share my location") }
         if (sharing) OutlinedButton({ viewModel.stopSharing() }, Modifier.fillMaxWidth()) { Text("Stop location sharing") }
-        message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        message?.let { Text(it) }
         last?.let { location ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
