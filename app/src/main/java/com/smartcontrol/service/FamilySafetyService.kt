@@ -303,8 +303,15 @@ class FamilySafetyService : Service() {
         const val STOP_NOTIFICATION_REQUEST = 1002
         const val EXTRA_OPEN_PROFILE = "open_profile"
 
+        // Distinguish a user-initiated start from a null-intent process restart.
+        // Manual starts must work even when the optional reboot auto-start setting is off.
+        const val ACTION_USER_START = "com.smartcontrol.action.USER_START"
+
         fun start(context: android.content.Context) =
-            ContextCompat.startForegroundService(context, Intent(context, FamilySafetyService::class.java))
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, FamilySafetyService::class.java).setAction(ACTION_USER_START)
+            )
 
         fun setSyncing(context: android.content.Context) {
             ContextCompat.startForegroundService(
