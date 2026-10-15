@@ -130,7 +130,7 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
-    const ownCandidate = doc(controller.firestore(), "mediaSessions", "session-1", "iceCandidates", "controller-candidate");
+    const ownCandidate = doc(mediaController.firestore(), "mediaSessions", "session-1", "iceCandidates", "controller-candidate");
     await assertSucceeds(setDoc(ownCandidate, {
       senderUid: "media-controller",
       candidate: "candidate:controller",
