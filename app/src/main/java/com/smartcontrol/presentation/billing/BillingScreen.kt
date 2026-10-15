@@ -14,7 +14,7 @@ import com.google.firebase.auth.FirebaseAuth
 @Composable
 fun BillingScreen(
     onBack: () -> Unit,
-    onRazorpayCheckout: (Payment) -> Unit = {},
+    onRazorpayCheckout: (Payment) -> Unit,
     viewModel: BillingViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val plans by viewModel.plans.collectAsState()
@@ -69,13 +69,13 @@ fun BillingScreen(
         message?.let { Text(it, Modifier.padding(vertical = 8.dp)) }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(plans) { plan -> PlanCard(plan) { viewModel.buy(plan, method, coupon) } }
+            items(plans) { plan -> PlanCard(plan, enabled = !busy) { viewModel.buy(plan, method, coupon) } }
         }
     }
 }
 
 @Composable
-private fun PlanCard(plan: Plan, onBuy: () -> Unit) {
+private fun PlanCard(plan: Plan, enabled: Boolean, onBuy: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(plan.name, style = MaterialTheme.typography.titleLarge)
@@ -83,7 +83,7 @@ private fun PlanCard(plan: Plan, onBuy: () -> Unit) {
             Text(plan.currency + " " + (plan.priceMinor / 100.0) + " • " + plan.durationValue + " " + plan.durationUnit.lowercase())
             Text(plan.featureIds.size.toString() + "/19 features • " + plan.deviceLimit + " devices • " + plan.userLimit + " users")
             if (plan.badge.isNotBlank()) Text(plan.badge)
-            Button(onClick = onBuy) { Text("Create Payment") }
+            Button(onClick = onBuy, enabled = enabled) { Text("Create Payment") }
         }
     }
 }

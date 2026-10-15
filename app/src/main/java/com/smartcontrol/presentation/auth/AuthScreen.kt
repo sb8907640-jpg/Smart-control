@@ -45,7 +45,8 @@ fun AuthScreen(
         Text("Sign in to manage consent-based family safety sessions.")
         Button(
             onClick = { if (activity != null) launcher.launch(viewModel.googleIntent(activity)) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.loading
         ) { Text("Continue with Google") }
         OutlinedTextField(
             value = state.phoneNumber,
@@ -56,7 +57,8 @@ fun AuthScreen(
         )
         Button(
             onClick = { if (activity != null) viewModel.sendOtp(activity) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.loading && state.phoneNumber.isNotBlank()
         ) { Text("Send OTP") }
         if (state.verificationId != null) {
             OutlinedTextField(
@@ -65,7 +67,11 @@ fun AuthScreen(
                 label = { Text("6-digit OTP") },
                 modifier = Modifier.fillMaxWidth()
             )
-            Button(onClick = viewModel::verifyOtp, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = viewModel::verifyOtp,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.loading && state.otp.length == 6
+            ) {
                 Text("Verify OTP")
             }
         }

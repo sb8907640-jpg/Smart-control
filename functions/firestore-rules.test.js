@@ -29,6 +29,31 @@ async function main() {
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
 
+    // Health heartbeats are writable only by the device owner and cannot mutate pairing data.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "devices", "health-user"), { pairingActive: false });
+      await setDoc(doc(ctx.firestore(), "devices", "health-target"), {
+        controllerUid: "health-controller", pairingActive: true
+      });
+    });
+    const healthUser = env.authenticatedContext("health-user");
+    const healthController = env.authenticatedContext("health-controller");
+    const healthPayload = {
+      health: {
+        serviceAlive: true,
+        lastHeartbeatAt: Date.now(),
+        permissions: { camera: false, microphone: false, location: true, notifications: true }
+      }
+    };
+    await assertSucceeds(updateDoc(doc(healthUser.firestore(), "devices/health-user"), healthPayload));
+    const healthNew = env.authenticatedContext("health-new");
+    await assertSucceeds(setDoc(doc(healthNew.firestore(), "devices/health-new"), healthPayload));
+    await assertFails(setDoc(doc(healthNew.firestore(), "devices/health-new"), {
+      ...healthPayload, controllerUid: "attacker"
+    }));
+    await assertFails(updateDoc(doc(healthController.firestore(), "devices/health-target"), healthPayload));
+    await assertFails(updateDoc(doc(healthUser.firestore(), "devices/health-user"), { controllerUid: "attacker" }));
+
     await assertSucceeds(setDoc(doc(normal.firestore(), "pairingCodes", token), {
       deviceUid: "normal-user",
       expiresAt: now + 10 * 60 * 1000,
@@ -115,6 +140,42 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
+
+    // Owner feature policy must be enforced by Firestore, not only by Android UI checks.
+    await assertSucceeds(setDoc(doc(owner.firestore(), "featurePolicy/global"), {
+      globalFeaturesEnabled: true,
+      globalEnabled: true,
+      featureOverrides: { CAMERA: false },
+      globalFeatureOverrides: {}
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "session-disabled-create"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now()
+    }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "mediaSessions", "session-disabled-approval"), {
+        controllerUid: "media-controller",
+        targetDeviceId: "media-target",
+        capabilities: ["CAMERA"],
+        status: "REQUESTED",
+        createdAt: Date.now()
+      });
+    });
+    await assertFails(updateDoc(
+      doc(mediaTarget.firestore(), "mediaSessions", "session-disabled-approval"),
+      { status: "APPROVED" }
+    ));
+    await assertSucceeds(updateDoc(
+      doc(mediaTarget.firestore(), "mediaSessions", "session-disabled-approval"),
+      { status: "STOPPED" }
+    ));
+    await assertFails(setDoc(
+      doc(mediaController.firestore(), "mediaSessions/session-1/iceCandidates/candidate-disabled"),
+      { candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0 }
+    ));
 
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",

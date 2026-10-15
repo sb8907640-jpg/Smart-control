@@ -13,6 +13,7 @@ import com.smartcontrol.domain.media.MediaSignalingRepository
 import com.smartcontrol.domain.pairing.PairingRepository
 import com.smartcontrol.data.owner.FirestoreFeaturePolicyRepository
 import com.smartcontrol.domain.spec.FeatureId
+import com.smartcontrol.domain.spec.FeaturePolicy
 import com.smartcontrol.service.FamilySafetyService
 import com.smartcontrol.service.MediaProjectionForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,6 +47,33 @@ class MediaSessionViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val lastError = MutableStateFlow<String?>(null)
+
+    init {
+        // Re-check owner policy while a selected session is pending/active. If a feature is
+        // disabled mid-session, stop publishing/viewing rather than waiting for the next request.
+        viewModelScope.launch {
+            selectedSession.filterNotNull().flatMapLatest { current ->
+                featurePolicyRepository.observe(current.targetDeviceId)
+                    .map { policy -> current to policy }
+                    .catch { error ->
+                        lastError.value = error.message ?: "Owner feature policy could not be verified."
+                        if (current.status == com.smartcontrol.domain.media.MediaSessionStatus.APPROVED ||
+                            current.status == com.smartcontrol.domain.media.MediaSessionStatus.ACTIVE
+                        ) {
+                            stop(current.sessionId)
+                        }
+                    }
+            }.collect { (current, policy) ->
+                if ((current.status == com.smartcontrol.domain.media.MediaSessionStatus.APPROVED ||
+                        current.status == com.smartcontrol.domain.media.MediaSessionStatus.ACTIVE) &&
+                    !capabilitiesAllowed(current.capabilities, policy)
+                ) {
+                    lastError.value = "Owner disabled a feature in this session. The session is being stopped."
+                    stop(current.sessionId)
+                }
+            }
+        }
+    }
 
     fun request(capabilities: Set<MediaCapability>) = viewModelScope.launch {
         if (!privacyPrefs.getBoolean("allow_session_requests", true) ||
@@ -116,25 +144,34 @@ class MediaSessionViewModel @Inject constructor(
     private suspend fun capabilitiesAllowed(
         capabilities: Set<MediaCapability>,
         targetDeviceId: String
+    ): Boolean = runCatching {
+        policyAllows(capabilities, featurePolicyRepository.observe(targetDeviceId).first())
+    }.getOrDefault(false)
+
+    private fun capabilitiesAllowed(
+        capabilities: Set<MediaCapability>,
+        policy: FeaturePolicy
+    ): Boolean = policyAllows(capabilities, policy)
+
+    private fun policyAllows(
+        capabilities: Set<MediaCapability>,
+        policy: FeaturePolicy
     ): Boolean = capabilities.all { capability ->
         val featureId = when (capability) {
             MediaCapability.CAMERA -> FeatureId.CAMERA
             MediaCapability.MICROPHONE -> FeatureId.MICROPHONE
             MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
         }
-        runCatching {
-            val policy = featurePolicyRepository.observe(targetDeviceId).first()
-            if (!policy.globalFeaturesEnabled || !policy.globalEnabled) return@runCatching false
-            if (policy.featureOverrides[featureId] == false) return@runCatching false
-            if (policy.globalFeatureOverrides[featureId] == false) return@runCatching false
-            val perUser = policy.userPolicy
-            if (perUser != null &&
-                (!perUser.enabled || !perUser.ownerEnabled ||
-                    perUser.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true ||
-                    perUser.featureOverrides[featureId] == false)
-            ) return@runCatching false
-            true
-        }.getOrDefault(false)
+        if (!policy.globalFeaturesEnabled || !policy.globalEnabled) return@all false
+        if (policy.featureOverrides[featureId] == false) return@all false
+        if (policy.globalFeatureOverrides[featureId] == false) return@all false
+        val perUser = policy.userPolicy
+        if (perUser != null &&
+            (!perUser.enabled || !perUser.ownerEnabled ||
+                perUser.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true ||
+                perUser.featureOverrides[featureId] == false)
+        ) return@all false
+        true
     }
 
     private suspend fun resolveIceServers(): List<IceServerConfig> {

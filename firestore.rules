@@ -1,6 +1,32 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function mediaCapabilityEnabled(targetUid, featureName) {
+      let globalPath = /databases/$(database)/documents/featurePolicy/global;
+      let userPath = /databases/$(database)/documents/featurePolicyUsers/$(targetUid);
+      let globalPolicy = exists(globalPath) ? get(globalPath).data : {};
+      let userPolicy = exists(userPath) ? get(userPath).data : {};
+      let featureOverrides = globalPolicy.get('featureOverrides', {});
+      let globalFeatureOverrides = globalPolicy.get('globalFeatureOverrides', {});
+      let userFeatureOverrides = userPolicy.get('featureOverrides', {});
+      let expiresAt = userPolicy.get('expiresAtEpochMs', 0);
+      return globalPolicy.get('globalFeaturesEnabled', true) == true
+        && globalPolicy.get('globalEnabled', true) == true
+        && featureOverrides.get(featureName, true) == true
+        && globalFeatureOverrides.get(featureName, true) == true
+        && userPolicy.get('enabled', true) == true
+        && userPolicy.get('ownerEnabled', true) == true
+        && (expiresAt == 0 || expiresAt > request.time.toMillis())
+        && userFeatureOverrides.get(featureName, true) == true;
+    }
+
+    function requestedMediaCapabilitiesAllowed(targetUid, capabilities) {
+      return capabilities is list
+        && (!capabilities.hasAny(['CAMERA']) || mediaCapabilityEnabled(targetUid, 'CAMERA'))
+        && (!capabilities.hasAny(['MICROPHONE']) || mediaCapabilityEnabled(targetUid, 'MICROPHONE'))
+        && (!capabilities.hasAny(['SCREEN_SHARING']) || mediaCapabilityEnabled(targetUid, 'SCREEN_SHARE'));
+    }
+
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
     }
@@ -137,7 +163,8 @@ service cloud.firestore {
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.controllerUid == request.auth.uid
-        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true
+        && requestedMediaCapabilitiesAllowed(request.resource.data.targetDeviceId, request.resource.data.capabilities);
 
       allow read: if request.auth != null
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
@@ -155,9 +182,18 @@ service cloud.firestore {
             (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
               && (
-                (resource.data.status == 'REQUESTED' && request.resource.data.status in ['APPROVED', 'STOPPED'])
-                || (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                (resource.data.status == 'REQUESTED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'APPROVED'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'APPROVED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'ACTIVE'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
               )
             )
             || (
@@ -165,6 +201,7 @@ service cloud.firestore {
               && resource.data.status == 'APPROVED'
               && request.resource.data.status == resource.data.status
               && request.resource.data.offerSdp is string
+              && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities)
             )
           )
         )
@@ -179,8 +216,14 @@ service cloud.firestore {
             (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
               && (
-                (resource.data.status == 'APPROVED' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
-                || (resource.data.status == 'ACTIVE' && request.resource.data.status in ['ACTIVE', 'STOPPED'])
+                (resource.data.status == 'APPROVED'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
+                || (resource.data.status == 'ACTIVE'
+                  && (request.resource.data.status == 'STOPPED'
+                    || (request.resource.data.status == 'ACTIVE'
+                      && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities))))
                 || (resource.data.status == 'REQUESTED' && request.resource.data.status == 'STOPPED')
               )
             )
@@ -189,6 +232,7 @@ service cloud.firestore {
               && resource.data.status == 'APPROVED'
               && request.resource.data.status == resource.data.status
               && request.resource.data.answerSdp is string
+              && requestedMediaCapabilitiesAllowed(resource.data.targetDeviceId, resource.data.capabilities)
             )
           )
         )
@@ -198,10 +242,18 @@ service cloud.firestore {
       match /iceCandidates/{candidateId} {
         allow create: if request.auth != null
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
-              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid)
+          && requestedMediaCapabilitiesAllowed(
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId,
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.capabilities
+          );
         allow read: if request.auth != null
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
-              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid)
+          && requestedMediaCapabilitiesAllowed(
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId,
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.capabilities
+          );
         allow update, delete: if false;
       }
     }
@@ -273,16 +325,35 @@ service cloud.firestore {
     }
 
     match /devices/{uid} {
-      allow create: if request.auth != null
-        && request.resource.data.controllerUid == request.auth.uid
-        && request.resource.data.pairingToken is string
-        && request.resource.data.pairedAt is int
-        && request.resource.data.pairingActive == true
-        && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
-        && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
-        && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis();
+      allow create: if request.auth != null && (
+        (
+          // Permit an opt-in health-only document before this device has been paired.
+          request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['health'])
+          && request.resource.data.health is map
+          && request.resource.data.health.keys().hasOnly(['serviceAlive', 'lastHeartbeatAt', 'permissions'])
+          && request.resource.data.health.serviceAlive is bool
+          && request.resource.data.health.lastHeartbeatAt is int
+          && request.resource.data.health.permissions is map
+          && request.resource.data.health.permissions.keys().hasOnly(['camera', 'microphone', 'location', 'notifications'])
+          && request.resource.data.health.permissions.camera is bool
+          && request.resource.data.health.permissions.microphone is bool
+          && request.resource.data.health.permissions.location is bool
+          && request.resource.data.health.permissions.notifications is bool
+        )
+        ||
+        (
+          request.resource.data.controllerUid == request.auth.uid
+          && request.resource.data.pairingToken is string
+                  && request.resource.data.pairedAt is int
+                  && request.resource.data.pairingActive == true
+                  && request.resource.data.keys().hasOnly(['controllerUid', 'pairingToken', 'pairedAt', 'pairingActive', 'senderRole', 'receiverRole'])
+                  && (!request.resource.data.keys().hasAny(['senderRole']) || request.resource.data.senderRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+                  && (!request.resource.data.keys().hasAny(['receiverRole']) || request.resource.data.receiverRole in ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife', 'Mechanic', 'Engineer', 'Other'])
+                  && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.deviceUid == uid
+                  && get(/databases/$(database)/documents/pairingCodes/$(request.resource.data.pairingToken)).data.expiresAt > request.time.toMillis()
+        )
+      );
 
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.uid == resource.data.controllerUid);
@@ -296,6 +367,23 @@ service cloud.firestore {
           && request.resource.data.controllerUid == null
           && request.resource.data.pairingActive == false
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerUid', 'pairingActive'])
+        )
+        ||
+        (
+          // A device may publish only its own opt-in health heartbeat. Keep this
+          // separate from pairing fields so the client cannot rewrite controller links.
+          request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health'])
+          && request.resource.data.health is map
+          && request.resource.data.health.keys().hasOnly(['serviceAlive', 'lastHeartbeatAt', 'permissions'])
+          && request.resource.data.health.serviceAlive is bool
+          && request.resource.data.health.lastHeartbeatAt is int
+          && request.resource.data.health.permissions is map
+          && request.resource.data.health.permissions.keys().hasOnly(['camera', 'microphone', 'location', 'notifications'])
+          && request.resource.data.health.permissions.camera is bool
+          && request.resource.data.health.permissions.microphone is bool
+          && request.resource.data.health.permissions.location is bool
+          && request.resource.data.health.permissions.notifications is bool
         )
         ||
         (

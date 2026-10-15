@@ -92,6 +92,64 @@ function newSecret(pin) {
   return { salt, pinHash: hashPin(pin, salt) };
 }
 
+const PARENT_PIN_MAX_ATTEMPTS = 5;
+const PARENT_PIN_WINDOW_MS = 15 * 60 * 1000;
+
+// Rate-limit PIN guesses per authenticated device/controller pair. Admin SDK
+// access keeps this counter server-only; clients cannot reset it directly.
+async function beginParentPinAttempt(deviceUid, parentUid) {
+  const key = crypto.createHash("sha256")
+    .update(`${deviceUid}:${parentUid}`)
+    .digest("hex");
+  const ref = db.collection("parentPinRateLimits").doc(key);
+  const now = Date.now();
+
+  const result = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const data = snapshot.exists ? snapshot.data() || {} : {};
+    const blockedUntil = Number(data.blockedUntil || 0);
+    if (blockedUntil > now) {
+      return { blocked: true, retryAfterMs: blockedUntil - now };
+    }
+
+    let windowStartedAt = Number(data.windowStartedAt || 0);
+    let attempts = Number(data.attempts || 0);
+    if (!windowStartedAt || now - windowStartedAt >= PARENT_PIN_WINDOW_MS) {
+      windowStartedAt = now;
+      attempts = 0;
+    }
+
+    attempts += 1;
+    if (attempts > PARENT_PIN_MAX_ATTEMPTS) {
+      const nextBlockedUntil = now + PARENT_PIN_WINDOW_MS;
+      transaction.set(ref, {
+        attempts: PARENT_PIN_MAX_ATTEMPTS,
+        windowStartedAt,
+        blockedUntil: nextBlockedUntil,
+        updatedAt: now
+      });
+      return { blocked: true, retryAfterMs: PARENT_PIN_WINDOW_MS };
+    }
+
+    transaction.set(ref, {
+      attempts,
+      windowStartedAt,
+      blockedUntil: 0,
+      updatedAt: now
+    });
+    return { blocked: false };
+  });
+
+  if (result.blocked) {
+    const retryMinutes = Math.max(1, Math.ceil((result.retryAfterMs || PARENT_PIN_WINDOW_MS) / 60000));
+    throw new HttpsError(
+      "resource-exhausted",
+      `Too many incorrect Parent PIN attempts. Try again in about ${retryMinutes} minute(s).`
+    );
+  }
+  return ref;
+}
+
 exports.changeParentPin = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in first.");
@@ -135,11 +193,13 @@ exports.verifyParentPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  const attemptRef = await beginParentPinAttempt(request.auth.uid, parentUid);
   const actual = hashPin(pin, salt);
   const matches = crypto.timingSafeEqual(
     Buffer.from(actual, "hex"),
     Buffer.from(expected, "hex")
   );
+  if (matches) await attemptRef.delete();
 
   return { ok: matches };
 });
@@ -176,6 +236,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  const attemptRef = await beginParentPinAttempt(request.auth.uid, parentUid);
   const actual = hashPin(pin, salt);
   const expectedBuffer = Buffer.from(expected, "hex");
   const actualBuffer = Buffer.from(actual, "hex");
@@ -183,6 +244,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
       !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
     return { ok: false, stoppedCount: 0 };
   }
+  await attemptRef.delete();
 
   const snapshot = await db.collection("mediaSessions")
     .where("targetDeviceId", "==", request.auth.uid)

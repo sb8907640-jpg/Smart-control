@@ -135,6 +135,11 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private val incomingPairLink = mutableStateOf<android.net.Uri?>(null)
 
+    override fun onResume() {
+        super.onResume()
+        serviceRunning.value = FamilySafetyService.isRunning
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -143,10 +148,22 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    private val serviceRunning = mutableStateOf(FamilySafetyService.isRunning)
+
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            FamilySafetyService.start(this)
-            FamilySafetyService.setSyncing(this)
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                FamilySafetyService.start(this)
+                FamilySafetyService.setSyncing(this)
+                serviceRunning.value = true
+            } else {
+                serviceRunning.value = false
+                Toast.makeText(
+                    this,
+                    "Notifications are required to show the foreground service status. The service was not started.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -178,7 +195,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         .getString("mode", null) != null
                 )
             }
-            var running by remember { mutableStateOf(false) }
+            var running by serviceRunning
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
@@ -196,6 +213,25 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 )
             }
             val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+
+            DisposableEffect(Unit) {
+                val auth = FirebaseAuth.getInstance()
+                val listener = FirebaseAuth.AuthStateListener { state ->
+                    val currentUser = state.currentUser
+                    signedIn = currentUser != null
+                    if (currentUser == null) {
+                        val legalPreferences = getSharedPreferences("legal_consent", MODE_PRIVATE)
+                        consented = legalPreferences.getBoolean("accepted", false) &&
+                            legalPreferences.getInt("accepted_version", 0) == CURRENT_LEGAL_CONSENT_VERSION
+                        ageVerified = legalPreferences.getBoolean("age_verified", false)
+                        modeSelected = getSharedPreferences("smart_control_mode", MODE_PRIVATE)
+                            .getString("mode", null) != null
+                        consentSyncState = "WAITING"
+                    }
+                }
+                auth.addAuthStateListener(listener)
+                onDispose { auth.removeAuthStateListener(listener) }
+            }
 
             LaunchedEffect(signedIn, consented, consentSyncAttempt) {
                 if (!signedIn || !consented) {
@@ -235,10 +271,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    FamilySafetyService.start(this@MainActivity)
-                    FamilySafetyService.setSyncing(this@MainActivity)
+                    return
                 }
+                FamilySafetyService.start(this@MainActivity)
+                FamilySafetyService.setSyncing(this@MainActivity)
                 running = true
             }
 

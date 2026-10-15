@@ -25,6 +25,7 @@ class FamilySafetyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        setRunning(true)
         createChannel()
         startVisibleForeground()
         startHealthLoop()
@@ -164,6 +165,7 @@ class FamilySafetyService : Service() {
     }
 
     override fun onDestroy() {
+        setRunning(false)
         scope.cancel()
         super.onDestroy()
     }
@@ -171,6 +173,13 @@ class FamilySafetyService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        @Volatile var isRunning: Boolean = false
+            private set
+
+        private fun setRunning(value: Boolean) {
+            isRunning = value
+        }
+
         const val CHANNEL = "family_safety"
         const val NOTIFICATION_ID = 1001
         const val ACTION_SYNCING = "com.smartcontrol.action.SYNCING_DEVICE"

@@ -1,6 +1,7 @@
 package com.smartcontrol.presentation.privacy
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.service.FamilySafetyService
+import com.smartcontrol.service.MediaProjectionForegroundService
+import com.smartcontrol.service.ScreenRecordingService
 
 @Composable
 fun PrivacyControlsScreen(onBack: () -> Unit, context: Context) {
@@ -96,9 +99,40 @@ fun PrivacyControlsScreen(onBack: () -> Unit, context: Context) {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    // Stop active services before clearing the preferences they rely on.
                     FamilySafetyService.stop(context)
-                    context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE).edit().clear().apply()
-                    context.getSharedPreferences("legal_consent", Context.MODE_PRIVATE).edit().clear().apply()
+                    MediaProjectionForegroundService.stop(context)
+                    runCatching {
+                        context.startService(
+                            Intent(context, ScreenRecordingService::class.java)
+                                .setAction(ScreenRecordingService.ACTION_STOP)
+                        )
+                    }
+
+                    // Revoke persisted document/folder grants so clearing preferences also
+                    // removes the app's saved access to user-selected files.
+                    context.contentResolver.persistedUriPermissions.forEach { permission ->
+                        var flags = 0
+                        if (permission.isReadPermission) flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        if (permission.isWritePermission) flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        if (flags != 0) {
+                            runCatching {
+                                context.contentResolver.releasePersistableUriPermission(permission.uri, flags)
+                            }
+                        }
+                    }
+
+                    listOf(
+                        "privacy_controls",
+                        "legal_consent",
+                        "smart_control_settings",
+                        "smart_control_mode",
+                        "family_suraksha_file_access",
+                        "file_transfer_pending",
+                        ScreenRecordingService.PREFS
+                    ).distinct().forEach { name ->
+                        context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().apply()
+                    }
                     FirebaseAuth.getInstance().signOut()
                     deleted = true
                     showDeleteDialog = false
