@@ -8,6 +8,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.data.media.WebRtcMediaEngine
 import com.smartcontrol.domain.media.IceServerConfig
@@ -23,6 +24,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -32,17 +34,33 @@ import org.webrtc.VideoSink
 class MediaSessionViewModel @Inject constructor(
     private val signaling: MediaSignalingRepository,
     pairingRepository: PairingRepository,
+    private val auth: FirebaseAuth,
     private val featurePolicyRepository: FirestoreFeaturePolicyRepository,
     private val engine: WebRtcMediaEngine,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
 
-    val controlledDevice = pairingRepository.observeControlledDevice()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    private val signedInUid = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid.orEmpty())
+        }
+        auth.addAuthStateListener(listener)
+        trySend(auth.currentUser?.uid.orEmpty())
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged().stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        auth.currentUser?.uid.orEmpty()
+    )
 
-    val pending = signaling.observePendingSessionsForDevice()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val controlledDevice = signedInUid.flatMapLatest { uid ->
+        if (uid.isBlank()) flowOf(null) else pairingRepository.observeControlledDevice()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val pending = signedInUid.flatMapLatest { uid ->
+        if (uid.isBlank()) flowOf(emptyList<MediaSession>()) else signaling.observePendingSessionsForDevice()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val selectedId = MutableStateFlow<String?>(null)
     val selectedSession: StateFlow<MediaSession?> = selectedId.flatMapLatest { id ->
@@ -50,6 +68,22 @@ class MediaSessionViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val lastError = MutableStateFlow<String?>(null)
+    private var lastObservedUid = auth.currentUser?.uid.orEmpty()
+
+    init {
+        viewModelScope.launch {
+            signedInUid.collect { uid ->
+                if (uid != lastObservedUid) {
+                    lastObservedUid = uid
+                    selectedId.value?.let { engine.stop(it) }
+                    selectedId.value = null
+                    lastError.value = null
+                    MediaProjectionForegroundService.stop(context)
+                    FamilySafetyService.setIdle(context)
+                }
+            }
+        }
+    }
 
     fun request(capabilities: Set<MediaCapability>) = viewModelScope.launch {
         if (!privacyPrefs.getBoolean("allow_session_requests", true) ||
