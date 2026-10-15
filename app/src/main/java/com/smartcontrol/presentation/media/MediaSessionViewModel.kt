@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.functions.FirebaseFunctionsException
 import com.smartcontrol.data.media.WebRtcMediaEngine
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
@@ -168,6 +169,19 @@ class MediaSessionViewModel @Inject constructor(
                 lastError.value = null
             }
             configured
+        } catch (error: FirebaseFunctionsException) {
+            // Do not turn an authorization/policy denial into a STUN-only session;
+            // that would bypass the server-side approval boundary.
+            if (error.code in setOf(
+                    "permission-denied",
+                    "failed-precondition",
+                    "unauthenticated",
+                    "not-found",
+                    "invalid-argument"
+                )
+            ) throw error
+            lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
+            fallback
         } catch (_: Exception) {
             lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
             fallback
