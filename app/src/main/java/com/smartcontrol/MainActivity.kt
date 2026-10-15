@@ -144,9 +144,17 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     }
 
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            FamilySafetyService.start(this)
-            FamilySafetyService.setSyncing(this)
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                FamilySafetyService.start(this)
+                FamilySafetyService.setSyncing(this)
+            } else {
+                Toast.makeText(
+                    this,
+                    "Notifications permission was denied. Family Safety sync was not started.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
