@@ -109,6 +109,14 @@ async function main() {
     await assertSucceeds(updateDoc(sessionRef, { status: "ACTIVE" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "ACTIVE" }));
 
+    await assertFails(setDoc(doc(normal.firestore(), "emiSchedule", "forged-schedule"), {
+      userId: "normal-user",
+      paymentId: "fake-payment",
+      status: "COMPLETED",
+      tenureMonths: 12,
+      createdAtEpochMs: Date.now()
+    }));
+
     await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "unpaired-transfer"), {
       senderDeviceId: "controller-user",
       receiverDeviceId: "unrelated-user",
