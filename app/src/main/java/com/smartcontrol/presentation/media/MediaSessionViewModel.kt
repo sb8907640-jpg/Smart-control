@@ -203,7 +203,11 @@ class MediaSessionViewModel @Inject constructor(
             lastError.value = error.message ?: "Secure media authorization failed."
             return@launch
         }
-        engine.view(session.sessionId, sink, iceServers).onFailure { lastError.value = it.message }
+        engine.view(session.sessionId, sink, iceServers).onFailure {
+            signaling.stopSession(session.sessionId)
+            FamilySafetyService.setIdle(context)
+            lastError.value = it.message ?: "The media viewer could not connect."
+        }
     }
 
     fun stop(sessionId: String) = viewModelScope.launch {
