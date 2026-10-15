@@ -229,10 +229,23 @@ class WebRtcMediaEngine(
         val capturer = enumerator.createCapturer(device, null) ?: error("Unable to open camera")
         val source = factory.createVideoSource(capturer.isScreencast)
         val helper = SurfaceTextureHelper.create("camera-$sessionId", eglBase.eglBaseContext)
-        capturer.initialize(helper, context, source.capturerObserver)
-        capturer.startCapture(1280, 720, 24)
-        return CapturedVideo(factory.createVideoTrack("camera-$sessionId", source)) {
-            runCatching { capturer.stopCapture() }; capturer.dispose(); helper.dispose(); source.dispose()
+        try {
+            capturer.initialize(helper, context, source.capturerObserver)
+            capturer.startCapture(1280, 720, 24)
+            val track = factory.createVideoTrack("camera-$sessionId", source)
+            return CapturedVideo(track) {
+                runCatching { track.dispose() }
+                runCatching { capturer.stopCapture() }
+                runCatching { capturer.dispose() }
+                runCatching { helper.dispose() }
+                runCatching { source.dispose() }
+            }
+        } catch (error: Exception) {
+            runCatching { capturer.stopCapture() }
+            runCatching { capturer.dispose() }
+            runCatching { helper.dispose() }
+            runCatching { source.dispose() }
+            throw error
         }
     }
 
@@ -240,10 +253,23 @@ class WebRtcMediaEngine(
         val capturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
         val source = factory.createVideoSource(true)
         val helper = SurfaceTextureHelper.create("screen-$sessionId", eglBase.eglBaseContext)
-        capturer.initialize(helper, context, source.capturerObserver)
-        capturer.startCapture(1280, 720, 15)
-        return CapturedVideo(factory.createVideoTrack("screen-$sessionId", source)) {
-            runCatching { capturer.stopCapture() }; capturer.dispose(); helper.dispose(); source.dispose()
+        try {
+            capturer.initialize(helper, context, source.capturerObserver)
+            capturer.startCapture(1280, 720, 15)
+            val track = factory.createVideoTrack("screen-$sessionId", source)
+            return CapturedVideo(track) {
+                runCatching { track.dispose() }
+                runCatching { capturer.stopCapture() }
+                runCatching { capturer.dispose() }
+                runCatching { helper.dispose() }
+                runCatching { source.dispose() }
+            }
+        } catch (error: Exception) {
+            runCatching { capturer.stopCapture() }
+            runCatching { capturer.dispose() }
+            runCatching { helper.dispose() }
+            runCatching { source.dispose() }
+            throw error
         }
     }
 
