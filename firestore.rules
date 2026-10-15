@@ -242,10 +242,18 @@ service cloud.firestore {
       match /iceCandidates/{candidateId} {
         allow create: if request.auth != null
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
-              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid)
+          && requestedMediaCapabilitiesAllowed(
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId,
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.capabilities
+          );
         allow read: if request.auth != null
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
-              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
+              || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid)
+          && requestedMediaCapabilitiesAllowed(
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId,
+            get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.capabilities
+          );
         allow update, delete: if false;
       }
     }
