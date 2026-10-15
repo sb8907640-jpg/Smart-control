@@ -109,6 +109,12 @@ exports.approveMediaSession = onCall(async (request) => {
       throw new HttpsError("failed-precondition", "This session is no longer awaiting approval.");
     }
 
+    const deviceSnapshot = await transaction.get(db.collection("devices").doc(session.targetDeviceId));
+    const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
+    if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
+      throw new HttpsError("failed-precondition", "The device pairing is no longer active.");
+    }
+
     const globalPolicySnapshot = await transaction.get(globalPolicyRef);
     const userPolicySnapshot = await transaction.get(userPolicyRef);
     const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
