@@ -32,7 +32,7 @@ async function main() {
       await setDoc(doc(context.firestore(), "users", "blocked-user"), { status: "SUSPENDED" });
     });
     const blocked = env.authenticatedContext("blocked-user");
-    await assertFails(setDoc(doc(blocked.firestore(), "pairingCodes", "d".repeat(48),), {
+    await assertFails(setDoc(doc(blocked.firestore(), "pairingCodes", "d".repeat(48)), {
       deviceUid: "blocked-user",
       expiresAt: now + 10 * 60 * 1000,
       createdAt: now,
