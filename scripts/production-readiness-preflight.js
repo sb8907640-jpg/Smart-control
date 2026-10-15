@@ -16,6 +16,7 @@ const requiredPaths = [
 
 const requiredEnv = [
   "CORS_ORIGIN",
+  "PUBLIC_APP_URL",
   "SMARTCONTROL_DATA_REGION",
   "NEXT_PUBLIC_FIREBASE_API_KEY",
   "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
