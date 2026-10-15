@@ -138,7 +138,7 @@ async function main() {
       sdpMLineIndex: 0
     }));
     await assertFails(setDoc(
-      doc(controller.firestore(), "mediaSessions", "session-1", "iceCandidates", "spoofed-candidate"),
+      doc(mediaController.firestore(), "mediaSessions", "session-1", "iceCandidates", "spoofed-candidate"),
       {
         senderUid: "media-target",
         candidate: "candidate:spoofed",
