@@ -75,8 +75,8 @@ const razorpayWebhookBlock = billingFunctions.slice(
   billingFunctions.indexOf("exports.paymentGatewayWebhook")
 );
 check("Verified payment activation cannot overwrite a concurrent refund lock",
-  !/activateSubscriptionForPayment[\\s\\S]{0,500}await ref\\.update\\(\\{\\s*status:\\s*"SUCCESS"/.test(razorpayVerifyBlock) &&
-    !/activateSubscriptionForPayment[\\s\\S]{0,500}paymentDoc\\.ref\\.update\\(\\{\\s*status:\\s*"SUCCESS"/.test(razorpayWebhookBlock),
+  !/activateSubscriptionForPayment[\s\S]{0,500}await ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayVerifyBlock) &&
+    !/activateSubscriptionForPayment[\s\S]{0,500}paymentDoc\.ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayWebhookBlock),
   "The activation transaction persists success atomically; no redundant follow-up write may revert REFUND_PENDING.");
 
 check("Gateway credential versions are retained for pending payment verification",
