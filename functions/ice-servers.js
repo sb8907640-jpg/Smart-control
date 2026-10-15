@@ -36,12 +36,16 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     deviceSnapshot,
     controllerUserSnapshot,
     targetUserSnapshot,
+    controllerAccessSnapshot,
+    targetAccessSnapshot,
     globalPolicySnapshot,
     userPolicySnapshot
   ] = await Promise.all([
     db.collection("devices").doc(session.targetDeviceId).get(),
     db.collection("users").doc(session.controllerUid).get(),
     db.collection("users").doc(session.targetDeviceId).get(),
+    db.collection("userAccess").doc(session.controllerUid).get(),
+    db.collection("userAccess").doc(session.targetDeviceId).get(),
     db.collection("featurePolicy").doc("global").get(),
     db.collection("featurePolicyUsers").doc(session.targetDeviceId).get()
   ]);
@@ -51,8 +55,10 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
   }
   const isActiveAccount = (snapshot) =>
     !snapshot.exists || String(snapshot.data()?.status || "ACTIVE").toUpperCase() === "ACTIVE";
-  if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot)) {
-    throw new HttpsError("permission-denied", "A suspended account cannot use media sessions.");
+  if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot) ||
+      (controllerAccessSnapshot.exists && controllerAccessSnapshot.data()?.blocked === true) ||
+      (targetAccessSnapshot.exists && targetAccessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "A suspended or blocked account cannot use media sessions.");
   }
   const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
   if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
