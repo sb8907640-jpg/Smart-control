@@ -28,6 +28,19 @@ async function main() {
     const owner = env.authenticatedContext("owner-user", { admin: true, role: "OWNER" });
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", "blocked-user"), { status: "SUSPENDED" });
+    });
+    const blocked = env.authenticatedContext("blocked-user");
+    await assertFails(setDoc(doc(blocked.firestore(), "pairingCodes", "d".repeat(48),), {
+      deviceUid: "blocked-user",
+      expiresAt: now + 10 * 60 * 1000,
+      createdAt: now,
+      expiryMinutes: 10,
+      expiryMode: "PLAN",
+      senderRole: "Father",
+      receiverRole: "Son"
+    }));
 
     await assertFails(setDoc(doc(normal.firestore(), "payments", "client-forged-payment"), {
       userId: "normal-user",
