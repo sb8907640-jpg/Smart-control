@@ -204,8 +204,10 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         firestoreStatus = "error";
       }
     }
+    const firestoreOk = firestoreStatus === "ok";
+    const postgresOk = postgresStatus.configured !== true || postgresStatus.ok === true;
     res.json({
-      ok: firestoreStatus !== "error",
+      ok: firestoreOk && postgresOk,
       service: "smart-control-backend",
       firestore: firestoreStatus,
       postgres: postgresStatus
