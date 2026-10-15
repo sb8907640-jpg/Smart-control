@@ -477,14 +477,9 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
     razorpayPaymentId,
     verifiedAtEpochMs: Date.now()
   });
-  await ref.update({
-    status: "SUCCESS",
-    gatewayReference: razorpayPaymentId,
-    razorpayPaymentId,
-    subscriptionId: activation.subscriptionId,
-    verifiedAtEpochMs: Date.now(),
-    updatedAtEpochMs: Date.now()
-  });
+  // activateSubscriptionForPayment atomically records the verified gateway
+  // reference and SUCCESS status with the subscription. Do not write SUCCESS
+  // again here: a concurrent refund may already have changed it to REFUND_PENDING.
   return { ok: true, paymentId, subscriptionId: activation.subscriptionId, expiresAtEpochMs: activation.expiresAtEpochMs };
 });
 
@@ -1023,14 +1018,8 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           razorpayPaymentId,
           verifiedAtEpochMs: now
         });
-        await paymentDoc.ref.update({
-          status: "SUCCESS",
-          gatewayReference: razorpayPaymentId,
-          razorpayPaymentId,
-          subscriptionId: activation.subscriptionId,
-          verifiedAtEpochMs: now,
-          updatedAtEpochMs: now
-        });
+        // The activation transaction already persisted SUCCESS and verification
+        // metadata. A second write here could overwrite a concurrent REFUND_PENDING.
       } else if (eventName === "payment.failed") {
         if (payment.status === "PENDING") {
           await paymentDoc.ref.update({
