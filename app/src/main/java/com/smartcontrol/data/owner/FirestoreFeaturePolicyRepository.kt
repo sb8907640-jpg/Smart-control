@@ -52,8 +52,10 @@ class FirestoreFeaturePolicyRepository @Inject constructor(
     }
 
     private fun decodeGlobal(data: Map<String, Any>): FeaturePolicy = FeaturePolicy(
-        globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: true,
-        globalEnabled = data["globalEnabled"] as? Boolean ?: true,
+        // Missing or malformed global policy must fail closed. An absent
+        // owner policy document must never implicitly enable sensitive features.
+        globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: false,
+        globalEnabled = data["globalEnabled"] as? Boolean ?: false,
         dataCollectionEnabled = data["dataCollectionEnabled"] as? Boolean ?: false,
         dataShareAllowed = data["dataShareAllowed"] as? Boolean ?: false,
         featureOverrides = boolFeatureMap(data["featureOverrides"]),
