@@ -374,7 +374,19 @@ exports.updateOwnerUser = onCall(async (request) => {
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
+  const claimedActorRole = normalizeRole(request.auth.token?.role);
+  let actorRole = claimedActorRole;
+  if (claimedActorRole !== "SUPER_ADMIN") {
+    const ownerConfigSnapshot = await db.collection("ownerAccounts").doc("config").get();
+    const ownerConfig = ownerConfigSnapshot.exists ? ownerConfigSnapshot.data() || {} : {};
+    if (canManageOwnerAccounts(
+      request.auth.token || {},
+      Array.isArray(ownerConfig.emails) ? ownerConfig.emails : [],
+      Array.isArray(ownerConfig.mobiles) ? ownerConfig.mobiles : []
+    )) {
+      actorRole = "OWNER";
+    }
+  }
   const currentTargetRole = normalizeRole(target.customClaims?.role);
   if (!canManageUser(
     request.auth.uid,
