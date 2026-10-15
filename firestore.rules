@@ -118,17 +118,14 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if request.auth != null && resource.data.expiresAt > request.time.toMillis();
-      // The receiver can revoke its own code. A controller can consume a code only
-      // in the same atomic transaction that creates/updates the matching device link.
-      allow delete: if request.auth != null && (
-        resource.data.deviceUid == request.auth.uid
-        || (
-          getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.controllerUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingToken == token
-          && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingActive == true
-        )
-      );
+      // Pairing tokens are bearer secrets. Only the device that created a code
+      // may read or revoke it directly; controllers claim codes through the
+      // authenticated claimPairingCode callable to prevent listing active tokens.
+      allow read: if request.auth != null
+        && resource.data.deviceUid == request.auth.uid
+        && resource.data.expiresAt > request.time.toMillis();
+      allow delete: if request.auth != null
+        && resource.data.deviceUid == request.auth.uid;
       allow update: if false;
     }
 
