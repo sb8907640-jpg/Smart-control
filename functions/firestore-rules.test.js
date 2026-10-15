@@ -29,6 +29,12 @@ async function main() {
     const controller = env.authenticatedContext("controller-user");
     const target = env.authenticatedContext("target-user");
     await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
       await setDoc(doc(context.firestore(), "users", "blocked-user"), { status: "SUSPENDED" });
       await setDoc(doc(context.firestore(), "users", "blocked-by-access"), { status: "ACTIVE" });
       await setDoc(doc(context.firestore(), "userAccess", "blocked-by-access"), { blocked: true });
@@ -238,6 +244,61 @@ async function main() {
       sizeBytes: 10,
       createdAtEpochMs: Date.now(),
       status: "REQUESTED"
+    }));
+
+    // Owner policy must be enforced by rules even when a modified client bypasses UI gates.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "controller-user"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { FILE_TRANSFER: false }
+      });
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "disabled-feature-transfer"), {
+      senderDeviceId: "controller-user",
+      receiverDeviceId: "target-user",
+      fileName: "blocked.txt",
+      mimeType: "text/plain",
+      sizeBytes: 10,
+      createdAtEpochMs: Date.now(),
+      status: "REQUESTED"
+    }));
+    await assertFails(updateDoc(doc(target.firestore(), "fileTransfers", "paired-transfer"), {
+      status: "APPROVED"
+    }));
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicyUsers", "controller-user"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: {}
+      });
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: false,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
+    });
+    await assertFails(setDoc(doc(controller.firestore(), "fileTransfers", "globally-disabled-transfer"), {
+      senderDeviceId: "controller-user",
+      receiverDeviceId: "target-user",
+      fileName: "blocked.txt",
+      mimeType: "text/plain",
+      sizeBytes: 10,
+      createdAtEpochMs: Date.now(),
+      status: "REQUESTED"
+    }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
+    });
+    await assertSucceeds(updateDoc(doc(target.firestore(), "fileTransfers", "paired-transfer"), {
+      status: "APPROVED"
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
