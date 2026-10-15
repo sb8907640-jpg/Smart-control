@@ -462,15 +462,18 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     granted += 1;
   }
 
+  const revokedUids = new Set();
   for (const identifier of previousIdentifiers) {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
     // An owner may have both email and mobile identifiers. Do not revoke the
     // same account merely because one old identifier was removed.
-    if (!user || user.uid === request.auth.uid || requestedUids.has(user.uid)) continue;
+    if (!user || user.uid === request.auth.uid ||
+        requestedUids.has(user.uid) || revokedUids.has(user.uid)) continue;
     const claims = { ...(user.customClaims || {}) };
     delete claims.admin;
     await getAuth().setCustomUserClaims(user.uid, claims);
+    revokedUids.add(user.uid);
     revoked += 1;
   }
 
