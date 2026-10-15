@@ -201,9 +201,10 @@ async function clearParentPinAttempts(parentUid, requesterUid) {
 }
 
 exports.changeParentPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
   const pin = request.data?.pin;
   if (!validatePin(pin)) {
     throw new HttpsError("invalid-argument", "PIN must contain exactly 4 digits.");
@@ -217,9 +218,10 @@ exports.changeParentPin = onCall(async (request) => {
 });
 
 exports.verifyParentPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const parentUid = request.data?.parentUid;
   const pin = request.data?.pin;
@@ -256,9 +258,10 @@ exports.verifyParentPin = onCall(async (request) => {
 
 
 exports.stopSessionWithPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const pin = request.data?.pin;
   if (!validatePin(pin)) {
@@ -324,6 +327,7 @@ async function requireOwnerAccountManager(request) {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
   const claims = request.auth.token || {};
   const snapshot = await db.collection("ownerAccounts").doc("config").get();
   const config = snapshot.exists ? snapshot.data() || {} : {};
@@ -346,6 +350,7 @@ async function findAuthUser(identifier) {
 
 exports.listOwnerUsers = onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const result = [];
   let pageToken;
   do {
@@ -377,6 +382,7 @@ exports.listOwnerUsers = onCall(async (request) => {
 
 exports.updateOwnerUser = onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
   if (!uid) throw new HttpsError("invalid-argument", "User ID is required.");
 
