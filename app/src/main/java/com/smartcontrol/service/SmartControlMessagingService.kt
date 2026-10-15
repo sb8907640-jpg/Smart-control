@@ -86,6 +86,16 @@ class SmartControlMessagingService : FirebaseMessagingService() {
 private fun postToken(token: String, idToken: String) {
     val base = BuildConfig.SMARTCONTROL_API_BASE_URL.trimEnd('/')
     if (base.isBlank()) return
+
+    // This request carries a Firebase ID token. Never send it over cleartext HTTP
+    // or to a URL containing embedded credentials, query parameters, or fragments.
+    val parsedBase = runCatching { URL(base) }.getOrNull() ?: return
+    val host = parsedBase.host.lowercase()
+    val isLocalHost = host in setOf("localhost", "127.0.0.1", "::1", "[::1]")
+    if (host.isBlank() || parsedBase.userInfo != null || parsedBase.query != null || parsedBase.ref != null ||
+        (parsedBase.protocol != "https" && !(parsedBase.protocol == "http" && isLocalHost))
+    ) return
+
     thread(name = "smartcontrol-fcm-register") {
         runCatching {
             val connection = (URL("$base/api/notifications/register").openConnection() as HttpURLConnection).apply {
@@ -96,11 +106,14 @@ private fun postToken(token: String, idToken: String) {
                 setRequestProperty("Authorization", "Bearer $idToken")
                 setRequestProperty("Content-Type", "application/json")
             }
-            connection.outputStream.use { output ->
-                output.write("""{"token":${json(token)},"platform":"android"}""".toByteArray(Charsets.UTF_8))
+            try {
+                connection.outputStream.use { output ->
+                    output.write("""{"token":${json(token)},"platform":"android"}""".toByteArray(Charsets.UTF_8))
+                }
+                connection.responseCode
+            } finally {
+                connection.disconnect()
             }
-            connection.responseCode
-            connection.disconnect()
         }
     }
 }
