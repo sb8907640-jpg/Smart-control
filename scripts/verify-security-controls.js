@@ -406,6 +406,18 @@ check("WebRTC disposes the audio source if track creation fails",
     microphoneSetup.includes("resources += AutoCloseable"),
   "A failed microphone-track setup cannot leak its native audio source before the general session cleanup runs.");
 
+const notificationSendBlock = read("backend/src/app.js").slice(
+  read("backend/src/app.js").indexOf('app.post("/api/notifications/send"'),
+  read("backend/src/app.js").indexOf('app.get("/api/plans"')
+);
+check("Push notification payloads are bound to the target account",
+  notificationSendBlock.includes("targetUid: uid") &&
+    notificationSendBlock.includes("android: { priority: \"high\" }") &&
+    !notificationSendBlock.includes("notification: { title, body }") &&
+    messagingService.includes('message.data["targetUid"]') &&
+    messagingService.includes("FirebaseAuth.getInstance().currentUser?.uid != targetUid"),
+  "Data-only FCM messages are displayed only when the currently signed-in UID matches the target, preventing stale tokens from showing another account's notification.");
+
 const failed = checks.filter(x => !x.ok);
 for (const x of checks) console.log((x.ok ? "PASS " : "FAIL ") + x.name + " — " + x.detail);
 if (failed.length) { console.error("SECURITY_CONTROLS_VERIFY=FAILED"); process.exit(1); }
