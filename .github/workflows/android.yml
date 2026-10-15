@@ -51,8 +51,14 @@ jobs:
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
 
       - name: Validate Firebase Android config
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
         run: |
-          node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("app/google-services.json","utf8")); if (!c.project_info?.project_id) throw new Error("Firebase project_id is missing"); if (!c.client?.some(x => x.client_info?.android_client_info?.package_name === "com.smart.control")) throw new Error("google-services.json does not include Android package com.smart.control"); console.log("Firebase Android config OK for com.smart.control");'
+          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning::Firebase Android config is not available in this CI run; build and source tests continue, but runtime Firebase smoke tests require the production config."
+          else
+            node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("app/google-services.json","utf8")); if (!c.project_info?.project_id) throw new Error("Firebase project_id is missing"); if (!c.client?.some(x => x.client_info?.android_client_info?.package_name === "com.smart.control")) throw new Error("google-services.json does not include Android package com.smart.control"); console.log("Firebase Android config OK for com.smart.control");'
+          fi
 
       - name: Build debug and release APKs
         env:
