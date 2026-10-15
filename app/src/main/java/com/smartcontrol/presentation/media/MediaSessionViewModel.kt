@@ -5,7 +5,6 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.functions.FirebaseFunctions
-import com.google.firebase.functions.FirebaseFunctionsException
 import com.smartcontrol.data.media.WebRtcMediaEngine
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
@@ -140,7 +139,6 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     private suspend fun resolveIceServers(sessionId: String): List<IceServerConfig> {
-        val fallback = WebRtcMediaEngine.defaultIceServers()
         return try {
             val payload = FirebaseFunctions.getInstance()
                 .getHttpsCallable("getWebRtcIceServers")
@@ -169,22 +167,11 @@ class MediaSessionViewModel @Inject constructor(
                 lastError.value = null
             }
             configured
-        } catch (error: FirebaseFunctionsException) {
-            // Do not turn an authorization/policy denial into a STUN-only session;
-            // that would bypass the server-side approval boundary.
-            if (error.code in setOf(
-                    FirebaseFunctionsException.Code.PERMISSION_DENIED,
-                    FirebaseFunctionsException.Code.FAILED_PRECONDITION,
-                    FirebaseFunctionsException.Code.UNAUTHENTICATED,
-                    FirebaseFunctionsException.Code.NOT_FOUND,
-                    FirebaseFunctionsException.Code.INVALID_ARGUMENT
-                )
-            ) throw error
-            lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
-            fallback
-        } catch (_: Exception) {
-            lastError.value = "Secure TURN credentials could not be loaded. Using STUN fallback; some carrier/NAT networks may not connect."
-            fallback
+        } catch (error: Exception) {
+            // The server callable also authorizes the session and rechecks feature
+            // policy. Never fall back to unauthenticated STUN when that check fails.
+            lastError.value = "Secure ICE configuration or media authorization failed; the session was not started."
+            throw error
         }
     }
 
