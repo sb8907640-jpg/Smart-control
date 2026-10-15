@@ -34,7 +34,7 @@ fun SafetyAlertsScreen(
     ) {
         item {
             Text("Safety Alerts", style = MaterialTheme.typography.headlineSmall)
-            Text("Alerts are visible to the signed-in device user. No hidden monitoring is used.")
+            Text("Alerts are visible to this device and its paired controller. No hidden monitoring is used.")
         }
         item {
             Button(
@@ -65,7 +65,7 @@ fun SafetyAlertsScreen(
                     Text(alert.type)
                     Text(alert.message)
                     if (!alert.acknowledged) {
-                        OutlinedButton(onClick = { viewModel.acknowledge(alert.alertId) }) {
+                        OutlinedButton(onClick = { viewModel.acknowledge(alert) }) {
                             Text("Acknowledge")
                         }
                     } else {
