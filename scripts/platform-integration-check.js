@@ -46,6 +46,9 @@ const interfaceChecks = [
     /where\("controllerUid", "==", req\.user\.uid\)/.test(backend) &&
     /where\("pairingActive", "==", true\)/.test(backend) &&
     web.includes("api/devices")],
+  ["Web pairing acceptance creates the canonical Android device record",
+    fs.readFileSync(path.join(root, "backend/src/pairing-api.js"), "utf8").includes('collection("devices")') &&
+    fs.readFileSync(path.join(root, "backend/src/pairing-api.js"), "utf8").includes('pairingActive: true')],
   ["Remote Config backend", /api\/config/.test(backend)],
   ["Web dashboard treats Remote Config as optional", web.includes('.catch(() => ({ values: {} as Record<string, unknown> }))')],
   ["Residency policy enforcement", /getResidencyPolicy\(\)/.test(backend) && /residency/.test(backend)]

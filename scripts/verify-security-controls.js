@@ -148,7 +148,8 @@ check("Composite indexes cover subscription, expiry, transfer, and session queri
     hasCompositeIndex("mediaSessions", ["targetDeviceId", "status"]) &&
     hasCompositeIndex("mediaSessions", ["targetDeviceId", "controllerUid", "status"]) &&
     hasCompositeIndex("fileTransfers", ["receiverDeviceId", "status"]) &&
-    hasCompositeIndex("fileTransfers", ["senderDeviceId", "status"]),
+    hasCompositeIndex("fileTransfers", ["senderDeviceId", "status"]) &&
+    hasCompositeIndex("devices", ["controllerUid", "pairingActive"]),
   "Compound Firestore queries have explicit deployed indexes rather than failing at runtime.");
 
 check("File transfer requests require an active paired receiver",
@@ -265,6 +266,17 @@ check("Owner custom-setting removal persists to Firestore",
   read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("removedEditableKeys") &&
     read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt").includes("FieldValue.delete()"),
   "Removing a custom setting deletes its stored Firestore field instead of only hiding it in the editor.");
+
+const ownerSettingsRepository = read("app/src/main/java/com/smartcontrol/data/owner/FirestoreOwnerSettingsRepository.kt");
+const rollbackImplementation = ownerSettingsRepository.slice(
+  ownerSettingsRepository.indexOf("override suspend fun rollback("),
+  ownerSettingsRepository.indexOf("private fun stripNulls")
+);
+check("Owner settings rollback removes keys absent from the restored snapshot",
+  rollbackImplementation.includes("currentEditable") &&
+    rollbackImplementation.includes("removedEditableKeys") &&
+    rollbackImplementation.includes("FieldValue.delete()"),
+  "Rollback restores the prior editable-values set instead of leaving newer keys active.");
 
 check("Payment secrets remain outside generic owner settings editor",
   ownerAdmin.includes("Gateway credentials are managed only by the secure Permanent Gateway Permit panel above") &&

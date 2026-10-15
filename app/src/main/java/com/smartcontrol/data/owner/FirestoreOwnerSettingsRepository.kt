@@ -166,16 +166,30 @@ class FirestoreOwnerSettingsRepository @Inject constructor(
         val restored = decode(typed)
         val currentSettings = firestore.collection("ownerSettings").document("global").get().await().data.orEmpty()
         val currentMaster = currentSettings["masterConfig"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val currentOwnerControl = currentMaster["ownerControl"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val currentEditable = currentOwnerControl["editableValues"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val removedEditableKeys = currentEditable.keys.map { it.toString() }.toSet() -
+            restored.masterConfig.ownerControl.editableValues.keys
         val currentAccess = currentMaster["access"] as? Map<*, *> ?: emptyMap<Any, Any>()
         val currentPerUser = currentAccess["perUser"] as? Map<*, *> ?: emptyMap<Any, Any>()
         val removedUserIds = currentPerUser.keys.map { it.toString() }.toSet() -
             restored.masterConfig.access.perUser.keys
         val batch = firestore.batch()
+        val ownerSettingsRef = firestore.collection("ownerSettings").document("global")
         batch.set(
-            firestore.collection("ownerSettings").document("global"),
+            ownerSettingsRef,
             stripNulls(encode(restored)),
             SetOptions.merge()
         )
+        // Merge restores known fields, so explicitly delete keys that exist only
+        // in the current version; otherwise rollback leaves newer custom settings active.
+        removedEditableKeys.forEach { key ->
+            batch.update(
+                ownerSettingsRef,
+                FieldPath.of("masterConfig", "ownerControl", "editableValues", key),
+                FieldValue.delete()
+            )
+        }
         batch.set(
             firestore.collection("featurePolicy").document("global"),
             encodeFeaturePolicy(restored)

@@ -243,6 +243,29 @@ test("Firestore device fallback follows Android pairing schema and redacts pairi
   });
 });
 
+test("device dashboard merges PostgreSQL registrations with canonical Firestore pairings", async () => {
+  const db = makeOwnerTestDb();
+  const app = createApp({
+    db,
+    postgres: {
+      listDevices: async () => [
+        { id: 7, device_key: "postgres-device", name: "Postgres Device", platform: "desktop" }
+      ]
+    },
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/devices", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.devices.map(device => device.id).sort(), ["controlled-1", "postgres-device"]);
+    assert.equal(body.devices.find(device => device.id === "postgres-device").platform, "desktop");
+    assert.equal(body.devices.find(device => device.id === "controlled-1").status, "PAIRED");
+  });
+});
+
 test("plan route fails closed when Firestore is unavailable", async () => {
   const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
   await withServer(app, async base => {

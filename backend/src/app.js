@@ -263,28 +263,44 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
 
   app.get("/api/devices", authenticate, async (req, res, next) => {
     try {
-      if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
-      if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
-      // Android pairing records are keyed by the receiver UID and identify the
-      // controller with controllerUid. Query that canonical schema, not a legacy
-      // userId field that is absent from current pairing records.
-      const snap = await firestore.collection("devices")
-        .where("controllerUid", "==", req.user.uid)
-        .where("pairingActive", "==", true)
-        .limit(100)
-        .get();
-      return res.json({
-        devices: snap.docs.map(doc => {
+      const firestoreAvailable = firestore && typeof firestore.collection === "function";
+      if (!postgres && !firestoreAvailable) return res.status(503).json({ error: "Data service is unavailable." });
+      const devicesById = new Map();
+
+      // PostgreSQL device registrations are supplemental. The authenticated
+      // Firestore pairing document remains canonical for Android media/file flows.
+      if (postgres) {
+        const rows = await postgres.listDevices(req.user.uid);
+        for (const row of rows) {
+          const id = String(row.device_key || row.id || "").trim();
+          if (!id) continue;
+          devicesById.set(id, {
+            id,
+            name: String(row.name || ("Device " + id.slice(0, 8))),
+            ...(typeof row.platform === "string" ? { platform: row.platform } : {}),
+            status: "REGISTERED"
+          });
+        }
+      }
+
+      if (firestoreAvailable) {
+        const snap = await firestore.collection("devices")
+          .where("controllerUid", "==", req.user.uid)
+          .where("pairingActive", "==", true)
+          .limit(100)
+          .get();
+        for (const doc of snap.docs) {
           const data = doc.data() || {};
           const serviceAlive = data.health?.serviceAlive;
-          return {
+          devicesById.set(doc.id, {
             id: doc.id,
             name: String(data.name || data.deviceName || ("Device " + doc.id.slice(0, 8))),
             ...(typeof data.platform === "string" ? { platform: data.platform } : {}),
             status: serviceAlive === true ? "ONLINE" : serviceAlive === false ? "OFFLINE" : "PAIRED"
-          };
-        })
-      });
+          });
+        }
+      }
+      return res.json({ devices: [...devicesById.values()].slice(0, 100) });
     } catch (error) { next(error); }
   });
 
