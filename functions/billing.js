@@ -1209,19 +1209,26 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           }
         });
       } else if (eventName === "payment.refunded") {
-        await paymentDoc.ref.update({
-          status: "REFUNDED",
-          gatewayReference: razorpayPaymentId || null,
-          refundedAtEpochMs: now,
-          updatedAtEpochMs: now
-        });
-        if (payment.subscriptionId) {
-          await db.collection("subscriptions").doc(payment.subscriptionId).set({
-            status: "CANCELLED",
-            cancelledAtEpochMs: now,
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.subscriptionId) {
+            const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+            await tx.get(subscriptionRef);
+            tx.set(subscriptionRef, {
+              status: "CANCELLED",
+              cancelledAtEpochMs: now,
+              updatedAtEpochMs: now
+            }, { merge: true });
+          }
+          tx.update(paymentDoc.ref, {
+            status: "REFUNDED",
+            gatewayReference: razorpayPaymentId || null,
+            refundedAtEpochMs: now,
             updatedAtEpochMs: now
-          }, { merge: true });
-        }
+          });
+        });
       }
 
       res.status(200).json({ ok: true });
