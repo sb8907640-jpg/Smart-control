@@ -1137,7 +1137,16 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId) {
               return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
             }
-            return { alreadyProcessed: true, subscriptionId: latestPayment.subscriptionId };
+            if (latestPayment.subscriptionId) {
+              const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+              await tx.get(subscriptionRef);
+              tx.set(subscriptionRef, {
+                status: "CANCELLED",
+                cancelledAtEpochMs: now,
+                updatedAtEpochMs: now
+              }, { merge: true });
+            }
+            return { alreadyProcessed: true };
           }
           if (latestPayment.status !== "REFUND_PENDING" ||
               (latestPayment.refundAmountMinor != null && refundAmount !== Number(latestPayment.refundAmountMinor))) {
@@ -1147,6 +1156,15 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
               (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === refundId)) {
             return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
           }
+          if (latestPayment.subscriptionId) {
+            const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+            await tx.get(subscriptionRef);
+            tx.set(subscriptionRef, {
+              status: "CANCELLED",
+              cancelledAtEpochMs: now,
+              updatedAtEpochMs: now
+            }, { merge: true });
+          }
           tx.update(paymentDoc.ref, {
             status: "REFUNDED",
             gatewayRefundId: refundId,
@@ -1155,18 +1173,11 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
             refundedAtEpochMs: now,
             updatedAtEpochMs: now
           });
-          return { processed: true, subscriptionId: latestPayment.subscriptionId };
+          return { processed: true };
         });
         if (refundResult.failure) {
           res.status(refundResult.failure.statusCode).send(refundResult.failure.message);
           return;
-        }
-        if (refundResult.subscriptionId) {
-          await db.collection("subscriptions").doc(refundResult.subscriptionId).set({
-            status: "CANCELLED",
-            cancelledAtEpochMs: now,
-            updatedAtEpochMs: now
-          }, { merge: true });
         }
         if (refundResult.alreadyProcessed) {
           res.status(200).json({ ok: true, alreadyProcessed: true });
