@@ -424,13 +424,20 @@ exports.syncOwnerAccounts = onCall(async (request) => {
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
+  const resolvedRequested = new Map();
 
+  // Resolve every requested identifier before mutating any claims. This avoids
+  // a failed Owner Settings save partially granting/revoking administrators.
   for (const identifier of requestedIdentifiers) {
     const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+    if (!user) unresolved.push(identifier);
+    else resolvedRequested.set(identifier, user);
+  }
+  if (unresolved.length > 0) {
+    return { ok: false, granted: 0, revoked: 0, unresolved };
+  }
+
+  for (const user of resolvedRequested.values()) {
     const claims = { ...(user.customClaims || {}), admin: true };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
