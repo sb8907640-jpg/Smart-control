@@ -275,10 +275,16 @@ class MediaSessionViewModel @Inject constructor(
         }
         if (!capabilitiesAllowed(session.capabilities, session.targetDeviceId)) {
             lastError.value = "This session includes a feature disabled by the owner."
+            signaling.stopSession(session.sessionId)
+            MediaProjectionForegroundService.stop(context)
+            FamilySafetyService.setIdle(context)
             return@launch
         }
         if (!privacyPrefs.getBoolean("allow_media_sharing", true)) {
             lastError.value = "Media sharing is disabled in Privacy Controls."
+            signaling.stopSession(session.sessionId)
+            MediaProjectionForegroundService.stop(context)
+            FamilySafetyService.setIdle(context)
             return@launch
         }
         val iceServers = try {
