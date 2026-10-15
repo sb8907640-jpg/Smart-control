@@ -6,6 +6,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
 const { ROLES, normalizeRole, canManageUser, canManageOwnerAccounts } = require("./spec/roles");
+const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
 
 initializeApp();
 const db = getFirestore();
@@ -83,6 +84,50 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
     ? Math.max(1, Math.min(60, Math.floor(configured)))
     : 10;
   return { isOwner: false, expiryMinutes };
+});
+
+exports.approveMediaSession = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in before approving a media session.");
+  }
+  const sessionId = String(request.data?.sessionId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
+    throw new HttpsError("invalid-argument", "A valid media session ID is required.");
+  }
+
+  const sessionRef = db.collection("mediaSessions").doc(sessionId);
+  const globalPolicyRef = db.collection("featurePolicy").doc("global");
+  const userPolicyRef = db.collection("featurePolicyUsers").doc(request.auth.uid);
+  return db.runTransaction(async (transaction) => {
+    const sessionSnapshot = await transaction.get(sessionRef);
+    if (!sessionSnapshot.exists) throw new HttpsError("not-found", "Media session not found.");
+    const session = sessionSnapshot.data() || {};
+    if (session.targetDeviceId !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Only the receiving device can approve this session.");
+    }
+    if (session.status !== "REQUESTED") {
+      throw new HttpsError("failed-precondition", "This session is no longer awaiting approval.");
+    }
+
+    const globalPolicySnapshot = await transaction.get(globalPolicyRef);
+    const userPolicySnapshot = await transaction.get(userPolicyRef);
+    const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null;
+    if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
+      session.capabilities,
+      globalPolicySnapshot.data() || {},
+      userPolicy
+    )) {
+      throw new HttpsError("permission-denied", "Owner feature policy does not allow one or more requested capabilities.");
+    }
+
+    const approvedAtEpochMs = Date.now();
+    transaction.update(sessionRef, {
+      status: "APPROVED",
+      approvedAtEpochMs,
+      approvedByUid: request.auth.uid
+    });
+    return { ok: true, sessionId, status: "APPROVED", approvedAtEpochMs };
+  });
 });
 
 function validatePin(pin) {
