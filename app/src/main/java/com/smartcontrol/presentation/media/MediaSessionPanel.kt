@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSessionStatus
 import com.smartcontrol.domain.spec.FeatureId
+import com.google.firebase.auth.FirebaseAuth
 import com.smartcontrol.presentation.features.FeatureAccessViewModel
 import org.webrtc.SurfaceViewRenderer
 
@@ -43,6 +44,15 @@ fun MediaSessionPanel(
     val device by viewModel.controlledDevice.collectAsState()
     val ownerSettings by featureAccess.settings.collectAsState()
     val settingsLoaded = ownerSettings != null
+    val userId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    fun capabilityEnabled(capability: MediaCapability): Boolean {
+        val featureId = when (capability) {
+            MediaCapability.CAMERA -> FeatureId.CAMERA
+            MediaCapability.MICROPHONE -> FeatureId.MICROPHONE
+            MediaCapability.SCREEN_SHARING -> FeatureId.SCREEN_SHARE
+        }
+        return settingsLoaded && featureAccess.isEnabled(featureId, userId)
+    }
     val pending by viewModel.pending.collectAsState()
     val session by viewModel.selectedSession.collectAsState()
     val error by viewModel.lastError.collectAsState()
@@ -85,15 +95,15 @@ fun MediaSessionPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.CAMERA)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.CAMERA)
+                        enabled = capabilityEnabled(MediaCapability.CAMERA)
                     ) { Text("Request camera") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.MICROPHONE)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.MICROPHONE)
+                        enabled = capabilityEnabled(MediaCapability.MICROPHONE)
                     ) { Text("Request mic") }
                     Button(
                         onClick = { viewModel.request(setOf(MediaCapability.SCREEN_SHARING)) },
-                        enabled = settingsLoaded && featureAccess.isGloballyEnabled(FeatureId.SCREEN_SHARE)
+                        enabled = capabilityEnabled(MediaCapability.SCREEN_SHARING)
                     ) { Text("Request screen") }
                 }
             } ?: Text("No controlled device is paired on this account.")
@@ -108,7 +118,10 @@ fun MediaSessionPanel(
                     Text("Incoming support request")
                     Text("Capabilities: " + request.capabilities.joinToString())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { viewModel.approve(request.sessionId) }) { Text("Approve") }
+                        Button(
+                            onClick = { viewModel.approve(request.sessionId) },
+                            enabled = request.capabilities.all(::capabilityEnabled)
+                        ) { Text("Approve") }
                         OutlinedButton(onClick = { viewModel.deny(request.sessionId) }) { Text("Deny") }
                     }
                 }
@@ -119,7 +132,8 @@ fun MediaSessionPanel(
             item {
                 Text("Session: " + current.status)
                 if (current.status == MediaSessionStatus.APPROVED) {
-                    Button({
+                    Button(
+                        onClick = {
                         pendingStart = current
                         val permissions = buildList {
                             if (MediaCapability.CAMERA in current.capabilities) add(Manifest.permission.CAMERA)
@@ -129,7 +143,9 @@ fun MediaSessionPanel(
                             if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
                             else { viewModel.startPublishing(current, null); pendingStart = null }
                         } else permissionLauncher.launch(permissions.toTypedArray())
-                    }) { Text("Start sharing (visible)") }
+                    },
+                        enabled = current.capabilities.all(::capabilityEnabled)
+                    ) { Text("Start sharing (visible)") }
                 }
                 if (device != null && current.status == MediaSessionStatus.ACTIVE) {
                     WebRtcVideoRenderer(viewModel.eglBase(), renderer, Modifier.fillMaxWidth().height(220.dp))
