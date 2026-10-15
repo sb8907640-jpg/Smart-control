@@ -98,6 +98,14 @@ jobs:
           npm test
           node -e "require('./src/db'); require('./src/postgres-api'); console.log('postgres modules ok')"
 
+      - name: Install and test Firebase Functions and Firestore rules
+        working-directory: functions
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm run test:roles
+          npm run test:rules
+
       - name: Validate Firebase Functions
         shell: bash
         run: |
