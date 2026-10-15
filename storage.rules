@@ -2,6 +2,11 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    function accountActive() {
+      return request.auth != null
+        && (!firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+          || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('status', 'ACTIVE') == 'ACTIVE');
+    }
     match /fileTransfers/{senderUid}/{transferId}/{fileName} {
       function transferDoc() {
         return firestore.get(/databases/(default)/documents/fileTransfers/$(transferId));
@@ -10,7 +15,7 @@ service firebase.storage {
       // Bound each upload to control storage abuse. When the sender reported a
       // known size, the stored object must match it; unknown provider sizes (-1)
       // remain supported but are still capped.
-      allow create, update: if request.auth != null
+      allow create, update: if accountActive()
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
         && transferDoc().data.status in ['APPROVED', 'UPLOADING']
@@ -18,12 +23,12 @@ service firebase.storage {
         && (transferDoc().data.sizeBytes <= 0
             || request.resource.size == transferDoc().data.sizeBytes);
 
-      allow delete: if request.auth != null
+      allow delete: if accountActive()
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
         && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
 
-      allow read: if request.auth != null
+      allow read: if accountActive()
         && (
           request.auth.uid == senderUid
           || (
