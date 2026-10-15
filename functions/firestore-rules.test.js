@@ -6,7 +6,9 @@ const {
   assertSucceeds
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
+  getDocs,
   setDoc,
   updateDoc,
   runTransaction
@@ -38,6 +40,8 @@ async function main() {
       senderRole: "Father",
       receiverRole: "Son"
     }));
+    // A signed-in user must not be able to enumerate other users' pairing tokens.
+    await assertFails(getDocs(collection(normal.firestore(), "pairingCodes")));
 
     await assertFails(setDoc(doc(normal.firestore(), "pairingCodes", "f".repeat(48)), {
       deviceUid: "normal-user",
@@ -103,6 +107,13 @@ async function main() {
     const mediaController = env.authenticatedContext("media-controller");
     const mediaTarget = env.authenticatedContext("media-target");
     const sessionRef = doc(mediaController.firestore(), "mediaSessions", "session-1");
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "session-bypass"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "ACTIVE",
+      createdAt: Date.now()
+    }));
     await assertSucceeds(setDoc(sessionRef, {
       controllerUid: "media-controller",
       targetDeviceId: "media-target",
