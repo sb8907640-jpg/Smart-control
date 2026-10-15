@@ -143,7 +143,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
-    private val serviceRunning = mutableStateOf(false)
+    private val serviceRunning = mutableStateOf(FamilySafetyService.isRunning)
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
