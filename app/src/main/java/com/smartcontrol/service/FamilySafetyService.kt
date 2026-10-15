@@ -23,6 +23,8 @@ class FamilySafetyService : Service() {
     private val db by lazy { FirebaseFirestore.getInstance() }
     private var previous: Map<String, Boolean>? = null
     private var syncing = false
+    private var captureCamera = false
+    private var captureMicrophone = false
     private var foregroundStarted = false
 
     override fun onCreate() {
@@ -34,9 +36,17 @@ class FamilySafetyService : Service() {
         // Android may recreate this service with a null intent after process death.
         // Re-check local consent every time, before starting the foreground notification
         // or health-reporting loop; a null-intent restart is allowed only with auto-start opt-in.
+        if (intent?.action == ACTION_IDLE && !foregroundStarted &&
+            !getSharedPreferences("smart_control_settings", MODE_PRIVATE)
+                .getBoolean("auto_start_service", false)
+        ) {
+            // ViewModel cleanup must not start a background service when auto-start is off.
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (!isStartupAllowed(intent)) {
             stopSelf(startId)
-            return START_STICKY
+            return START_NOT_STICKY
         }
 
         if (!foregroundStarted) {
@@ -48,13 +58,21 @@ class FamilySafetyService : Service() {
         when (intent?.action) {
             ACTION_SYNCING -> {
                 syncing = true
+                captureCamera = false
+                captureMicrophone = false
+                updateVisibleNotification()
+            }
+            ACTION_SESSION_ACTIVE -> {
+                syncing = true
+                captureCamera = intent?.getBooleanExtra(EXTRA_CAPTURE_CAMERA, false) == true
+                captureMicrophone = intent?.getBooleanExtra(EXTRA_CAPTURE_MICROPHONE, false) == true
                 updateVisibleNotification()
             }
             ACTION_IDLE, ACTION_STOP_SYNC -> {
-                if (syncing) {
-                    syncing = false
-                    updateVisibleNotification()
-                }
+                syncing = false
+                captureCamera = false
+                captureMicrophone = false
+                updateVisibleNotification()
                 if (intent?.action == ACTION_STOP_SYNC) stopSelf(startId)
             }
         }
@@ -88,6 +106,10 @@ class FamilySafetyService : Service() {
             .getBoolean("auto_start_service", false)
         if ((intent == null || intent.action == ACTION_AUTO_START) && !autoStartEnabled) {
             return false
+        }
+        if (intent?.action == ACTION_SESSION_ACTIVE) {
+            if (intent.getBooleanExtra(EXTRA_CAPTURE_CAMERA, false) && !granted(Manifest.permission.CAMERA)) return false
+            if (intent.getBooleanExtra(EXTRA_CAPTURE_MICROPHONE, false) && !granted(Manifest.permission.RECORD_AUDIO)) return false
         }
         return true
     }
@@ -125,7 +147,10 @@ class FamilySafetyService : Service() {
 
         val notification = builder.build()
         val type = if (Build.VERSION.SDK_INT >= 29) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            var foregroundType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            if (captureCamera) foregroundType = foregroundType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            if (captureMicrophone) foregroundType = foregroundType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            foregroundType
         } else 0
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
     }
@@ -270,6 +295,9 @@ class FamilySafetyService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_AUTO_START = "com.smartcontrol.action.AUTO_START"
         const val ACTION_SYNCING = "com.smartcontrol.action.SYNCING_DEVICE"
+        const val ACTION_SESSION_ACTIVE = "com.smartcontrol.action.MEDIA_SESSION_ACTIVE"
+        const val EXTRA_CAPTURE_CAMERA = "capture_camera"
+        const val EXTRA_CAPTURE_MICROPHONE = "capture_microphone"
         const val ACTION_IDLE = "com.smartcontrol.action.FAMILY_SAFETY_IDLE"
         const val ACTION_STOP_SYNC = "com.smartcontrol.action.STOP_SYNC"
         const val STOP_NOTIFICATION_REQUEST = 1002
@@ -279,9 +307,18 @@ class FamilySafetyService : Service() {
             ContextCompat.startForegroundService(context, Intent(context, FamilySafetyService::class.java))
 
         fun setSyncing(context: android.content.Context) {
-            context.startService(
+            ContextCompat.startForegroundService(
+                context,
                 Intent(context, FamilySafetyService::class.java).setAction(ACTION_SYNCING)
             )
+        }
+
+        fun setSessionActive(context: android.content.Context, camera: Boolean, microphone: Boolean) {
+            val intent = Intent(context, FamilySafetyService::class.java)
+                .setAction(ACTION_SESSION_ACTIVE)
+                .putExtra(EXTRA_CAPTURE_CAMERA, camera)
+                .putExtra(EXTRA_CAPTURE_MICROPHONE, microphone)
+            ContextCompat.startForegroundService(context, intent)
         }
 
         fun setIdle(context: android.content.Context) {
