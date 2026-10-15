@@ -97,7 +97,9 @@ class FileTransferViewModel @Inject constructor(
 
     fun approve(transferId: String) = viewModelScope.launch {
         val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
-        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = runCatching { repository.get(transferId) }
+            .getOrElse { _status.value = it.message ?: "Could not load the transfer request."; return@launch }
+            ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.REQUESTED) {
             _status.value = "Only the intended receiver can approve a pending transfer."
             return@launch
@@ -115,7 +117,9 @@ class FileTransferViewModel @Inject constructor(
 
     fun reject(transferId: String) = viewModelScope.launch {
         val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
-        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = runCatching { repository.get(transferId) }
+            .getOrElse { _status.value = it.message ?: "Could not load the transfer request."; return@launch }
+            ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.REQUESTED) {
             _status.value = "Only the intended receiver can reject a pending transfer."
             return@launch
@@ -131,7 +135,9 @@ class FileTransferViewModel @Inject constructor(
             return@launch
         }
         val receiver = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
-        val request = repository.get(transferId) ?: run { _status.value = "Transfer request not found."; return@launch }
+        val request = runCatching { repository.get(transferId) }
+            .getOrElse { _status.value = it.message ?: "Could not load the transfer request."; return@launch }
+            ?: run { _status.value = "Transfer request not found."; return@launch }
         if (request.receiverDeviceId != receiver || request.status != FileTransferRequest.Status.READY) {
             _status.value = "Only the intended receiver can download a ready transfer."
             return@launch
