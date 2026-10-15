@@ -217,5 +217,5 @@ function queryFor(endpoint) {
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
   const secureRefusals = results.filter(result => result.securelyRefused).length;
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned expected responses (" + secureRefusals + " payment endpoints fail closed until trusted provider verification is configured).");
+  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned expected responses (" + secureRefusals + " legacy payment endpoints fail closed; use the trusted billing callable).");
 })();
