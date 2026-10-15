@@ -3,12 +3,15 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Owner suspension is checked against the server-written profile document,
     // so an already-issued ID token cannot keep using Firestore after a ban.
+    function profileActive(uid) {
+      return (!exists(/databases/$(database)/documents/users/$(uid))
+          || get(/databases/$(database)/documents/users/$(uid)).data.get('status', 'ACTIVE') == 'ACTIVE')
+        && (!exists(/databases/$(database)/documents/userAccess/$(uid))
+          || get(/databases/$(database)/documents/userAccess/$(uid)).data.get('blocked', false) != true);
+    }
+
     function accountActive() {
-      return request.auth != null
-        && (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', 'ACTIVE') == 'ACTIVE')
-        && (!exists(/databases/$(database)/documents/userAccess/$(request.auth.uid))
-          || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.get('blocked', false) != true);
+      return request.auth != null && profileActive(request.auth.uid);
     }
     match /users/{uid}/emergencyContacts/{contactId} {
       allow read, create, update, delete: if accountActive() && request.auth.uid == uid;
@@ -127,13 +130,14 @@ service cloud.firestore {
             && (request.auth.token.admin == true || request.auth.token.role == 'OWNER')
           )
         );
-      allow read: if accountActive() && resource.data.expiresAt > request.time.toMillis();
+      allow read: if accountActive() && profileActive(resource.data.deviceUid) && resource.data.expiresAt > request.time.toMillis();
       // The receiver can revoke its own code. A controller can consume a code only
       // in the same atomic transaction that creates/updates the matching device link.
       allow delete: if accountActive() && (
         resource.data.deviceUid == request.auth.uid
         || (
-          getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.controllerUid == request.auth.uid
+          profileActive(resource.data.deviceUid)
+          && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.controllerUid == request.auth.uid
           && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingToken == token
           && getAfter(/databases/$(database)/documents/devices/$(resource.data.deviceUid)).data.pairingActive == true
         )
@@ -146,6 +150,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['controllerUid', 'targetDeviceId', 'capabilities', 'status', 'createdAt'])
         && request.resource.data.controllerUid == request.auth.uid
         && request.resource.data.targetDeviceId is string
+        && profileActive(request.resource.data.targetDeviceId)
         && request.resource.data.capabilities is list
         && request.resource.data.capabilities.size() > 0
         && request.resource.data.capabilities.hasOnly(['CAMERA', 'MICROPHONE', 'SCREEN_SHARING'])
@@ -155,6 +160,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/devices/$(request.resource.data.targetDeviceId)).data.pairingActive == true;
 
       allow read: if accountActive()
+        && profileActive(resource.data.controllerUid)
+        && profileActive(resource.data.targetDeviceId)
         && (resource.data.controllerUid == request.auth.uid || resource.data.targetDeviceId == request.auth.uid);
 
       // The receiving device approves the request and publishes the offer SDP.
@@ -214,10 +221,14 @@ service cloud.firestore {
         allow create: if accountActive()
           && request.resource.data.senderUid == request.auth.uid
           && get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.status in ['APPROVED', 'ACTIVE']
+          && profileActive(get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid)
+          && profileActive(get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId)
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
         allow read: if accountActive()
           && get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.status in ['APPROVED', 'ACTIVE']
+          && profileActive(get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid)
+          && profileActive(get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId)
           && (get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.controllerUid == request.auth.uid
               || get(/databases/$(database)/documents/mediaSessions/$(sessionId)).data.targetDeviceId == request.auth.uid);
         allow update, delete: if false;
@@ -229,11 +240,14 @@ service cloud.firestore {
       allow create: if accountActive()
         && request.resource.data.senderDeviceId == request.auth.uid
         && request.resource.data.receiverDeviceId is string
+        && profileActive(request.resource.data.receiverDeviceId)
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.controllerUid == request.auth.uid
         && get(/databases/$(database)/documents/devices/$(request.resource.data.receiverDeviceId)).data.pairingActive == true
         && request.resource.data.status == 'REQUESTED';
 
       allow read: if accountActive()
+        && profileActive(resource.data.senderDeviceId)
+        && profileActive(resource.data.receiverDeviceId)
         && (resource.data.senderDeviceId == request.auth.uid || resource.data.receiverDeviceId == request.auth.uid);
 
       allow update: if accountActive()
@@ -284,7 +298,8 @@ service cloud.firestore {
       allow read: if accountActive()
         && (
           resource.data.userId == request.auth.uid
-          || get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.controllerUid == request.auth.uid
+          || (profileActive(resource.data.deviceId)
+              && get(/databases/$(database)/documents/devices/$(resource.data.deviceId)).data.controllerUid == request.auth.uid)
           || resource.data.deviceId == request.auth.uid
         );
       allow update, delete: if false;
@@ -353,7 +368,7 @@ service cloud.firestore {
 
       match /sharedLocation/{locationId} {
         allow create, update: if accountActive() && request.auth.uid == uid;
-        allow read: if accountActive()
+        allow read: if accountActive() && profileActive(uid)
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
         allow delete: if accountActive() && request.auth.uid == uid;
@@ -361,7 +376,7 @@ service cloud.firestore {
 
       match /statusAlerts/{alertId} {
         allow create: if accountActive() && request.auth.uid == uid;
-        allow read: if accountActive()
+        allow read: if accountActive() && profileActive(uid)
           && (request.auth.uid == uid
               || request.auth.uid == get(/databases/$(database)/documents/devices/$(uid)).data.controllerUid);
         allow update: if accountActive()
