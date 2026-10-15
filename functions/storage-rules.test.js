@@ -32,12 +32,14 @@ async function main() {
       await setDoc(doc(db, "fileTransfers", "transfer-known"), {
         senderDeviceId: "sender",
         receiverDeviceId: "receiver",
+        fileName: "file.bin",
         sizeBytes: 4,
         status: "APPROVED"
       });
       await setDoc(doc(db, "fileTransfers", "transfer-unknown"), {
         senderDeviceId: "sender",
         receiverDeviceId: "receiver",
+        fileName: "file.bin",
         sizeBytes: -1,
         status: "APPROVED"
       });
@@ -50,6 +52,7 @@ async function main() {
       await setDoc(doc(db, "fileTransfers", "transfer-suspended"), {
         senderDeviceId: "suspended-sender",
         receiverDeviceId: "receiver",
+        fileName: "file.bin",
         sizeBytes: 4,
         status: "APPROVED"
       });
@@ -57,6 +60,7 @@ async function main() {
       await setDoc(doc(db, "fileTransfers", "transfer-blocked"), {
         senderDeviceId: "blocked-sender",
         receiverDeviceId: "receiver",
+        fileName: "file.bin",
         sizeBytes: 4,
         status: "APPROVED"
       });
