@@ -164,6 +164,16 @@ function installOwnerPanelRoutes(app, { db, auth }) {
     if (profileRole === "SUPER_ADMIN" || authRole === "SUPER_ADMIN") {
       return res.status(403).json({ error: "Owner accounts cannot change a Super Admin account status." });
     }
+    const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
+    const timestamp = now();
+    const statusFields = status === "ACTIVE"
+      ? { status, unsuspendedAt: timestamp, unsuspendedBy: req.user.uid, suspendedAt: null, blockedAt: null }
+      : status === "SUSPENDED"
+        ? { status, suspendedAt: timestamp, suspendedBy: req.user.uid }
+        : { status, blockedAt: timestamp, blockedBy: req.user.uid };
+    // Persist the server-side status first so Firestore/Functions reject access
+    // even if the subsequent Auth disable or token revocation call fails.
+    await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
     if (auth && typeof auth.updateUser === "function") {
       try {
         await auth.updateUser(id, { disabled: status !== "ACTIVE" });
@@ -174,14 +184,6 @@ function installOwnerPanelRoutes(app, { db, auth }) {
         if (error.code !== "auth/user-not-found") throw error;
       }
     }
-    const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
-    const timestamp = now();
-    const statusFields = status === "ACTIVE"
-      ? { status, unsuspendedAt: timestamp, unsuspendedBy: req.user.uid, suspendedAt: null, blockedAt: null }
-      : status === "SUSPENDED"
-        ? { status, suspendedAt: timestamp, suspendedBy: req.user.uid }
-        : { status, blockedAt: timestamp, blockedBy: req.user.uid };
-    await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
     await audit(req, action, "user", { id, previousStatus, status });
     return res.json({ ok: true, id, previousStatus, status });
   };
