@@ -7,9 +7,10 @@ const {
 } = require("@firebase/rules-unit-testing");
 const {
   doc,
+  getDoc,
   setDoc,
   updateDoc,
-  runTransaction
+  deleteDoc
 } = require("firebase/firestore");
 
 const rules = fs.readFileSync(path.join(__dirname, "../firestore.rules"), "utf8");
@@ -77,20 +78,12 @@ async function main() {
         receiverRole: "Daughter"
       });
     });
-    await assertSucceeds(runTransaction(controller.firestore(), async (tx) => {
-      const codeRef = doc(controller.firestore(), "pairingCodes", claimToken);
-      const snapshot = await tx.get(codeRef);
-      if (!snapshot.exists()) throw new Error("seeded pairing code missing");
-      tx.set(doc(controller.firestore(), "devices", "target-user"), {
-        controllerUid: "controller-user",
-        pairingToken: claimToken,
-        pairedAt: Date.now(),
-        pairingActive: true,
-        senderRole: "Mother",
-        receiverRole: "Daughter"
-      });
-      tx.delete(codeRef);
-    }));
+    // Pairing tokens are private to their creator. A controller must use the
+    // authenticated claimPairingCode callable instead of reading/listing codes.
+    await assertFails(getDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertSucceeds(getDoc(doc(target.firestore(), "pairingCodes", claimToken)));
+    await assertFails(deleteDoc(doc(controller.firestore(), "pairingCodes", claimToken)));
+    await assertSucceeds(deleteDoc(doc(target.firestore(), "pairingCodes", claimToken)));
 
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "devices", "media-target"), {
@@ -136,7 +129,7 @@ async function main() {
     }));
 
     console.log("FIRESTORE_RULES_RUNTIME_TEST=PASS");
-    console.log("Covered: pairing expiry, atomic pairing claim, SDP participant permissions, and paired-device file-transfer requests.");
+    console.log("Covered: pairing expiry, pairing-token privacy, SDP participant permissions, and paired-device file-transfer requests.");
   } finally {
     await env.cleanup();
   }
