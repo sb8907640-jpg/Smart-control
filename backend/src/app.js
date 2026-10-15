@@ -106,14 +106,19 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
     // installations; a configured Firestore status lookup failure fails closed.
     if (db && typeof db.collection === "function" && req.user?.uid) {
       try {
-        const account = await db.collection("users").doc(req.user.uid).get();
+        const [account, access] = await Promise.all([
+          db.collection("users").doc(req.user.uid).get(),
+          db.collection("userAccess").doc(req.user.uid).get()
+        ]);
         const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
-        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+        const accessBlocked = access.exists && access.data()?.blocked === true;
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus) || accessBlocked) {
+          const blockReason = accessBlocked ? "OWNER_BLOCKED" : accountStatus;
           try {
             await db.collection("securityEvents").add({
               event: "AUTH_REJECTED_ACCOUNT_STATUS",
               userId: req.user.uid,
-              status: accountStatus,
+              status: blockReason,
               createdAtEpochMs: Date.now()
             });
           } catch (_) {
