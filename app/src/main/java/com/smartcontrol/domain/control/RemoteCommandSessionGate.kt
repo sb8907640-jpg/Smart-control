@@ -40,9 +40,9 @@ class RemoteCommandSessionGate(
     }
 
     /**
-     * Session-level authorization used before a remote feature command is
-     * dispatched. APPROVED is accepted as the transition state; ACTIVE is
-     * required once command delivery is actually started.
+     * Session-level authorization used immediately before a remote feature
+     * command is dispatched. Only ACTIVE sessions may deliver commands; APPROVED
+     * is a consent state, not an active command-delivery state.
      *
      * This method never requests, grants, or bypasses Android permissions.
      */
@@ -54,11 +54,7 @@ class RemoteCommandSessionGate(
     ): Boolean {
         if (session == null) return false
 
-        val approvedSession =
-            session.status == SessionStatus.APPROVED ||
-                session.status == SessionStatus.ACTIVE
-
-        if (!approvedSession) return false
+        if (session.status != SessionStatus.ACTIVE) return false
         if (!session.request.capabilities.contains(capability)) return false
         if (!grantedCapabilities.contains(capability)) return false
         if (!visibleIndicatorActive) return false
