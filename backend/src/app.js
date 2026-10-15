@@ -11,7 +11,7 @@ const { installCatalogRoutes } = require("./catalog-api");
 const { applyOwnerRole } = require("./owner-auth");
 const { installOwnerPanelRoutes } = require("./owner-panel");
 
-function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
+function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
   const sensitiveRemoteConfigKey = /(?:secret|pass(?:word|wd)?|private|credential|webhook|(?:access|refresh|id|auth|bearer)?[_-]?token|(?:api|client|service)[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?account|turn[_-]?server)/i;
@@ -411,7 +411,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
 
   require("./pairing-api").installPairingApi(app, { db: firestore, authenticate });
   installCatalogRoutes(app, { db: firestore, requireAuth: authenticate });
-  installOwnerPanelRoutes(app, { db: firestore });
+  installOwnerPanelRoutes(app, { db: firestore, auth });
 
   app.use((error, _req, res, _next) => {
     if (error?.message === "CORS origin is not allowed.") return res.status(403).json({ error: error.message });
@@ -435,6 +435,7 @@ function createProductionApp() {
   const { createPostgresRepository } = require("./postgres-repository");
   return createApp({
     db,
+    auth,
     postgres: postgresPool ? createPostgresRepository(postgresPool) : null,
     postgresPool,
     verifyIdToken: (token, checkRevoked) => auth.verifyIdToken(token, checkRevoked)
