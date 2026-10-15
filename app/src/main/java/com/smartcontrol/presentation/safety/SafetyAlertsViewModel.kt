@@ -46,7 +46,7 @@ class SafetyAlertsViewModel @Inject constructor(
                     _alerts.value = emptyList()
                     _status.value = null
                     if (uid.isBlank()) {
-                        flowOf(emptyList())
+                        flowOf(emptyList<SafetyAlert>())
                     } else {
                         repository.observe(uid).catch { error ->
                             _status.value = error.message ?: "Could not load safety alerts."
