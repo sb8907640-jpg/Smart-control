@@ -81,8 +81,9 @@ class MediaSessionViewModel @Inject constructor(
             signaling.denySession(id)
             return@launch
         }
-        signaling.approveSession(id).onFailure { lastError.value = it.message }
-        selectedId.value = id
+        signaling.approveSession(id)
+            .onSuccess { selectedId.value = id }
+            .onFailure { lastError.value = it.message ?: "The server could not approve this media session." }
     }
 
     fun deny(id: String) = viewModelScope.launch {
