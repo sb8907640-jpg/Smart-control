@@ -420,6 +420,20 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
   ]);
 
+  // The caller cannot remove their own last configured Owner identity: this
+  // function deliberately does not revoke the caller's admin claim, so doing
+  // so would otherwise leave a privileged account absent from the Owner list.
+  const caller = await getAuth().getUser(request.auth.uid);
+  const callerIdentifiers = [
+    String(caller.email || "").trim().toLowerCase(),
+    String(caller.phoneNumber || "").trim()
+  ].filter(Boolean);
+  const callerWasConfiguredOwner = callerIdentifiers.some(id => previousIdentifiers.has(id));
+  const callerRemainsConfiguredOwner = callerIdentifiers.some(id => requestedIdentifiers.has(id));
+  if (callerWasConfiguredOwner && !callerRemainsConfiguredOwner) {
+    throw new HttpsError("failed-precondition", "You cannot remove your own last Owner identity. Ask another Owner to update the Owner list.");
+  }
+
   let granted = 0;
   let revoked = 0;
   const unresolved = [];
