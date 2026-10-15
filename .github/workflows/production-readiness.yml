@@ -16,6 +16,7 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     env:
+      CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
       SMARTCONTROL_DATA_REGION: ${{ secrets.SMARTCONTROL_DATA_REGION }}
       NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
