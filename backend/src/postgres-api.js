@@ -40,8 +40,9 @@ function installPostgresRoutes(app, { pool, authenticate = (_req, _res, next) =>
   });
 
   app.post("/api/postgres/groups", authenticate, auth, async (req, res, next) => {
-    const client = await pool.connect();
+    let client;
     try {
+      client = await pool.connect();
       const name = String(req.body?.name || "").trim().slice(0, 120);
       const requestedMax = Number(req.body?.maxClients ?? 100);
       if (!name) return res.status(400).json({ error: "Group name is required." });
@@ -72,16 +73,17 @@ function installPostgresRoutes(app, { pool, authenticate = (_req, _res, next) =>
       await client.query("COMMIT");
       res.status(201).json({ group, memberCount: 1 });
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (client) await client.query("ROLLBACK").catch(() => {});
       next(e);
     } finally {
-      client.release();
+      client?.release();
     }
   });
 
   app.post("/api/postgres/groups/join", authenticate, auth, async (req, res, next) => {
-    const client = await pool.connect();
+    let client;
     try {
+      client = await pool.connect();
       const code = String(req.body?.joinCode || "").trim();
       if (!code || code.length > 64) return res.status(400).json({ error: "Valid joinCode is required." });
 
@@ -113,10 +115,10 @@ function installPostgresRoutes(app, { pool, authenticate = (_req, _res, next) =>
       await client.query("COMMIT");
       res.json({ group, joined: true });
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (client) await client.query("ROLLBACK").catch(() => {});
       next(e);
     } finally {
-      client.release();
+      client?.release();
     }
   });
 
