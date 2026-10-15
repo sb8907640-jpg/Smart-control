@@ -93,6 +93,9 @@ final class AppSession: ObservableObject {
             client.clearBearerToken()
             authenticated = false
             account = nil
+            devices = []
+            systemStatus = nil
+            remoteConfig = [:]
             errorMessage = error.localizedDescription
         }
     }
@@ -105,6 +108,7 @@ final class AppSession: ObservableObject {
         devices = []
         systemStatus = nil
         lastHealth = nil
+        remoteConfig = [:]
         errorMessage = nil
     }
 
