@@ -9,6 +9,10 @@ on:
     paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", "firestore.rules", "storage.rules", "firestore.indexes.json", "firebase.json", ".github/workflows/production-readiness.yml"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
