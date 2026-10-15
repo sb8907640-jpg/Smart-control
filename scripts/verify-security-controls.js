@@ -160,6 +160,13 @@ check("Owner feature policy is enforced for file-transfer data operations",
     read("functions/firestore-rules.test.js").includes("disabled-feature-transfer") &&
     read("functions/storage-rules.test.js").includes("policy-disabled.bin"),
   "Direct Firestore writes and Storage reads/uploads are denied when global or per-user FILE_TRANSFER policy is disabled.");
+check("Incoming transfer state follows the current authenticated account",
+  fileTransferViewModel.includes("FirebaseAuth.AuthStateListener") &&
+    fileTransferViewModel.includes("flatMapLatest") &&
+    fileTransferViewModel.includes("repository.observeIncoming(uid)") &&
+    fileTransferViewModel.includes("emit(emptyList())"),
+  "Switching accounts or losing Firestore access clears stale transfer metadata.");
+
 check("Receiver can explicitly approve or reject a pending transfer",
   fileTransferViewModel.includes("fun reject(transferId: String)") &&
     fileTransferViewModel.includes("Only the intended receiver can reject a pending transfer.") &&
