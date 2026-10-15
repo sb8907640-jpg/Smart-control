@@ -33,7 +33,7 @@ class FamilySafetyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // START_STICKY can recreate this service with a null intent after process death.
         // Re-check local consent every time, before starting the foreground notification
-        // or health-reporting loop, so a restart cannot bypass onboarding or permissions.
+        // or health-reporting loop, so a restart cannot skip onboarding or permission checks.
         if (!isStartupAllowed(intent)) {
             stopSelf(startId)
             return START_NOT_STICKY
