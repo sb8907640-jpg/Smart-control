@@ -125,7 +125,8 @@ check("Suspended and Owner-blocked accounts are denied across service layers",
   firestoreRules.includes("function accountActive()") &&
     firestoreRules.includes("userAccess/$(request.auth.uid)") &&
     read("storage.rules").includes("function accountActive()") &&
-    read("storage.rules").includes("userAccess/$(request.auth.uid)") &&
+    read("storage.rules").includes("users/$(request.auth.uid)") &&
+    functionsIndex.includes('status: disabled ? "BLOCKED" : "ACTIVE"') &&
     read("backend/src/owner-panel.js").includes("auth.updateUser(id, { disabled: status !== \"ACTIVE\" })") &&
     read("backend/src/owner-panel.js").includes("auth.revokeRefreshTokens(id)") &&
     read("backend/src/app.js").includes("accessBlocked = access.exists") &&
