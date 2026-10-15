@@ -7,8 +7,8 @@
   "scripts": {
     "deploy": "cd .. && firebase deploy --only functions",
     "deploy:all": "cd .. && firebase deploy --only functions,firestore,storage",
-    "check": "node --check index.js && node --check billing.js && node --check gateway-permit.js && node --check ice-servers.js && node --check firestore-rules.test.js && node --check storage-rules.test.js && node --check spec/roles.js && node --check spec/roles.test.js && node --check spec/media-policy.js && node --check spec/media-policy.test.js && npm test",
-    "test": "node --test spec/roles.test.js spec/media-policy.test.js"
+    "check": "node --check index.js && node --check billing.js && node --check gateway-permit.js && node --check ice-servers.js && node --check firestore-rules.test.js && node --check storage-rules.test.js && node --check spec/roles.js && node --check spec/roles.test.js && node --check spec/media-policy.js && node --check spec/file-transfer-policy.js && node --check spec/file-transfer-policy.test.js && node --check spec/media-policy.test.js && npm test",
+    "test": "node --test spec/roles.test.js spec/media-policy.test.js spec/file-transfer-policy.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0",
