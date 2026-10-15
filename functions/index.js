@@ -395,7 +395,8 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     );
   }
 
-  for (const { user } of resolvedRequested) {
+  const resolvedUsers = new Map(resolvedRequested.map(({ user }) => [user.uid, user]));
+  for (const user of resolvedUsers.values()) {
     const previousClaims = user.customClaims || {};
     const role = previousClaims.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "OWNER";
     const claims = { ...previousClaims, role, admin: true };
@@ -407,8 +408,12 @@ exports.syncOwnerAccounts = onCall(async (request) => {
     if (requestedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
     if (!user) continue;
-    // The earlier guard ensures the actor remains represented by at least
-    // one configured email or mobile; removing a secondary alias is safe.
+    const currentIdentifiers = [
+      String(user.email || "").trim().toLowerCase(),
+      String(user.phoneNumber || "").trim()
+    ].filter(Boolean);
+    // An owner may remove one alias while keeping another configured alias.
+    if (currentIdentifiers.some((value) => requestedIdentifiers.has(value))) continue;
     if (user.uid === request.auth.uid) continue;
     const claims = { ...(user.customClaims || {}) };
     if (claims.role === "SUPER_ADMIN") continue;
