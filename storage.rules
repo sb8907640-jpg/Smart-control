@@ -7,10 +7,16 @@ service firebase.storage {
         return firestore.get(/databases/(default)/documents/fileTransfers/$(transferId));
       }
 
+      // Bound each upload to control storage abuse. When the sender reported a
+      // known size, the stored object must match it; unknown provider sizes (-1)
+      // remain supported but are still capped.
       allow write: if request.auth != null
         && request.auth.uid == senderUid
         && transferDoc().data.senderDeviceId == request.auth.uid
-        && transferDoc().data.status in ['APPROVED', 'UPLOADING'];
+        && transferDoc().data.status in ['APPROVED', 'UPLOADING']
+        && request.resource.size <= 104857600
+        && (transferDoc().data.sizeBytes <= 0
+            || request.resource.size == transferDoc().data.sizeBytes);
 
       allow read: if request.auth != null
         && (
