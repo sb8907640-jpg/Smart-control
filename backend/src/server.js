@@ -5,7 +5,15 @@ function createRealtimeServer({ app, verifyToken, firestore }) {
   const httpServer = createServer(app);
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
   const io = new Server(httpServer, {
-    cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true },
+    cors: {
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        if (allowedOrigins.length === 0 && process.env.NODE_ENV !== "production") return callback(null, true);
+        return callback(new Error("CORS origin is not allowed."));
+      },
+      credentials: true
+    },
     transports: ["websocket", "polling"]
   });
 
