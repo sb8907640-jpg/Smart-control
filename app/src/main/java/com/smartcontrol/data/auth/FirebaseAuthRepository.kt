@@ -55,7 +55,7 @@ class FirebaseAuthRepository @Inject constructor(private val auth: FirebaseAuth)
                             onFailure(IllegalStateException("Firebase returned no user after automatic phone verification."))
                         }
                     }
-                    .addOnFailureListener(onFailure)
+                    .addOnFailureListener { error -> onFailure(error) }
             }
 
             override fun onVerificationFailed(e: FirebaseException) = onFailure(e)
