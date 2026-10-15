@@ -550,7 +550,32 @@ function installOwnerPanelRoutes(app, { db }) {
   app.get("/api/owner/payments", requireOwner, async (req, res, next) => {
     try { res.json({ payments: await read("payments") }); } catch (e) { next(e); }
   });
-  app.patch("/api/owner/payments/:id", requireOwner, (req, res, next) => update(req, res, "payments", req.params.id, "payment", "OWNER_PAYMENT_EDITED").catch(next));
+  app.patch("/api/owner/payments/:id", requireOwner, async (req, res, next) => {
+    try {
+      const values = req.body?.values;
+      if (!values || typeof values !== "object" || Array.isArray(values)) {
+        return res.status(400).json({ error: "A payment metadata object is required." });
+      }
+      const allowedFields = new Set(["ownerNote", "reconciliationNote"]);
+      if (Object.keys(values).some(key => !allowedFields.has(key))) {
+        return res.status(400).json({ error: "Payment status, amount, owner and provider references are immutable through the owner REST API; use verified billing actions." });
+      }
+      for (const value of Object.values(values)) {
+        if (typeof value !== "string" || value.length > 1000) {
+          return res.status(400).json({ error: "Payment notes must be text up to 1000 characters." });
+        }
+      }
+      const ref = collection("payments").doc(req.params.id);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "Payment not found." });
+      const patch = { ...values, updatedAt: now(), updatedBy: req.user.uid };
+      await ref.set(patch, { merge: true });
+      await audit(req, "OWNER_PAYMENT_NOTE_UPDATED", "payment", { id: req.params.id, fields: Object.keys(values) });
+      return res.json({ id: req.params.id, ...patch });
+    } catch (error) {
+      return next(error);
+    }
+  });
   app.get("/api/owner/emi", requireOwner, async (req, res, next) => {
     try { res.json({ emi: await read("emiApplications") }); } catch (e) { next(e); }
   });
