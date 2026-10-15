@@ -23,6 +23,12 @@ async function main() {
   try {
     await env.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
+      await setDoc(doc(db, "featurePolicy", "global"), {
+        globalFeaturesEnabled: true,
+        globalEnabled: true,
+        featureOverrides: {},
+        globalFeatureOverrides: {}
+      });
       await setDoc(doc(db, "fileTransfers", "transfer-known"), {
         senderDeviceId: "sender",
         receiverDeviceId: "receiver",
@@ -89,6 +95,19 @@ async function main() {
     ));
     await assertFails(uploadBytes(
       ref(env.authenticatedContext("blocked-sender").storage(), "fileTransfers/blocked-sender/transfer-blocked/file.bin"),
+      new Uint8Array([1, 2, 3, 4])
+    ));
+
+    // A previously approved transfer must stop working when Owner policy is revoked.
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "featurePolicyUsers", "sender"), {
+        enabled: true,
+        ownerEnabled: true,
+        featureOverrides: { FILE_TRANSFER: false }
+      });
+    });
+    await assertFails(uploadBytes(
+      ref(senderStorage, "fileTransfers/sender/transfer-known/policy-disabled.bin"),
       new Uint8Array([1, 2, 3, 4])
     ));
 
