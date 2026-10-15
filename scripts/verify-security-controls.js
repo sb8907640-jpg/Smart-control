@@ -247,6 +247,12 @@ check("Cancelled file transfers can remove orphaned upload objects",
     read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("uploader.deleteUploadedFile(path)") &&
     read("functions/storage-rules.test.js").includes("deleteObject(ref(senderStorage"),
   "An incomplete upload is cancelled and its inaccessible object can be deleted without allowing receivers to read cancelled files.");
+
+check("Transfer path validation uses exact path segments",
+  read("app/src/main/java/com/smartcontrol/data/filetransfer/FirebaseFileUploader.kt").includes('parts.none { it == "." || it == ".." }') &&
+    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("storageParts.size != 4") &&
+    read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferViewModel.kt").includes("storageParts[2] != request.transferId"),
+  "Download and cleanup paths are constrained to the sender/transfer/file structure without rejecting ordinary filenames containing two dots.");
 check("TURN shared secret is not embedded in Android APK",
   !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
     iceServers.includes('createHmac("sha1", sharedSecret)'),

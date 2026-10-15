@@ -190,7 +190,13 @@ class FileTransferViewModel @Inject constructor(
             return@launch
         }
         val storagePath = request.storagePath ?: run { _status.value = "The uploaded file path is missing."; return@launch }
-        if (!storagePath.startsWith("fileTransfers/${request.senderDeviceId}/${request.transferId}/")) {
+        val storageParts = storagePath.split('/')
+        if (storageParts.size != 4 ||
+            storageParts[0] != "fileTransfers" ||
+            storageParts[1] != request.senderDeviceId ||
+            storageParts[2] != request.transferId ||
+            storageParts.any { it.isBlank() || it == "." || it == ".." }
+        ) {
             _status.value = "The transfer storage path failed validation."
             return@launch
         }
@@ -241,13 +247,26 @@ class FileTransferViewModel @Inject constructor(
                 pendingTransferPrefs.edit().clear().apply()
                 return@launch
             }
-            runCatching { repository.updateStatus(id, FileTransferRequest.Status.CANCELLED) }
-            uploadedPath?.let { path -> runCatching { uploader.deleteUploadedFile(path) } }
+            val cancellation = runCatching {
+                repository.updateStatus(id, FileTransferRequest.Status.CANCELLED)
+            }
+            var cleanupFailed = false
+            if (cancellation.isSuccess && uploadedPath != null) {
+                cleanupFailed = runCatching { uploader.deleteUploadedFile(uploadedPath!!) }.isFailure
+            }
             _hasPendingUpload.value = false
             pendingTransferId = null
             pendingUri = null
             pendingTransferPrefs.edit().clear().apply()
-            _status.value = (error.message ?: "File upload failed.") +
-                " The incomplete transfer was cancelled. Select the file again to retry."
+            _status.value = when {
+                cancellation.isFailure ->
+                    (error.message ?: "File upload failed.") +
+                        " Cancellation could not be confirmed. Check the transfer list before retrying."
+                cleanupFailed ->
+                    "The incomplete transfer was cancelled, but temporary storage cleanup failed. Select the file again to retry."
+                else ->
+                    (error.message ?: "File upload failed.") +
+                        " The incomplete transfer was cancelled. Select the file again to retry."
+            }
     }
 }

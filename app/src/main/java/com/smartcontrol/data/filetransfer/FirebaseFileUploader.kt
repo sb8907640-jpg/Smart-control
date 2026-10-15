@@ -48,15 +48,16 @@ class FirebaseFileUploader @Inject constructor(
         val uid = auth.currentUser?.uid ?: error("Sign in first.")
         val parts = storagePath.split('/')
         require(parts.size == 4 && parts[0] == "fileTransfers" && parts[1] == uid &&
-            parts[2].isNotBlank() && parts[3].isNotBlank() && !storagePath.contains("..")
+            parts[2].isNotBlank() && parts[3].isNotBlank() && parts.none { it == "." || it == ".." }
         ) { "Invalid transfer storage path." }
         storage.reference.child(storagePath).delete().await()
     }
 
     suspend fun downloadToUri(storagePath: String, targetUri: Uri) {
-        require(storagePath.startsWith("fileTransfers/") && !storagePath.contains("..")) {
-            "Invalid transfer storage path."
-        }
+        val parts = storagePath.split('/')
+        require(parts.size == 4 && parts[0] == "fileTransfers" &&
+            parts.all { it.isNotBlank() && it != "." && it != ".." }
+        ) { "Invalid transfer storage path." }
         val tempFile = File.createTempFile("family-suraksha-transfer-", ".bin", context.cacheDir)
         try {
             storage.reference.child(storagePath).getFile(tempFile).await()
