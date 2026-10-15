@@ -153,6 +153,13 @@ check("File transfer requests require an active paired receiver",
   firestoreRules.includes("data.pairingActive == true") &&
     firestoreRules.includes("request.resource.data.receiverDeviceId"),
   "Transfers cannot be opened to arbitrary unrelated accounts.");
+
+check("Owner feature policy is enforced for file-transfer data operations",
+  firestoreRules.includes("fileTransferAllowed(resource.data.senderDeviceId, resource.data.receiverDeviceId)") &&
+    storageRules.includes("fileTransferAllowed(transferDoc().data.senderDeviceId, transferDoc().data.receiverDeviceId)") &&
+    read("functions/firestore-rules.test.js").includes("disabled-feature-transfer") &&
+    read("functions/storage-rules.test.js").includes("policy-disabled.bin"),
+  "Direct Firestore writes and Storage reads/uploads are denied when global or per-user FILE_TRANSFER policy is disabled.");
 check("Receiver can explicitly approve or reject a pending transfer",
   fileTransferViewModel.includes("fun reject(transferId: String)") &&
     fileTransferViewModel.includes("Only the intended receiver can reject a pending transfer.") &&
