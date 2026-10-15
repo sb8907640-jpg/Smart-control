@@ -122,6 +122,19 @@ test("health and readiness endpoints are public", async () => {
   });
 });
 
+test("system status reports unconfigured services as unhealthy", async () => {
+  const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/system/status", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.firestore, "unconfigured");
+  });
+});
+
 test("protected API rejects requests without bearer authentication", async () => {
   const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
   await withServer(app, async base => {
