@@ -121,8 +121,9 @@ exports.claimPairingCode = onCall(async (request) => {
     const deviceRef = db.collection("devices").doc(deviceUid);
     const deviceSnapshot = await transaction.get(deviceRef);
     const existingController = deviceSnapshot.get("controllerUid");
-    if (typeof existingController === "string" && existingController) {
-      throw new HttpsError("already-exists", "This device still has a controller link. Unpair it before linking again.");
+    const pairingActive = deviceSnapshot.get("pairingActive") === true;
+    if (pairingActive && typeof existingController === "string" && existingController) {
+      throw new HttpsError("already-exists", "This device is already paired. Unpair it before linking again.");
     }
 
     const pairedAt = Date.now();
