@@ -57,8 +57,12 @@ check("Payment creation selects the active Owner permit before legacy configurat
   /const config = await readPaymentConfig\(\);[\s\S]{0,240}const permit = await getActiveGatewayPermit\(\);[\s\S]{0,160}const gateway = permit \? permit.provider : activeGateway\(config\);/.test(billingFunctions));
 check("Gateway credentials are AES-256-GCM encrypted server-side",
   gatewayPermit.includes("aes-256-gcm") && gatewayPermit.includes("encryptedCredentials"));
-check("Gateway writes are restricted to configured Owner identities",
-  gatewayPermit.includes("async function requireOwner") && gatewayPermit.includes("Only a configured Family Suraksha Owner"));
+check("Gateway writes require a current Owner allowlist entry, with a one-time bootstrap only before the allowlist exists",
+  gatewayPermit.includes("async function requireOwner") &&
+    gatewayPermit.includes('const snap = await db.doc("ownerAccounts/config").get();') &&
+    gatewayPermit.includes('if (!snap.exists && (claims.owner === true || role === "OWNER")) return;') &&
+    gatewayPermit.includes('if (role === "SUPER_ADMIN") return;') &&
+    gatewayPermit.includes("Only a currently configured Family Suraksha Owner"));
 check("Legacy editable gateway fields cannot activate live gateways",
   billingFunctions.includes("Live gateways must be configured through the Owner-only Permanent Gateway Permit."));
 check("Manual reference verification cannot activate real-gateway payments",
