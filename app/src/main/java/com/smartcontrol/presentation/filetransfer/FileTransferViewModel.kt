@@ -221,8 +221,9 @@ class FileTransferViewModel @Inject constructor(
         var uploadedPath: String? = null
         try {
             repository.updateStatus(id, FileTransferRequest.Status.UPLOADING)
-            uploadedPath = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
-            repository.markReady(id, uploadedPath)
+            val path = uploader.uploadSelectedFile(id, uri, request.fileName, request.mimeType)
+            uploadedPath = path
+            repository.markReady(id, path)
             _status.value = "File uploaded. The receiver can now download it."
             _hasPendingUpload.value = false
             pendingTransferId = null
