@@ -141,22 +141,44 @@ function installCatalogRoutes(app, { db, requireAuth }) {
         linkValidityValue:linkValidity?.value ?? null,
         linkValidityUnit:linkValidity?.unit ?? "LIFETIME"
       });
-      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{code,planId:plan?.id || requestedPlanId || null,expiresAt});
+      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{codeIssued:true,planId:plan?.id || requestedPlanId || null,expiresAt});
       res.status(201).json({code,expiresAt,planId:plan?.id || requestedPlanId || null});
     } catch(e){next(e);}
   });
 
   app.post("/api/link/join", async (req,res,next) => {
     try {
+      if (req.body?.consent !== true) {
+        return res.status(400).json({error:"Explicit receiver consent is required before joining a device link."});
+      }
       const code=String(req.body?.code||"").trim().toUpperCase();
-      if(!code) return res.status(400).json({error:"Pairing code is required."});
+      if(!/^[A-Z0-9_-]{8,32}$/.test(code)) return res.status(400).json({error:"A valid pairing code is required."});
       const ref=firestoreCollection("pairingCodes").doc(code);
-      const snap=await ref.get(); const data=snap.exists?snap.data():null;
-      if(!data||data.status!=="PENDING"||Number(data.expiresAt)<now()) return res.status(404).json({error:"Pairing code is invalid or expired."});
-      await ref.set({clientUid:req.catalogUid,status:"PAIRED",pairedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(req.catalogUid).set({controllerUid:data.ownerUid,pairingActive:true,updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{code});
-      res.json({ok:true,ownerUid:data.ownerUid});
+      const deviceRef=firestoreCollection("devices").doc(req.catalogUid);
+      const result=await db.runTransaction(async transaction => {
+        const snap=await transaction.get(ref);
+        if(!snap.exists) return {failure:{status:404,message:"Pairing code is invalid or expired."}};
+        const data=snap.data() || {};
+        const expiry=data.expiresAt == null ? null : Number(data.expiresAt);
+        if(data.status!=="PENDING" || (expiry !== null && (!Number.isFinite(expiry) || expiry <= now()))) {
+          return {failure:{status:404,message:"Pairing code is invalid or expired."}};
+        }
+        if(typeof data.ownerUid!=="string" || !data.ownerUid || data.ownerUid===req.catalogUid) {
+          return {failure:{status:400,message:"This account cannot join its own device link."}};
+        }
+        const deviceSnap=await transaction.get(deviceRef);
+        const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+        if(device.pairingActive===true && typeof device.controllerUid==="string" && device.controllerUid) {
+          return {failure:{status:409,message:"This device is already paired. Unpair it before joining another link."}};
+        }
+        const pairedAt=now();
+        transaction.update(ref,{clientUid:req.catalogUid,status:"PAIRED",pairedAt});
+        transaction.set(deviceRef,{controllerUid:data.ownerUid,pairingActive:true,updatedAt:pairedAt},{merge:true});
+        return {ownerUid:data.ownerUid,pairedAt};
+      });
+      if(result.failure) return res.status(result.failure.status).json({error:result.failure.message});
+      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{consent:true,pairedAt:result.pairedAt});
+      res.json({ok:true,ownerUid:result.ownerUid,pairedAt:result.pairedAt});
     }catch(e){next(e);}
   });
 
@@ -170,24 +192,25 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     }catch(e){next(e);}
   });
 
-  app.post("/api/connect", async(req,res,next)=>{
-    try{
-      const deviceId=String(req.body?.deviceId||"").trim();
-      if(!deviceId)return res.status(400).json({error:"deviceId is required."});
-      const id=await add("connections",{userId:req.catalogUid,deviceId,status:"CONNECTED",connectedAt:now(),lastSeenAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({controllerUid:req.catalogUid,connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"CONNECTED","device",{deviceId,connectionId:id});
-      res.status(201).json({ok:true,status:"CONNECTED",deviceId,connectionId:id});
-    }catch(e){next(e);}
+  // Legacy direct-connect is intentionally disabled: it could overwrite a device's
+  // controllerUid without a pairing code or receiver consent. Use the pairing flow.
+  app.post("/api/connect", (_req,res) => {
+    res.status(410).json({error:"Direct device linking is disabled. Use the consent-based pairing invitation flow."});
   });
 
   app.post("/api/disconnect", async(req,res,next)=>{
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef=firestoreCollection("devices").doc(deviceId);
+      const deviceSnap=await deviceRef.get();
+      const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+      if(!deviceSnap.exists || (deviceId!==req.catalogUid && device.userId!==req.catalogUid && device.controllerUid!==req.catalogUid)) {
+        return res.status(404).json({error:"Device not found."});
+      }
       const snap=await firestoreCollection("connections").where("userId","==",req.catalogUid).where("deviceId","==",deviceId).limit(1).get();
       if(!snap.empty) await snap.docs[0].ref.set({status:"DISCONNECTED",disconnectedAt:now(),updatedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(deviceId).set({connectionStatus:"DISCONNECTED",updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionStatus:"DISCONNECTED",updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"DISCONNECTED","device",{deviceId});
       res.json({ok:true,status:"DISCONNECTED",deviceId});
     }catch(e){next(e);}
@@ -197,8 +220,14 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef=firestoreCollection("devices").doc(deviceId);
+      const deviceSnap=await deviceRef.get();
+      const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+      if(!deviceSnap.exists || (deviceId!==req.catalogUid && device.userId!==req.catalogUid && device.controllerUid!==req.catalogUid)) {
+        return res.status(404).json({error:"Device not found."});
+      }
       const id=await add("reconnectQueue",{userId:req.catalogUid,deviceId,status:"QUEUED",attemptCount:0,nextAttemptAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({connectionStatus:"RECONNECTING",reconnectQueuedAt:now(),updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionStatus:"RECONNECTING",reconnectQueuedAt:now(),updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"RECONNECT_QUEUED","device",{deviceId,reconnectId:id});
       res.status(202).json({ok:true,status:"QUEUED",deviceId,reconnectId:id});
     }catch(e){next(e);}
