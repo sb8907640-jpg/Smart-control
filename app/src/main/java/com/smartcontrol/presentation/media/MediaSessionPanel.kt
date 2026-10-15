@@ -54,10 +54,22 @@ fun MediaSessionPanel(
         pendingStart?.let { current -> if (result != null) viewModel.startPublishing(current, result) }
         pendingStart = null
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         pendingStart?.let { current ->
-            if (MediaCapability.SCREEN_SHARING in current.capabilities) projectionLauncher()
-            else { viewModel.startPublishing(current, null); pendingStart = null }
+            val allGranted = results.values.all { it }
+            if (!allGranted) {
+                android.widget.Toast.makeText(
+                    context,
+                    "Camera/microphone permission denied. Sharing was not started.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                pendingStart = null
+            } else if (MediaCapability.SCREEN_SHARING in current.capabilities) {
+                projectionLauncher()
+            } else {
+                viewModel.startPublishing(current, null)
+                pendingStart = null
+            }
         }
     }
 
