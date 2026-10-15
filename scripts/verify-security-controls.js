@@ -50,6 +50,13 @@ check("Pending file transfer state is cleared on completion and failure",
   (fileTransferViewModel.match(/pendingTransferPrefs\.edit\(\)\.clear\(\)\.apply\(\)/g) || []).length >= 3,
   "Stored pending transfer metadata is cleared when stale or after upload finishes.");
 
+const fileTransferScreen = read("app/src/main/java/com/smartcontrol/presentation/filetransfer/FileTransferScreen.kt");
+check("Pending upload requires persistent picker URI access",
+  fileTransferScreen.includes("takePersistableUriPermission") &&
+    fileTransferScreen.includes("if (retained)") &&
+    fileTransferScreen.includes("did not allow persistent access"),
+  "A transfer request is not created if the selected file cannot remain accessible while the receiver approval is pending.");
+
 check("Persistent link recovery", /PersistentLinkState/.test(recovery) && /shouldRecover/.test(recovery), "Persistent recovery remains defined.");
 check("Boot/watchdog opt-in", /explicit user opt-in only/i.test(policy) && /bootPersistence/.test(policy), "Restart behavior cannot bypass user choice.");
 check("Boot receiver is explicit opt-in", /RECEIVE_BOOT_COMPLETED/.test(manifest) && /SmartControlBootReceiver/.test(manifest) && /auto_start_service/.test(read("app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt")), "Boot persistence only starts when the saved user preference is enabled.");

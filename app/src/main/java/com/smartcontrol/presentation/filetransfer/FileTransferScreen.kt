@@ -1,6 +1,7 @@
 package com.smartcontrol.presentation.filetransfer
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,14 +41,22 @@ fun FileTransferScreen(
     var pendingDownloadId by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            runCatching {
+        uri?.let { selected ->
+            val retained = runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    selected,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
+            }.isSuccess
+            if (retained) {
+                viewModel.uploadSelectedFile(selected)
+            } else {
+                Toast.makeText(
+                    context,
+                    "This file provider did not allow persistent access. Choose a file from a provider that supports persistent access so the upload can resume after approval.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            viewModel.uploadSelectedFile(it)
         }
     }
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
