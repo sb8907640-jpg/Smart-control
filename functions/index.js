@@ -392,8 +392,13 @@ exports.updateOwnerUser = onCall(async (request) => {
     const claims = { ...(target.customClaims || {}), role, access };
     if (role === "SUPER_ADMIN") {
       claims.admin = true;
-    } else if (target.uid !== request.auth.uid) {
+      delete claims.owner;
+    } else if (role === "OWNER") {
+      claims.admin = true;
+      claims.owner = true;
+    } else {
       delete claims.admin;
+      delete claims.owner;
     }
     await getAuth().setCustomUserClaims(uid, claims);
     const updatedAtEpochMs = Date.now();
