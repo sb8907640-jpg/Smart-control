@@ -548,3 +548,45 @@ test("legacy payment endpoints return Gone and direct callers to the verified bi
     }
   });
 });
+
+test("legacy admin status routes enforce role hierarchy and prevent self-lockout", async () => {
+  const users = new Map([
+    ["admin-user", { status: "ACTIVE", role: "ADMIN" }],
+    ["owner-user", { status: "ACTIVE", role: "OWNER" }]
+  ]);
+  const db = {
+    collection(name) {
+      return {
+        doc(id) {
+          return {
+            async get() {
+              const value = name === "users" ? users.get(id) : undefined;
+              return { exists: value !== undefined, data: () => value ? { ...value } : undefined };
+            },
+            async set(value, options = {}) {
+              if (name !== "users") throw new Error("Unexpected test write: " + name);
+              users.set(id, options.merge ? { ...(users.get(id) || {}), ...value } : { ...value });
+            }
+          };
+        }
+      };
+    }
+  };
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "admin-user", email: "admin@example.test", role: "ADMIN" })
+  });
+  await withServer(app, async base => {
+    const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
+    const ownerResponse = await fetch(base + "/api/admin/user/ban", {
+      method: "POST", headers, body: JSON.stringify({ userId: "owner-user" })
+    });
+    assert.equal(ownerResponse.status, 403);
+    const selfResponse = await fetch(base + "/api/admin/user/ban", {
+      method: "POST", headers, body: JSON.stringify({ userId: "admin-user" })
+    });
+    assert.equal(selfResponse.status, 409);
+    assert.equal(users.get("owner-user").status, "ACTIVE");
+    assert.equal(users.get("admin-user").status, "ACTIVE");
+  });
+});
