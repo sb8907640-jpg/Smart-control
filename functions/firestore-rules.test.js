@@ -110,6 +110,20 @@ async function main() {
       status: "REQUESTED",
       createdAt: Date.now()
     }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "forged-active"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "ACTIVE",
+      createdAt: Date.now()
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "invalid-capability"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA", "REMOTE_INPUT"],
+      status: "REQUESTED",
+      createdAt: Date.now()
+    }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { status: "APPROVED" }));
     await assertSucceeds(updateDoc(doc(mediaTarget.firestore(), "mediaSessions", "session-1"), { offerSdp: "test-offer-sdp" }));
     await assertSucceeds(updateDoc(sessionRef, { answerSdp: "test-answer-sdp" }));
