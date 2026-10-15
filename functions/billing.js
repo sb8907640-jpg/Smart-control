@@ -1294,10 +1294,19 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
     if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
       // Persist the provider reference inside the same transaction that activates
       // the subscription. A follow-up write could otherwise overwrite a concurrent refund lock.
-      await activateSubscriptionForPayment(paymentId, payment, {
-        gatewayReference: reference,
-        verifiedAtEpochMs: Date.now()
-      });
+      try {
+        await activateSubscriptionForPayment(paymentId, payment, {
+          gatewayReference: reference,
+          verifiedAtEpochMs: Date.now()
+        });
+      } catch (error) {
+        if (error?.code === "failed-precondition" &&
+            /Refunded or refund-pending payment cannot activate a subscription/.test(String(error.message || ""))) {
+          res.status(200).json({ ok: true, ignored: true });
+          return;
+        }
+        throw error;
+      }
     } else if (status === "FAILED" || status === "CANCELLED") {
       await db.runTransaction(async (tx) => {
         const latestSnap = await tx.get(ref);
