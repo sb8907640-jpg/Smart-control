@@ -8,7 +8,8 @@
     "deploy": "firebase deploy --only functions",
     "deploy:all": "firebase deploy --only functions,firestore:rules",
     "check": "node --check index.js && node --check billing.js && node --check gateway-permit.js && node --check ice-servers.js && node --check firestore-rules.test.js && node --check spec/roles.js && node --check spec/roles.test.js",
-    "test:roles": "node --test spec/roles.test.js"
+    "test:roles": "node --test spec/roles.test.js",
+    "test:rules": "firebase emulators:exec --project demo-family-suraksha --only firestore \"node firestore-rules.test.js\""
   },
   "dependencies": {
     "firebase-admin": "^13.5.0",
