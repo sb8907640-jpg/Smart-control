@@ -108,6 +108,18 @@ check("Test safety alert is separate from SOS",
     read("app/src/main/java/com/smartcontrol/presentation/safety/SafetyAlertsViewModel.kt").includes("This is a test safety alert"),
   "The test-alert button cannot accidentally create a real SOS alert.");
 
+check("Legacy REST payment endpoints cannot self-activate subscriptions",
+  read("backend/src/catalog-api.js").includes("Legacy payment initiation is disabled") &&
+    read("backend/src/catalog-api.js").includes("Client-supplied payment IDs cannot activate subscriptions") &&
+    read("backend/src/catalog-api.js").includes('["VERIFIED", "SUCCESS"].includes'),
+  "The duplicate REST path fails closed and EMI requests require a verified payment.");
+
+check("REST pairing codes are consumed atomically and support lifetime expiry",
+  read("backend/src/catalog-api.js").includes("db.runTransaction") &&
+    read("backend/src/catalog-api.js").includes("data?.expiresAt == null") &&
+    read("backend/src/catalog-api.js").includes('status: "PAIRED"'),
+  "Pairing-code joins are one-time and a null expiry represents a lifetime code.");
+
 check("Payment and EMI ledger records are server-write only",
   firestoreRules.includes("match /payments/{paymentId}") &&
     firestoreRules.includes("match /emiSchedule/{scheduleId}") &&
