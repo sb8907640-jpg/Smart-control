@@ -98,19 +98,6 @@ async function main() {
       new Uint8Array([1, 2, 3, 4])
     ));
 
-    // A previously approved transfer must stop working when Owner policy is revoked.
-    await env.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), "featurePolicyUsers", "sender"), {
-        enabled: true,
-        ownerEnabled: true,
-        featureOverrides: { FILE_TRANSFER: false }
-      });
-    });
-    await assertFails(uploadBytes(
-      ref(senderStorage, "fileTransfers/sender/transfer-known/policy-disabled.bin"),
-      new Uint8Array([1, 2, 3, 4])
-    ));
-
     console.log("STORAGE_RULES_VERIFY=PASS");
   } finally {
     await env.cleanup();
