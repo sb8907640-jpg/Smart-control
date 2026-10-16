@@ -58,6 +58,8 @@ jobs:
         run: node scripts/verify-file-transfer-flow.js
       - name: Verify Kotlin source block integrity
         run: node scripts/verify-kotlin-braces.js
+      - name: Verify WebRTC capture cleanup paths
+        run: node scripts/verify-webrtc-capture-cleanup.js
       - name: Verify Designed for Continuous 24x7 Operation
         run: node scripts/verify-continuous-24x7.js
       - name: Verify Security, Encryption, Consent and Safety Controls
