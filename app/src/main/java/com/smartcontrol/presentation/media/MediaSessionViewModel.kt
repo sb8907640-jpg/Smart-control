@@ -320,7 +320,11 @@ class MediaSessionViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        // Releasing the WebRTC engine ends any active screen capture. Stop its
+        // foreground service as well so navigation/ViewModel teardown cannot leave
+        // a stale "Screen sharing active" notification or service running.
         engine.release()
+        MediaProjectionForegroundService.stop(context)
         FamilySafetyService.setIdle(context)
         super.onCleared()
     }
