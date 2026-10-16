@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.delay
 
 @Composable
 fun PairingScreen(
@@ -46,6 +48,13 @@ fun PairingScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    var nowEpochMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowEpochMs = System.currentTimeMillis()
+            delay(15_000)
+        }
+    }
     val deepLinkToken = remember(initialToken, context) {
         (initialToken ?: (context as? Activity)?.intent?.data?.getQueryParameter("token"))
             ?.trim()
@@ -86,6 +95,18 @@ fun PairingScreen(
                 else "Paired controller: " + pairing!!.controllerUid
             )
             Text("Sender role: " + pairing!!.senderRole + " • Receiver role: " + pairing!!.receiverRole)
+            val heartbeat = pairing!!.lastHeartbeatAtEpochMs
+            val heartbeatAgeMs = heartbeat?.let { nowEpochMs - it }
+            val connectionStatus = when {
+                heartbeat == null -> "Status unavailable (health sharing may be disabled)"
+                heartbeatAgeMs != null && heartbeatAgeMs in 0..60_000L -> "Online"
+                heartbeatAgeMs != null && heartbeatAgeMs > 60_000L -> "Offline"
+                else -> "Status unavailable (device clock differs)"
+            }
+            Text("Connection status: " + connectionStatus)
+            if (heartbeatAgeMs != null && heartbeatAgeMs >= 0L) {
+                Text("Last heartbeat: " + (heartbeatAgeMs / 1000L) + " seconds ago")
+            }
             OutlinedButton(onClick = viewModel::unpair, modifier = Modifier.fillMaxWidth()) {
                 Text("Unpair device")
             }

@@ -13,5 +13,6 @@ data class PairedDevice(
     val createdAtEpochMs: Long,
     val active: Boolean,
     val senderRole: String = "Other",
-    val receiverRole: String = "Other"
+    val receiverRole: String = "Other",
+    val lastHeartbeatAtEpochMs: Long? = null
 )

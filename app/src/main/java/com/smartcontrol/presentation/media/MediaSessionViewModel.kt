@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.smartcontrol.data.media.WebRtcMediaEngine
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
@@ -20,6 +21,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.webrtc.VideoSink
@@ -34,15 +37,30 @@ class MediaSessionViewModel @Inject constructor(
 ) : ViewModel() {
     private val privacyPrefs by lazy { context.getSharedPreferences("privacy_controls", Context.MODE_PRIVATE) }
 
-    val controlledDevice = pairingRepository.observeControlledDevice()
+    val controlledDevice = pairingRepository.observeControlledDevice().retryTransiently()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val pending = signaling.observePendingSessionsForDevice()
+    private fun <T> Flow<T>.retryTransiently() = retryWhen { cause, attempt ->
+        val code = (cause as? FirebaseFirestoreException)?.code
+        val transient = code in setOf(
+            FirebaseFirestoreException.Code.UNAVAILABLE,
+            FirebaseFirestoreException.Code.DEADLINE_EXCEEDED,
+            FirebaseFirestoreException.Code.ABORTED,
+            FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED,
+            FirebaseFirestoreException.Code.UNKNOWN
+        )
+        if (transient) {
+            delay((1_000L * (1L shl attempt.coerceAtMost(5).toInt())).coerceAtMost(30_000L))
+        }
+        transient
+    }
+
+    val pending = signaling.observePendingSessionsForDevice().retryTransiently()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val selectedId = MutableStateFlow<String?>(null)
     val selectedSession: StateFlow<MediaSession?> = selectedId.flatMapLatest { id ->
-        if (id == null) flowOf(null) else signaling.observeSession(id)
+        if (id == null) flowOf(null) else signaling.observeSession(id).retryTransiently()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val lastError = MutableStateFlow<String?>(null)

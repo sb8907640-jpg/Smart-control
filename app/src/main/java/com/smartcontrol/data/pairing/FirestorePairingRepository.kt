@@ -33,7 +33,8 @@ class FirestorePairingRepository @Inject constructor(
                     uid, controllerUid, snapshot.getLong("pairedAt") ?: 0L,
                     snapshot.getBoolean("pairingActive") ?: true,
                     snapshot.getString("senderRole") ?: "Other",
-                    snapshot.getString("receiverRole") ?: "Other"
+                    snapshot.getString("receiverRole") ?: "Other",
+                    (snapshot.get("health.lastHeartbeatAt") as? Number)?.toLong()
                 ) else null
             )
         }
@@ -52,7 +53,8 @@ class FirestorePairingRepository @Inject constructor(
                         doc.id, uid, doc.getLong("pairedAt") ?: 0L,
                         doc.getBoolean("pairingActive") ?: true,
                         doc.getString("senderRole") ?: "Other",
-                        doc.getString("receiverRole") ?: "Other"
+                        doc.getString("receiverRole") ?: "Other",
+                        (doc.get("health.lastHeartbeatAt") as? Number)?.toLong()
                     )
                 }.orEmpty())
             }
@@ -73,7 +75,8 @@ class FirestorePairingRepository @Inject constructor(
                         it.id, uid, it.getLong("pairedAt") ?: 0L,
                         it.getBoolean("pairingActive") ?: true,
                         it.getString("senderRole") ?: "Other",
-                        it.getString("receiverRole") ?: "Other"
+                        it.getString("receiverRole") ?: "Other",
+                        (it.get("health.lastHeartbeatAt") as? Number)?.toLong()
                     )
                 })
             }
