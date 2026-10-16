@@ -4,6 +4,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { getApps, getApp, initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
+const { createTurnConfiguration } = require("./spec/turn-config");
 const { CURRENT_LEGAL_CONSENT_VERSION, isCurrentConsentRecord } = require("./spec/consent-policy");
 
 // Configure this as the shared secret for a TURN server that supports the
@@ -87,37 +88,25 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     throw new HttpsError("permission-denied", "Owner feature policy no longer allows this media session.");
   }
 
-  const turnUrls = String(process.env.SMARTCONTROL_TURN_URLS || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
-  let turnConfigured = false;
-  let expiresAtEpochSeconds = null;
-
-  if (turnUrls.length > 0) {
-    if (turnUrls.some((url) => !/^turns?:/i.test(url))) {
-      throw new HttpsError("failed-precondition", "SMARTCONTROL_TURN_URLS must contain only turn: or turns: URLs.");
+  let turnConfiguration;
+  try {
+    let sharedSecret = "";
+    if (String(process.env.SMARTCONTROL_TURN_URLS || "").trim()) {
+      try {
+        sharedSecret = String(turnSharedSecret.value() || "").trim();
+      } catch (_) {
+        sharedSecret = "";
+      }
     }
-    let sharedSecret;
-    try {
-      sharedSecret = String(turnSharedSecret.value() || "").trim();
-    } catch (_) {
-      sharedSecret = "";
-    }
-    if (!sharedSecret) {
-      // Do not silently claim a usable ICE configuration when deployment
-      // explicitly configured TURN but omitted its shared credential.
-      throw new HttpsError("failed-precondition", "TURN is configured but SMARTCONTROL_TURN_CREDENTIAL is unavailable.");
-    }
-
-    // Short-lived TURN REST credentials: username expiry:uid, password HMAC-SHA1.
-    expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + 3600;
-    const username = `${expiresAtEpochSeconds}:${request.auth.uid}`;
-    const credential = crypto.createHmac("sha1", sharedSecret).update(username).digest("base64");
-    iceServers.push({ urls: turnUrls, username, credential });
-    turnConfigured = true;
+    turnConfiguration = createTurnConfiguration({
+      rawUrls: process.env.SMARTCONTROL_TURN_URLS,
+      sharedSecret,
+      uid: request.auth.uid
+    });
+  } catch (error) {
+    throw new HttpsError("failed-precondition", error.message || "TURN configuration is invalid.");
   }
+  const { iceServers, turnConfigured, expiresAtEpochSeconds } = turnConfiguration;
 
   return { iceServers, turnConfigured, expiresAtEpochSeconds };
 });
