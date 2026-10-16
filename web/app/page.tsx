@@ -60,6 +60,15 @@ function apiBase() {
   return url.toString().replace(/\/$/, "");
 }
 
+const apiConfigurationError = (() => {
+  try {
+    return apiBase() ? null : "Smart Control API URL is not configured.";
+  } catch (error) {
+    return error instanceof Error ? error.message : "Smart Control API URL is invalid.";
+  }
+})();
+const apiConfigured = apiConfigurationError === null;
+
 async function apiGet<T>(path: string, user: User): Promise<T> {
   const token = await user.getIdToken();
   const base = apiBase();
@@ -259,7 +268,14 @@ export default function Home() {
       {!firebaseConfigured ? (
         <section className="setup-panel" role="alert">
           <h2>Setup required</h2>
-          <p>Firebase web configuration is missing. Add the required public Firebase settings and API URL in the deployment environment, then rebuild the application. Sign-in is disabled until configuration is valid.</p>
+          <p>Firebase web configuration is missing. Add the required NEXT_PUBLIC_FIREBASE_* settings in the deployment environment, then rebuild the application. Sign-in is disabled until Firebase configuration is valid.</p>
+        </section>
+      ) : null}
+
+      {!apiConfigured ? (
+        <section className="setup-panel" role="alert">
+          <h2>Backend setup required</h2>
+          <p>{apiConfigurationError} Set NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL to the trusted HTTPS backend origin (HTTP is allowed only for localhost development) and rebuild the web application. Backend actions are disabled until this is valid.</p>
         </section>
       ) : null}
 
@@ -287,13 +303,13 @@ export default function Home() {
           if (!user) { setStatus("Sign in to contact support."); return; }
           setBusy(true);
           try { await initiateWhatsAppSupport(user); } catch (error) { setStatus(error instanceof Error ? error.message : "WhatsApp support failed"); } finally { setBusy(false); }
-        }} disabled={busy || !user}>💬 WhatsApp Support</button>
+        }} disabled={busy || !user || !apiConfigured}>💬 WhatsApp Support</button>
         <p>Click → Talk to Support</p>
       </section>
 
       <section className="backend-panel">
         <h2>Backend session</h2>
-        <button onClick={verifySession} disabled={busy || !user}>Verify authenticated session</button>
+        <button onClick={verifySession} disabled={busy || !user || !apiConfigured}>Verify authenticated session</button>
         <p className="status-message" role="status" aria-live="polite">{status}</p>
         {session ? (
           <pre><code>{JSON.stringify(session, null, 2)}</code></pre>
