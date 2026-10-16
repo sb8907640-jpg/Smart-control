@@ -245,7 +245,8 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
       const body = String(req.body?.body || "").trim().slice(0, 1000);
       if (!uid || !title || !body) return res.status(400).json({ error: "uid, title and body are required." });
       const snap = await firestore.collection("fcmTokens").doc(uid).collection("tokens").limit(500).get();
-      const tokens = snap.docs.map(d => d.data().token).filter(Boolean);
+      const tokenDocs = snap.docs.filter(d => Boolean(d.data().token));
+      const tokens = tokenDocs.map(d => d.data().token);
       if (!tokens.length) return res.status(404).json({ error: "No registered FCM tokens." });
       const { getMessaging } = require("firebase-admin/messaging");
       // Use data-only messages so the Android client can verify the signed-in UID
@@ -260,7 +261,7 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
       const cleanup = [];
       result.responses.forEach((response, index) => {
         if (!response.success && invalidCodes.has(response.error?.code)) {
-          cleanup.push(snap.docs[index].ref.delete());
+          cleanup.push(tokenDocs[index].ref.delete());
         }
       });
       await Promise.allSettled(cleanup);
