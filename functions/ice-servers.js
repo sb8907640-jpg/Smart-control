@@ -92,20 +92,25 @@ exports.getWebRtcIceServers = onCall({ secrets: [turnSharedSecret] }, async (req
     .map((value) => value.trim())
     .filter(Boolean);
   const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
-  let sharedSecret = "";
-  if (turnUrls.length > 0) {
-    try {
-      sharedSecret = turnSharedSecret.value();
-    } catch (_) {
-      // Missing TURN secret leaves a safe STUN-only configuration; it never
-      // causes the authorization-checked callable itself to fail.
-      sharedSecret = "";
-    }
-  }
   let turnConfigured = false;
   let expiresAtEpochSeconds = null;
 
-  if (turnUrls.length > 0 && sharedSecret) {
+  if (turnUrls.length > 0) {
+    if (turnUrls.some((url) => !/^turns?:/i.test(url))) {
+      throw new HttpsError("failed-precondition", "SMARTCONTROL_TURN_URLS must contain only turn: or turns: URLs.");
+    }
+    let sharedSecret;
+    try {
+      sharedSecret = String(turnSharedSecret.value() || "").trim();
+    } catch (_) {
+      sharedSecret = "";
+    }
+    if (!sharedSecret) {
+      // Do not silently claim a usable ICE configuration when deployment
+      // explicitly configured TURN but omitted its shared credential.
+      throw new HttpsError("failed-precondition", "TURN is configured but SMARTCONTROL_TURN_CREDENTIAL is unavailable.");
+    }
+
     // Short-lived TURN REST credentials: username expiry:uid, password HMAC-SHA1.
     expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + 3600;
     const username = `${expiresAtEpochSeconds}:${request.auth.uid}`;
