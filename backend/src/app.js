@@ -207,7 +207,7 @@ function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
     try {
       const token = String(req.body?.token || "");
       if (token.length < 20 || token.length > 4096) return res.status(400).json({ error: "Invalid FCM token." });
-      await firestore.collection("fcmTokens").doc(req.user.uid).collection("tokens").doc(Buffer.from(token).toString("base64url").slice(0, 128)).set({
+      await firestore.collection("fcmTokens").doc(req.user.uid).collection("tokens").doc(crypto.createHash("sha256").update(token).digest("hex")).set({
         token, platform: String(req.body?.platform || "unknown").slice(0, 32),
         updatedAtEpochMs: Date.now()
       }, { merge: true });
