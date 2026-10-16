@@ -1,6 +1,8 @@
 package com.smartcontrol.presentation.localdata
 
 import android.content.Intent
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -87,7 +89,7 @@ fun AppInstallScreen(onBack: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("App Install / Uninstall", style = MaterialTheme.typography.headlineSmall)
         Text("Only the Android system installer/uninstaller is used. Unknown-app install access may need to be enabled in Android Settings. The user must confirm the installation.")
         Button(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive")) }, modifier = Modifier.fillMaxWidth()) {
