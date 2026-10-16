@@ -10,6 +10,9 @@ import javax.inject.Singleton
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.tasks.await
 
 @Singleton
@@ -18,8 +21,21 @@ class FirestoreSessionRepository @Inject constructor(
     private val db: FirebaseFirestore
 ) : SessionRepository {
 
-    override val pendingRequests: Flow<List<SessionRequest>> = callbackFlow {
-        val uid = auth.currentUser?.uid ?: run { trySend(emptyList()); close(); return@callbackFlow }
+    private fun observeAuthenticatedUid(): Flow<String> = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid.orEmpty())
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
+
+    override val pendingRequests: Flow<List<SessionRequest>> = observeAuthenticatedUid()
+        .flatMapLatest { uid ->
+            if (uid.isBlank()) flowOf(emptyList())
+            else observePendingRequests(uid)
+        }
+
+    private fun observePendingRequests(uid: String): Flow<List<SessionRequest>> = callbackFlow {
         val listener: ListenerRegistration = db.collection("mediaSessions")
             .whereEqualTo("targetDeviceId", uid)
             .whereEqualTo("status", "REQUESTED")
@@ -30,8 +46,13 @@ class FirestoreSessionRepository @Inject constructor(
         awaitClose { listener.remove() }
     }
 
-    override val activeSession: Flow<RemoteSession?> = callbackFlow {
-        val uid = auth.currentUser?.uid ?: run { trySend(null); close(); return@callbackFlow }
+    override val activeSession: Flow<RemoteSession?> = observeAuthenticatedUid()
+        .flatMapLatest { uid ->
+            if (uid.isBlank()) flowOf(null)
+            else observeActiveSession(uid)
+        }
+
+    private fun observeActiveSession(uid: String): Flow<RemoteSession?> = callbackFlow {
         val listener = db.collection("mediaSessions")
             .whereEqualTo("targetDeviceId", uid)
             .whereIn("status", listOf("APPROVED", "ACTIVE"))
