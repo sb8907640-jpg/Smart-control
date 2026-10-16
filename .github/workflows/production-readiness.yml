@@ -155,6 +155,9 @@ jobs:
 
   desktop:
     runs-on: ubuntu-latest
+    env:
+      SMARTCONTROL_WEB_URL: ${{ vars.SMARTCONTROL_WEB_URL }}
+      SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
