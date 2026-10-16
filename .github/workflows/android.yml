@@ -7,6 +7,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -51,15 +55,35 @@ jobs:
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
 
       - name: Validate Firebase Android config
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
         run: |
-          node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("app/google-services.json","utf8")); if (!c.project_info?.project_id) throw new Error("Firebase project_id is missing"); if (!c.client?.some(x => x.client_info?.android_client_info?.package_name === "com.smart.control")) throw new Error("google-services.json does not include Android package com.smart.control"); console.log("Firebase Android config OK for com.smart.control");'
+          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning::Firebase Android config is not available in this CI run; build and source tests continue, but runtime Firebase smoke tests require the production config."
+          else
+            node -e 'const fs=require("node:fs"); const c=JSON.parse(fs.readFileSync("app/google-services.json","utf8")); if (!c.project_info?.project_id) throw new Error("Firebase project_id is missing"); if (!c.client?.some(x => x.client_info?.android_client_info?.package_name === "com.smart.control")) throw new Error("google-services.json does not include Android package com.smart.control"); console.log("Firebase Android config OK for com.smart.control");'
+          fi
 
-      - name: Build debug and release APKs
+      - name: Run Android unit tests
+        timeout-minutes: 10
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
-          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
-        run: gradle test assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+        run: gradle testOwnerDebugUnitTest testLiteDebugUnitTest testFullDebugUnitTest --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+
+      - name: Lint all Android distribution flavors
+        timeout-minutes: 10
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+        run: gradle lintOwnerDebug lintLiteDebug lintFullDebug --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+
+      - name: Build debug and release APKs
+        timeout-minutes: 15
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+        run: gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug assembleOwnerRelease assembleLiteRelease assembleFullRelease --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
 
       - name: Verify PostgreSQL backend code
         working-directory: backend
@@ -104,6 +128,14 @@ jobs:
           {
             echo "Node:"
             node --version
+            echo "Firebase Functions dependencies:"
+            npm --prefix functions install --no-audit --no-fund
+            functions_install_status=$?
+            echo "functions_install_status=$functions_install_status"
+            echo "Firebase Functions static checks and unit suite:"
+            npm --prefix functions run check
+            functions_test_status=$?
+            echo "functions_check_and_test_status=$functions_test_status"
             echo "index.js:"
             node --check functions/index.js
             index_status=$?
@@ -116,7 +148,7 @@ jobs:
             node -e "const c=require('./functions/spec/masterCatalog'); if(c.TABLES.length < 42 || c.API.length < 60) process.exit(1); console.log('tables='+c.TABLES.length+' api='+c.API.length)"
             catalog_status=$?
             echo "catalog_status=$catalog_status"
-            echo "validation_status=$(( index_status || billing_status || catalog_status ))"
+            echo "validation_status=$(( functions_install_status || functions_test_status || index_status || billing_status || catalog_status ))"
           } 2>&1 | tee functions-validation.log
           exit "$(grep '^validation_status=' functions-validation.log | cut -d= -f2)"
 

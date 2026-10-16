@@ -4,22 +4,40 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.functions.FirebaseFunctions
 import com.smartcontrol.domain.session.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.tasks.await
 
 @Singleton
 class FirestoreSessionRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val db: FirebaseFirestore
+    private val db: FirebaseFirestore,
+    private val functions: FirebaseFunctions
 ) : SessionRepository {
 
-    override val pendingRequests: Flow<List<SessionRequest>> = callbackFlow {
-        val uid = auth.currentUser?.uid ?: run { trySend(emptyList()); close(); return@callbackFlow }
+    private fun observeAuthenticatedUid(): Flow<String> = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            trySend(state.currentUser?.uid.orEmpty())
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged()
+
+    override val pendingRequests: Flow<List<SessionRequest>> = observeAuthenticatedUid()
+        .flatMapLatest { uid ->
+            if (uid.isBlank()) flowOf(emptyList())
+            else observePendingRequests(uid)
+        }
+
+    private fun observePendingRequests(uid: String): Flow<List<SessionRequest>> = callbackFlow {
         val listener: ListenerRegistration = db.collection("mediaSessions")
             .whereEqualTo("targetDeviceId", uid)
             .whereEqualTo("status", "REQUESTED")
@@ -30,8 +48,13 @@ class FirestoreSessionRepository @Inject constructor(
         awaitClose { listener.remove() }
     }
 
-    override val activeSession: Flow<RemoteSession?> = callbackFlow {
-        val uid = auth.currentUser?.uid ?: run { trySend(null); close(); return@callbackFlow }
+    override val activeSession: Flow<RemoteSession?> = observeAuthenticatedUid()
+        .flatMapLatest { uid ->
+            if (uid.isBlank()) flowOf(null)
+            else observeActiveSession(uid)
+        }
+
+    private fun observeActiveSession(uid: String): Flow<RemoteSession?> = callbackFlow {
         val listener = db.collection("mediaSessions")
             .whereEqualTo("targetDeviceId", uid)
             .whereIn("status", listOf("APPROVED", "ACTIVE"))
@@ -46,6 +69,10 @@ class FirestoreSessionRepository @Inject constructor(
     override suspend fun requestSession(request: SessionRequest) {
         val uid = auth.currentUser?.uid ?: error("Sign in first")
         require(uid == request.requesterId) { "Requester mismatch" }
+        require(request.targetDeviceId.isNotBlank() && request.targetDeviceId != uid) { "Choose a different paired device." }
+        require(request.capabilities.isNotEmpty() && request.capabilities.all { it in MEDIA_CAPABILITIES }) {
+            "This session path supports only camera, microphone, and screen-sharing requests. Use each feature's dedicated flow for other capabilities."
+        }
         db.collection("mediaSessions").document(request.sessionId).set(
             mapOf(
                 "controllerUid" to request.requesterId,
@@ -58,7 +85,11 @@ class FirestoreSessionRepository @Inject constructor(
         ).await()
     }
 
-    override suspend fun approve(requestId: String) = setStatus(requestId, SessionStatus.APPROVED)
+    override suspend fun approve(requestId: String) {
+        functions.getHttpsCallable("approveMediaSession")
+            .call(mapOf("sessionId" to requestId))
+            .await()
+    }
     override suspend fun deny(requestId: String) = setStatus(requestId, SessionStatus.STOPPED)
 
     override suspend fun stopActiveSession() {
@@ -79,6 +110,14 @@ class FirestoreSessionRepository @Inject constructor(
         require(snapshot.exists()) { "Session not found" }
         require(snapshot.getString("targetDeviceId") == uid) { "Only the paired device can change approval" }
         ref.update("status", status.name).await()
+    }
+
+    private companion object {
+        val MEDIA_CAPABILITIES = setOf(
+            SessionCapability.CAMERA,
+            SessionCapability.MICROPHONE,
+            SessionCapability.SCREEN_SHARING
+        )
     }
 
     private fun toRequest(doc: com.google.firebase.firestore.DocumentSnapshot): SessionRequest? {

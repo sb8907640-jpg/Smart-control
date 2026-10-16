@@ -9,6 +9,10 @@ on:
     paths: ["app/**", "backend/**", "desktop/**", "functions/**", "ios/**", "web/**", "scripts/**", "firestore.rules", "storage.rules", "firestore.indexes.json", "firebase.json", ".github/workflows/production-readiness.yml"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -16,12 +20,15 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     env:
+      CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+      PUBLIC_APP_URL: ${{ secrets.PUBLIC_APP_URL }}
       SMARTCONTROL_DATA_REGION: ${{ secrets.SMARTCONTROL_DATA_REGION }}
       NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
       NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
       NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+      SMARTCONTROL_WEB_URL: ${{ vars.SMARTCONTROL_WEB_URL }}
       FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
       SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
       SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
@@ -46,6 +53,14 @@ jobs:
         run: node scripts/verify-payment-owner-settings.js
       - name: Verify Start Stop background behavior
         run: node scripts/verify-start-stop-background.js
+      - name: Verify APK installation access flow
+        run: node scripts/verify-apk-install-access.js
+      - name: Verify file transfer state and cleanup flow
+        run: node scripts/verify-file-transfer-flow.js
+      - name: Verify Kotlin source block integrity
+        run: node scripts/verify-kotlin-braces.js
+      - name: Verify WebRTC capture cleanup paths
+        run: node scripts/verify-webrtc-capture-cleanup.js
       - name: Verify Designed for Continuous 24x7 Operation
         run: node scripts/verify-continuous-24x7.js
       - name: Verify Security, Encryption, Consent and Safety Controls
@@ -59,11 +74,10 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
       - name: Test Firestore rules in emulator
-        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore --project demo-family-suraksha "node functions/firestore-rules.test.js"
+        run: npx --yes firebase-tools@14.17.0 emulators:exec --only firestore,storage --project demo-family-suraksha "node functions/firestore-rules.test.js && node functions/storage-rules.test.js"
       - name: Verify Feature / Mode / Platform / Role contract
         run: node scripts/verify-feature-catalog.js
       - name: Enforce production configuration gate
-        continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
         run: node scripts/production-readiness-preflight.js
 
   backend:
@@ -141,6 +155,9 @@ jobs:
 
   desktop:
     runs-on: ubuntu-latest
+    env:
+      SMARTCONTROL_WEB_URL: ${{ vars.SMARTCONTROL_WEB_URL }}
+      SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -164,14 +181,35 @@ jobs:
           FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
         if: env.FIREBASE_GOOGLE_SERVICES_JSON != ''
         run: printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
-      - name: Build and test Android
+      - name: Run Android unit tests
+        timeout-minutes: 10
         env:
           SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
           SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
           SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
           SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
           SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
-        run: gradle test assembleOwnerDebug assembleLiteDebug assembleFullDebug -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+        run: gradle testOwnerDebugUnitTest testLiteDebugUnitTest testFullDebugUnitTest --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+
+      - name: Lint Android debug flavors
+        timeout-minutes: 10
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
+          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
+          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+        run: gradle lintOwnerDebug lintLiteDebug lintFullDebug --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
+
+      - name: Build Android debug APKs
+        timeout-minutes: 15
+        env:
+          SMARTCONTROL_GOOGLE_WEB_CLIENT_ID: ${{ secrets.SMARTCONTROL_GOOGLE_WEB_CLIENT_ID }}
+          SMARTCONTROL_TURN_URLS: ${{ secrets.SMARTCONTROL_TURN_URLS }}
+          SMARTCONTROL_TURN_USERNAME: ${{ secrets.SMARTCONTROL_TURN_USERNAME }}
+          SMARTCONTROL_TURN_CREDENTIAL: ${{ secrets.SMARTCONTROL_TURN_CREDENTIAL }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
+        run: gradle assembleOwnerDebug assembleLiteDebug assembleFullDebug --console=plain -PSMARTCONTROL_GOOGLE_WEB_CLIENT_ID="$SMARTCONTROL_GOOGLE_WEB_CLIENT_ID" -PSMARTCONTROL_TURN_URLS="$SMARTCONTROL_TURN_URLS" -PSMARTCONTROL_TURN_USERNAME="$SMARTCONTROL_TURN_USERNAME" -PSMARTCONTROL_TURN_CREDENTIAL="$SMARTCONTROL_TURN_CREDENTIAL" -PSMARTCONTROL_API_BASE_URL="$SMARTCONTROL_API_BASE_URL"
 
   cross-platform-integration:
     runs-on: ubuntu-latest

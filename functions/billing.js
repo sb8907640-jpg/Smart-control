@@ -59,12 +59,20 @@ function gatewaySecret(config, provider) {
   return String(config["payment.webhookSecret"] || config["payment.encryptionKey"] || "");
 }
 
-function requireAuth(request) {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+async function requireAuth(request) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const [userSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(request.auth.uid).get(),
+    db.collection("userAccess").doc(request.auth.uid).get()
+  ]);
+  if ((userSnapshot.exists && String(userSnapshot.data()?.status || "ACTIVE").toUpperCase() !== "ACTIVE") ||
+      (accessSnapshot.exists && accessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "This account is suspended or blocked.");
+  }
 }
 
-function requireAdmin(request) {
-  requireAuth(request);
+async function requireAdmin(request) {
+  await requireAuth(request);
   if (request.auth.token?.admin !== true) {
     throw new HttpsError("permission-denied", "Firebase admin role required.");
   }
@@ -152,7 +160,7 @@ async function activateSubscriptionForPayment(paymentId, payment, verification =
     const paymentSnap = await tx.get(paymentRef);
     if (!paymentSnap.exists) throw new HttpsError("not-found", "Payment not found.");
     const storedPayment = paymentSnap.data() || {};
-    if (storedPayment.status === "REFUNDED") throw new HttpsError("failed-precondition", "Refunded payment cannot activate a subscription.");
+    if (["REFUNDED", "REFUND_PENDING"].includes(String(storedPayment.status || ""))) throw new HttpsError("failed-precondition", "Refunded or refund-pending payment cannot activate a subscription.");
     if (storedPayment.status === "SUCCESS" && storedPayment.subscriptionId) {
       return { subscriptionId: storedPayment.subscriptionId, expiresAtEpochMs: Number(storedPayment.expiresAtEpochMs || 0), payment: storedPayment, alreadyApplied: true };
     }
@@ -231,12 +239,12 @@ async function incrementCouponUsage(code) {
 }
 
 exports.getPaymentConfig = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   return { config: await readPaymentConfig() };
 });
 
 exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const planId = String(request.data?.planId || "").trim();
   if (!planId) throw new HttpsError("invalid-argument", "Plan ID is required.");
 
@@ -370,7 +378,7 @@ exports.createPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gat
 });
 
 exports.verifyPayment = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const reference = String(request.data?.gatewayReference || "").trim();
   if (!paymentId || !reference) {
@@ -402,7 +410,7 @@ exports.verifyPayment = onCall(async (request) => {
 });
 
 exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] }, async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const orderId = String(request.data?.razorpayOrderId || "").trim();
   const razorpayPaymentId = String(request.data?.razorpayPaymentId || "").trim();
@@ -421,8 +429,8 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
   if (payment.gatewayProvider !== "RAZORPAY" || payment.gatewayOrderId !== orderId) {
     throw new HttpsError("failed-precondition", "Razorpay order does not match this payment.");
   }
-  if (payment.status === "REFUNDED") {
-    throw new HttpsError("failed-precondition", "Refunded payment cannot be verified.");
+  if (["REFUNDED", "REFUND_PENDING"].includes(String(payment.status || ""))) {
+    throw new HttpsError("failed-precondition", "Refunded or refund-pending payment cannot be verified.");
   }
   const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
   const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
@@ -469,19 +477,14 @@ exports.verifyRazorpayPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySec
     razorpayPaymentId,
     verifiedAtEpochMs: Date.now()
   });
-  await ref.update({
-    status: "SUCCESS",
-    gatewayReference: razorpayPaymentId,
-    razorpayPaymentId,
-    subscriptionId: activation.subscriptionId,
-    verifiedAtEpochMs: Date.now(),
-    updatedAtEpochMs: Date.now()
-  });
+  // activateSubscriptionForPayment atomically records the verified gateway
+  // reference and SUCCESS status with the subscription. Do not write SUCCESS
+  // again here: a concurrent refund may already have changed it to REFUND_PENDING.
   return { ok: true, paymentId, subscriptionId: activation.subscriptionId, expiresAtEpochMs: activation.expiresAtEpochMs };
 });
 
 exports.applyEmi = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   const tenureMonths = Number(request.data?.tenureMonths || 0);
   if (!paymentId || !Number.isInteger(tenureMonths) || tenureMonths <= 0) {
@@ -529,49 +532,233 @@ exports.applyEmi = onCall(async (request) => {
   return { id: scheduleRef.id };
 });
 
-exports.refundPayment = onCall(async (request) => {
-  requireAdmin(request);
-  const paymentId = String(request.data?.paymentId || "").trim();
-  if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
+exports.refundPayment = onCall(
+  { secrets: [razorpayKeyId, razorpayKeySecret, gatewayEncryptionKey] },
+  async (request) => {
+    await requireAdmin(request);
+    const paymentId = String(request.data?.paymentId || "").trim();
+    if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
 
-  const config = await readPaymentConfig();
-  if (config["payment.refundEnabled"] === "false") {
-    throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    const config = await readPaymentConfig();
+    if (config["payment.refundEnabled"] === "false") {
+      throw new HttpsError("failed-precondition", "Refunds are disabled.");
+    }
+
+    const ref = db.collection("payments").doc(paymentId);
+    const now = Date.now();
+    const payment = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
+      const stored = snap.data() || {};
+      if (stored.status !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
+      }
+
+      const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
+      if (windowDays > 0 && now - Number(stored.createdAtEpochMs || 0) > windowDays * 86400000) {
+        throw new HttpsError("failed-precondition", "Refund window has expired.");
+      }
+
+      const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
+      const refundAmountMinor = Math.round(Number(stored.amountMinor || 0) * refundPercent / 100);
+      if (refundAmountMinor <= 0) {
+        throw new HttpsError("failed-precondition", "Configured refund amount must be greater than zero.");
+      }
+
+      tx.update(ref, {
+        status: "REFUND_PENDING",
+        refundAmountMinor,
+        refundRequestedAtEpochMs: now,
+        refundRequestedBy: request.auth.uid,
+        // Keep the previous attempt auditable, but clear its active ID so
+        // events from a new retry cannot be compared with a stale refund ID.
+        previousGatewayRefundId: stored.gatewayRefundId || null,
+        previousGatewayRefundStatus: stored.gatewayRefundStatus || null,
+        gatewayRefundId: FieldValue.delete(),
+        gatewayRefundStatus: FieldValue.delete(),
+        refundError: FieldValue.delete(),
+        updatedAtEpochMs: now
+      });
+      return { ...stored, refundAmountMinor };
+    });
+
+    // Restore a failed refund attempt only if the same refund lock is still
+    // pending. Webhooks may have completed the refund while the API call was in flight.
+    const restoreRefundPendingToSuccess = async (updates = {}, expectedRefundId = null) =>
+      db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return "MISSING";
+        const latestPayment = latestSnap.data() || {};
+        if (latestPayment.status !== "REFUND_PENDING") return String(latestPayment.status || "");
+        const currentRefundId = String(latestPayment.gatewayRefundId || "").trim();
+        if (currentRefundId && (!expectedRefundId || currentRefundId !== expectedRefundId)) {
+          return "REFUND_PENDING";
+        }
+        if (!currentRefundId && expectedRefundId &&
+            latestPayment.previousGatewayRefundId === expectedRefundId) {
+          return "REFUND_PENDING";
+        }
+        tx.update(ref, { ...updates, status: "SUCCESS", updatedAtEpochMs: Date.now() });
+        return "SUCCESS";
+      });
+
+    const provider = normalizeGateway(payment.gatewayProvider || payment.gateway);
+    if (provider === "TEST") {
+      await ref.update({
+        status: "REFUNDED",
+        refundedAtEpochMs: Date.now(),
+        refundedBy: request.auth.uid,
+        updatedAtEpochMs: Date.now()
+      });
+      if (payment.subscriptionId) {
+        await db.collection("subscriptions").doc(payment.subscriptionId).set({
+          status: "CANCELLED",
+          cancelledAtEpochMs: Date.now(),
+          updatedAtEpochMs: Date.now()
+        }, { merge: true });
+      }
+      return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+    }
+
+    if (provider !== "RAZORPAY") {
+      const refundState = await restoreRefundPendingToSuccess({ refundError: "UNSUPPORTED_PROVIDER" });
+      if (refundState === "REFUNDED") return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while validating the provider; reconcile before retrying.");
+      }
+      throw new HttpsError("failed-precondition", "This payment provider does not have a server-side refund adapter; no refund was issued.");
+    }
+
+    const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
+    const keyId = String(permit?.credentials?.keyId || razorpayKeyId.value() || "").trim();
+    const keySecret = String(permit?.credentials?.keySecret || razorpayKeySecret.value() || "").trim();
+    const razorpayPaymentId = String(payment.razorpayPaymentId || payment.gatewayReference || "").trim();
+    if (!keyId || !keySecret || !razorpayPaymentId) {
+      const refundState = await restoreRefundPendingToSuccess({ refundError: "RAZORPAY_REFUND_NOT_CONFIGURED" });
+      if (refundState === "REFUNDED") return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while checking gateway credentials; reconcile before retrying.");
+      }
+      throw new HttpsError("failed-precondition", "Razorpay refund credentials or payment reference are missing.");
+    }
+
+    // Keep REFUND_PENDING for ambiguous network/5xx outcomes to prevent a duplicate
+    // refund on retry. A definitive provider 4xx response is safe to return to SUCCESS.
+    const response = await fetch(
+      "https://api.razorpay.com/v1/payments/" + encodeURIComponent(razorpayPaymentId) + "/refund",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64"),
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          amount: payment.refundAmountMinor,
+          notes: { smartcontrolPaymentId: paymentId }
+        })
+      }
+    );
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500) {
+        const refundState = await restoreRefundPendingToSuccess({
+          refundError: "RAZORPAY_REJECTED_" + response.status
+        });
+        if (refundState === "REFUNDED") {
+          return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor };
+        }
+      } else {
+        await ref.update({
+          refundError: "RAZORPAY_OUTCOME_UNKNOWN",
+          updatedAtEpochMs: Date.now()
+        });
+      }
+      throw new HttpsError("failed-precondition", "Razorpay did not confirm the refund request. Check the gateway refund status before retrying.");
+    }
+
+    const gatewayRefundId = String(result.id || "").trim();
+    const returnedAmount = Number(result.amount ?? payment.refundAmountMinor);
+    if (!gatewayRefundId || returnedAmount !== Number(payment.refundAmountMinor)) {
+      await ref.update({
+        refundError: "RAZORPAY_REFUND_RESPONSE_MISMATCH",
+        updatedAtEpochMs: Date.now()
+      });
+      throw new HttpsError("failed-precondition", "Razorpay returned an incomplete refund response; payment remains pending reconciliation.");
+    }
+
+    if (String(result.status || "").toLowerCase() === "failed") {
+      const refundState = await restoreRefundPendingToSuccess({
+        gatewayRefundId,
+        gatewayRefundStatus: "failed",
+        refundError: "RAZORPAY_REFUND_FAILED"
+      }, gatewayRefundId);
+      if (refundState === "REFUNDED") {
+        return { ok: true, status: "REFUNDED", refundAmountMinor: payment.refundAmountMinor, gatewayRefundId };
+      }
+      if (refundState !== "SUCCESS") {
+        throw new HttpsError("failed-precondition", "Refund state changed while processing the failure response; reconcile before retrying.");
+      }
+      throw new HttpsError("failed-precondition", "Razorpay reported that the refund failed; no refund was recorded.");
+    }
+
+    const processed = String(result.status || "").toLowerCase() === "processed";
+    const finalStatus = await db.runTransaction(async (tx) => {
+      const latestSnap = await tx.get(ref);
+      if (!latestSnap.exists) throw new HttpsError("not-found", "Payment disappeared during refund reconciliation.");
+      const latestPayment = latestSnap.data() || {};
+      if (latestPayment.status === "REFUNDED") {
+        if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) {
+          throw new HttpsError("failed-precondition", "A different refund was completed; reconcile the gateway record.");
+        }
+        if (latestPayment.subscriptionId) {
+          const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+          await tx.get(subscriptionRef);
+          tx.set(subscriptionRef, {
+            status: "CANCELLED",
+            cancelledAtEpochMs: Date.now(),
+            updatedAtEpochMs: Date.now()
+          }, { merge: true });
+        }
+        return "REFUNDED";
+      }
+      if (latestPayment.status !== "REFUND_PENDING") {
+        throw new HttpsError("failed-precondition", "Refund state changed during gateway processing; reconcile before retrying.");
+      }
+      if ((latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== gatewayRefundId) ||
+          (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === gatewayRefundId)) {
+        throw new HttpsError("failed-precondition", "A different or previous refund ID is active; reconcile before retrying.");
+      }
+      if (processed && latestPayment.subscriptionId) {
+        const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+        await tx.get(subscriptionRef);
+        tx.set(subscriptionRef, {
+          status: "CANCELLED",
+          cancelledAtEpochMs: Date.now(),
+          updatedAtEpochMs: Date.now()
+        }, { merge: true });
+      }
+      tx.update(ref, {
+        status: processed ? "REFUNDED" : "REFUND_PENDING",
+        gatewayRefundId,
+        gatewayRefundStatus: String(result.status || "pending"),
+        refundedAtEpochMs: processed ? Date.now() : null,
+        refundedBy: processed ? request.auth.uid : null,
+        updatedAtEpochMs: Date.now()
+      });
+      return processed ? "REFUNDED" : "REFUND_PENDING";
+    });
+
+    return {
+      ok: true,
+      status: finalStatus,
+      refundAmountMinor: payment.refundAmountMinor,
+      gatewayRefundId
+    };
   }
-
-  const ref = db.collection("payments").doc(paymentId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Payment not found.");
-  const payment = snap.data() || {};
-  if (payment.status !== "SUCCESS") throw new HttpsError("failed-precondition", "Only successful payments can be refunded.");
-
-  const windowDays = Math.max(0, Number(config["payment.refundWindowDays"] || 0));
-  if (windowDays > 0 && Date.now() - Number(payment.createdAtEpochMs || 0) > windowDays * 86400000) {
-    throw new HttpsError("failed-precondition", "Refund window has expired.");
-  }
-
-  const refundPercent = percent(config["payment.refundPercent"] ?? 100, "Refund percent");
-  const refundAmountMinor = Math.round(Number(payment.amountMinor || 0) * refundPercent / 100);
-  await ref.update({
-    status: "REFUNDED",
-    refundAmountMinor,
-    refundedAtEpochMs: Date.now(),
-    refundedBy: request.auth.uid,
-    updatedAtEpochMs: Date.now()
-  });
-
-  if (payment.subscriptionId) {
-    await db.collection("subscriptions").doc(payment.subscriptionId).set({
-      status: "CANCELLED",
-      cancelledAtEpochMs: Date.now(),
-      updatedAtEpochMs: Date.now()
-    }, { merge: true });
-  }
-  return { ok: true, refundAmountMinor };
-});
+);
 
 exports.createCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
     throw new HttpsError("invalid-argument", "Coupon code is invalid.");
@@ -600,7 +787,7 @@ exports.createCoupon = onCall(async (request) => {
 });
 
 exports.updateCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   const allowed = ["discountPercent","discountMinor","usageLimit","enabled","expiresAtEpochMs"];
@@ -615,7 +802,7 @@ exports.updateCoupon = onCall(async (request) => {
 });
 
 exports.deleteCoupon = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
   if (!code) throw new HttpsError("invalid-argument", "Coupon code is required.");
   await db.collection("coupons").doc(code).delete();
@@ -623,21 +810,21 @@ exports.deleteCoupon = onCall(async (request) => {
 });
 
 exports.listPaymentLedger = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("payments").orderBy("createdAtEpochMs", "desc").limit(limit).get();
   return { payments: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.listSubscriptions = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const limit = Math.min(500, Math.max(1, Number(request.data?.limit || 100)));
   const snap = await db.collection("subscriptions").orderBy("updatedAtEpochMs", "desc").limit(limit).get();
   return { subscriptions: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.updateSubscription = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const id = String(request.data?.subscriptionId || "").trim();
   const action = String(request.data?.action || "").toUpperCase();
   if (!id || !["CANCEL","EXTEND","UPGRADE","DOWNGRADE","PAUSE","RESUME"].includes(action)) {
@@ -671,7 +858,7 @@ exports.updateSubscription = onCall(async (request) => {
 });
 
 exports.getPaymentReport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
@@ -695,7 +882,7 @@ exports.getPaymentReport = onCall(async (request) => {
 });
 
 exports.recordPayout = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const amountMinor = money(request.data?.amountMinor || 0);
   if (amountMinor <= 0) throw new HttpsError("invalid-argument", "Payout amount must be positive.");
   const ref = db.collection("payouts").doc();
@@ -713,14 +900,14 @@ exports.recordPayout = onCall(async (request) => {
 });
 
 exports.listPayouts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const snap = await db.collection("payouts").orderBy("createdAtEpochMs", "desc").limit(500).get();
   return { payouts: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 
 exports.getPublicPlans = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const snap = await db.collection("plans")
     .where("enabled", "==", true)
     .orderBy("displayOrder", "asc")
@@ -731,7 +918,7 @@ exports.getPublicPlans = onCall(async (request) => {
 });
 
 exports.getMySubscription = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const snap = await db.collection("subscriptions")
     .where("userId", "==", request.auth.uid)
     .orderBy("updatedAtEpochMs", "desc")
@@ -742,7 +929,7 @@ exports.getMySubscription = onCall(async (request) => {
 });
 
 exports.duplicatePlan = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const sourceId = String(request.data?.sourcePlanId || "").trim();
   const newId = String(request.data?.newPlanId || "").trim();
   if (!sourceId || !newId) throw new HttpsError("invalid-argument", "Source and new plan IDs are required.");
@@ -758,7 +945,7 @@ exports.duplicatePlan = onCall(async (request) => {
 
 
 exports.getPaymentInvoice = onCall(async (request) => {
-  requireAuth(request);
+  await requireAuth(request);
   const paymentId = String(request.data?.paymentId || "").trim();
   if (!paymentId) throw new HttpsError("invalid-argument", "Payment ID is required.");
   const snap = await db.collection("invoices").doc(paymentId).get();
@@ -771,7 +958,7 @@ exports.getPaymentInvoice = onCall(async (request) => {
 });
 
 exports.getPaymentReportExport = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const start = Number(request.data?.startEpochMs || 0);
   const end = Number(request.data?.endEpochMs || Date.now());
   if (start < 0 || end < start) throw new HttpsError("invalid-argument", "Invalid report range.");
@@ -825,26 +1012,52 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         res.status(400).send("Raw webhook body is required.");
         return;
       }
-      // Parse only to locate the payment's credential revision; no state changes
+
+      // Parse only to locate the payment's credential revision. No state changes
       // occur until the HMAC signature is validated against that revision.
       const event = JSON.parse(req.rawBody.toString("utf8"));
       const eventName = String(event.event || "");
-      if (!["payment.captured", "payment.failed", "payment.refunded"].includes(eventName)) {
+      const supportedEvents = [
+        "payment.captured",
+        "payment.failed",
+        "payment.refunded",
+        "refund.created",
+        "refund.processed",
+        "refund.failed"
+      ];
+      if (!supportedEvents.includes(eventName)) {
         res.status(200).json({ ok: true, ignored: true });
         return;
       }
-      const entity = event.payload?.payment?.entity || event.payload?.order?.entity || {};
-      const orderId = String(entity.order_id || entity.id || "").trim();
-      const razorpayPaymentId = String(entity.id || "").trim();
-      if (!orderId) {
-        res.status(400).send("Razorpay order ID is missing.");
+
+      const isRefundEvent = eventName.startsWith("refund.");
+      const entity = isRefundEvent
+        ? event.payload?.refund?.entity || {}
+        : event.payload?.payment?.entity || event.payload?.order?.entity || {};
+      const orderId = String(entity.order_id || "").trim();
+      const razorpayPaymentId = String(isRefundEvent ? entity.payment_id || "" : entity.id || "").trim();
+      if ((!isRefundEvent && !orderId) || (isRefundEvent && !razorpayPaymentId)) {
+        res.status(400).send(isRefundEvent ? "Razorpay payment ID is missing." : "Razorpay order ID is missing.");
         return;
       }
-      const matches = await db.collection("payments").where("gatewayOrderId", "==", orderId).limit(1).get();
+
+      let matches;
+      if (isRefundEvent) {
+        matches = await db.collection("payments")
+          .where("razorpayPaymentId", "==", razorpayPaymentId).limit(1).get();
+        if (matches.empty) {
+          matches = await db.collection("payments")
+            .where("gatewayReference", "==", razorpayPaymentId).limit(1).get();
+        }
+      } else {
+        matches = await db.collection("payments")
+          .where("gatewayOrderId", "==", orderId).limit(1).get();
+      }
       if (matches.empty) {
         res.status(404).send("Payment order not found.");
         return;
       }
+
       const paymentDoc = matches.docs[0];
       const payment = paymentDoc.data() || {};
       const permit = await getActiveGatewayPermit(payment.gatewayPermitRevision);
@@ -861,6 +1074,7 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
         res.status(401).send("Invalid signature.");
         return;
       }
+
       const now = Date.now();
       if (eventName === "payment.captured") {
         if (Number(entity.amount || payment.amountMinor) !== Number(payment.amountMinor) ||
@@ -873,35 +1087,150 @@ exports.razorpayWebhook = require("firebase-functions/v2/https").onRequest(
           razorpayPaymentId,
           verifiedAtEpochMs: now
         });
-        await paymentDoc.ref.update({
-          status: "SUCCESS",
-          gatewayReference: razorpayPaymentId,
-          razorpayPaymentId,
-          subscriptionId: activation.subscriptionId,
-          verifiedAtEpochMs: now,
-          updatedAtEpochMs: now
-        });
+        // The activation transaction already persisted SUCCESS and verification
+        // metadata. A second write here could overwrite a concurrent REFUND_PENDING.
       } else if (eventName === "payment.failed") {
-        await paymentDoc.ref.update({
-          status: "FAILED",
-          gatewayReference: razorpayPaymentId || null,
-          updatedAtEpochMs: now
+        // Webhooks can arrive out of order. Re-read inside a transaction so a
+        // delayed failure event cannot overwrite a captured SUCCESS payment.
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "PENDING") return;
+          tx.update(paymentDoc.ref, {
+            status: "FAILED",
+            gatewayReference: razorpayPaymentId || null,
+            updatedAtEpochMs: now
+          });
+        });
+      } else if (eventName === "refund.created") {
+        const refundId = String(entity.id || "").trim();
+        if (!refundId) {
+          res.status(400).send("Razorpay refund ID is missing.");
+          return;
+        }
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "REFUND_PENDING" ||
+              latestPayment.previousGatewayRefundId === refundId ||
+              (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId)) return;
+          tx.update(paymentDoc.ref, {
+            gatewayRefundId: refundId,
+            gatewayRefundStatus: String(entity.status || "created"),
+            updatedAtEpochMs: now
+          });
+        });
+      } else if (eventName === "refund.processed") {
+        const refundId = String(entity.id || "").trim();
+        const refundAmount = Number(entity.amount || 0);
+        if (!refundId) {
+          res.status(400).send("Razorpay refund ID is missing.");
+          return;
+        }
+        const refundResult = await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return { failure: { statusCode: 404, message: "Payment not found." } };
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status === "REFUNDED") {
+            if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId) {
+              return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
+            }
+            if (latestPayment.subscriptionId) {
+              const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+              await tx.get(subscriptionRef);
+              tx.set(subscriptionRef, {
+                status: "CANCELLED",
+                cancelledAtEpochMs: now,
+                updatedAtEpochMs: now
+              }, { merge: true });
+            }
+            return { alreadyProcessed: true };
+          }
+          if (latestPayment.status !== "REFUND_PENDING" ||
+              (latestPayment.refundAmountMinor != null && refundAmount !== Number(latestPayment.refundAmountMinor))) {
+            return { failure: { statusCode: 409, message: "Refund does not match a pending refund request." } };
+          }
+          if ((latestPayment.gatewayRefundId && latestPayment.gatewayRefundId !== refundId) ||
+              (!latestPayment.gatewayRefundId && latestPayment.previousGatewayRefundId === refundId)) {
+            return { failure: { statusCode: 400, message: "Razorpay refund identity mismatch." } };
+          }
+          if (latestPayment.subscriptionId) {
+            const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+            await tx.get(subscriptionRef);
+            tx.set(subscriptionRef, {
+              status: "CANCELLED",
+              cancelledAtEpochMs: now,
+              updatedAtEpochMs: now
+            }, { merge: true });
+          }
+          tx.update(paymentDoc.ref, {
+            status: "REFUNDED",
+            gatewayRefundId: refundId,
+            gatewayRefundStatus: "processed",
+            refundAmountMinor: refundAmount,
+            refundedAtEpochMs: now,
+            updatedAtEpochMs: now
+          });
+          return { processed: true };
+        });
+        if (refundResult.failure) {
+          res.status(refundResult.failure.statusCode).send(refundResult.failure.message);
+          return;
+        }
+        if (refundResult.alreadyProcessed) {
+          res.status(200).json({ ok: true, alreadyProcessed: true });
+          return;
+        }
+      } else if (eventName === "refund.failed") {
+        const refundId = String(entity.id || "").trim();
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.status !== "REFUND_PENDING") return;
+          if (latestPayment.gatewayRefundId && latestPayment.gatewayRefundId === refundId) {
+            // Restore SUCCESS only while this exact refund is still pending.
+            // A processed/refunded webhook that won the race must never be reverted.
+            tx.update(paymentDoc.ref, {
+              status: "SUCCESS",
+              gatewayRefundStatus: "failed",
+              refundError: "RAZORPAY_REFUND_FAILED",
+              updatedAtEpochMs: now
+            });
+          } else {
+            // If this event races the API response, keep the lock until the active
+            // refund ID can be matched; reconciliation is safer than a duplicate.
+            tx.update(paymentDoc.ref, {
+              refundError: "RAZORPAY_REFUND_FAILURE_REQUIRES_RECONCILIATION",
+              updatedAtEpochMs: now
+            });
+          }
         });
       } else if (eventName === "payment.refunded") {
-        await paymentDoc.ref.update({
-          status: "REFUNDED",
-          gatewayReference: razorpayPaymentId || null,
-          refundedAtEpochMs: now,
-          updatedAtEpochMs: now
-        });
-        if (payment.subscriptionId) {
-          await db.collection("subscriptions").doc(payment.subscriptionId).set({
-            status: "CANCELLED",
-            cancelledAtEpochMs: now,
+        await db.runTransaction(async (tx) => {
+          const latestSnap = await tx.get(paymentDoc.ref);
+          if (!latestSnap.exists) return;
+          const latestPayment = latestSnap.data() || {};
+          if (latestPayment.subscriptionId) {
+            const subscriptionRef = db.collection("subscriptions").doc(latestPayment.subscriptionId);
+            await tx.get(subscriptionRef);
+            tx.set(subscriptionRef, {
+              status: "CANCELLED",
+              cancelledAtEpochMs: now,
+              updatedAtEpochMs: now
+            }, { merge: true });
+          }
+          tx.update(paymentDoc.ref, {
+            status: "REFUNDED",
+            gatewayReference: razorpayPaymentId || null,
+            refundedAtEpochMs: now,
             updatedAtEpochMs: now
-          }, { merge: true });
-        }
+          });
+        });
       }
+
       res.status(200).json({ ok: true });
     } catch (error) {
       console.error("razorpayWebhook", error?.message || "unknown error");
@@ -963,41 +1292,64 @@ exports.paymentGatewayWebhook = require("firebase-functions/v2/https").onRequest
     }
     const payment = snap.data() || {};
     if (status === "SUCCESS" || status === "PAID" || status === "CAPTURED") {
-      const activation = await activateSubscriptionForPayment(paymentId, payment);
-      await ref.update({
-        status: "SUCCESS",
-        gatewayReference: reference,
-        subscriptionId: activation.subscriptionId,
-        verifiedAtEpochMs: Date.now(),
-        updatedAtEpochMs: Date.now()
-      });
+      // Persist the provider reference inside the same transaction that activates
+      // the subscription. A follow-up write could otherwise overwrite a concurrent refund lock.
+      try {
+        await activateSubscriptionForPayment(paymentId, payment, {
+          gatewayReference: reference,
+          verifiedAtEpochMs: Date.now()
+        });
+      } catch (error) {
+        if (error?.code === "failed-precondition" &&
+            /Refunded or refund-pending payment cannot activate a subscription/.test(String(error.message || ""))) {
+          res.status(200).json({ ok: true, ignored: true });
+          return;
+        }
+        throw error;
+      }
     } else if (status === "FAILED" || status === "CANCELLED") {
-      await ref.update({
-        status: status === "CANCELLED" ? "FAILED" : "FAILED",
-        gatewayReference: reference,
-        updatedAtEpochMs: Date.now()
+      await db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return;
+        const latestPayment = latestSnap.data() || {};
+        // A delayed failure event must not downgrade a payment that has already
+        // succeeded, entered refund reconciliation, or been refunded.
+        if (latestPayment.status !== "PENDING") return;
+        tx.update(ref, {
+          status: "FAILED",
+          gatewayReference: reference,
+          updatedAtEpochMs: Date.now()
+        });
       });
     } else if (status === "REFUNDED") {
-      await ref.update({
-        status: "REFUNDED",
-        gatewayReference: reference,
-        refundAmountMinor: Number(payment.amountMinor || 0),
-        refundedAtEpochMs: Date.now(),
-        updatedAtEpochMs: Date.now()
+      await db.runTransaction(async (tx) => {
+        const latestSnap = await tx.get(ref);
+        if (!latestSnap.exists) return;
+        const latestPayment = latestSnap.data() || {};
+        if (latestPayment.status === "REFUNDED") return;
+        const now = Date.now();
+        if (latestPayment.subscriptionId) {
+          tx.set(db.collection("subscriptions").doc(latestPayment.subscriptionId), {
+            status: "CANCELLED",
+            cancelledAtEpochMs: now,
+            updatedAtEpochMs: now
+          }, { merge: true });
+        }
+        // Payment and subscription state move together. A later success webhook
+        // cannot reactivate this payment because activation rejects REFUNDED.
+        tx.update(ref, {
+          status: "REFUNDED",
+          gatewayReference: reference,
+          refundAmountMinor: Number(latestPayment.amountMinor || 0),
+          refundedAtEpochMs: now,
+          updatedAtEpochMs: now
+        });
       });
-      if (payment.subscriptionId) {
-        await db.collection("subscriptions").doc(payment.subscriptionId).set({
-          status: "CANCELLED",
-          cancelledAtEpochMs: Date.now(),
-          updatedAtEpochMs: Date.now()
-        }, { merge: true });
-      }
     } else {
-      await ref.update({
-        status: "PENDING",
-        gatewayReference: reference,
-        updatedAtEpochMs: Date.now()
-      });
+      // Unknown/intermediate provider states are acknowledged but never reset a
+      // terminal or successful payment back to PENDING.
+      res.status(200).json({ ok: true, ignored: true });
+      return;
     }
 
     res.status(200).json({ ok: true });

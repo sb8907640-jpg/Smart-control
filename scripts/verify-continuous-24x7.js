@@ -19,6 +19,7 @@ function runtime(name, detail) {
 }
 
 const service = read("app/src/main/java/com/smartcontrol/service/FamilySafetyService.kt");
+const bootReceiver = read("app/src/main/java/com/smartcontrol/service/SmartControlBootReceiver.kt");
 const manifest = read("app/src/main/AndroidManifest.xml");
 const recovery = read("app/src/main/java/com/smartcontrol/domain/recovery/ConnectionRecoveryPolicy.kt");
 const docs = read("docs/master-specification.md");
@@ -71,10 +72,40 @@ check(
   "Long-running work is represented by an Android foreground service with a visible notification."
 );
 
+const sessionScreen = read("app/src/main/java/com/smartcontrol/presentation/session/SessionScreen.kt");
 check(
-  "Foreground service remains restart-oriented",
-  service.includes("return START_STICKY"),
-  "START_STICKY supports service restart when Android permits it."
+  "Android background-service limits are disclosed to the user",
+  sessionScreen.includes("Android 15+") &&
+    sessionScreen.includes("six hours per 24-hour period") &&
+    sessionScreen.includes("open the app to resume"),
+  "The Home screen explains the platform limit and user action needed to resume sync."
+);
+
+check(
+  "Android 15 background-start and dataSync timeout limitations are surfaced",
+  bootReceiver.includes("Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM") &&
+    bootReceiver.includes("BackgroundRecoveryNotifier.show") &&
+    service.includes("override fun onTimeout(startId: Int, fgsType: Int)") &&
+    service.includes("BackgroundRecoveryNotifier.show"),
+  "API 35+ cannot launch dataSync from BOOT_COMPLETED and has a six-hour/24-hour dataSync limit; the app notifies the user instead of claiming unrestricted 24x7 execution."
+);
+
+check(
+  "Service restart cannot bypass consent or opt-in",
+  service.includes("return START_STICKY") &&
+    service.includes("isStartupAllowed(intent)") &&
+    service.includes("ACTION_AUTO_START") &&
+    bootReceiver.includes("ACTION_AUTO_START") &&
+    bootReceiver.includes("auto_start_service"),
+  "A null-intent process restart revalidates consent and requires auto-start opt-in; reboot recovery uses an explicit action."
+);
+
+check(
+  "Manual service start is independent of reboot auto-start preference",
+  service.includes('const val ACTION_USER_START = "com.smartcontrol.action.USER_START"') &&
+    service.includes("Intent(context, FamilySafetyService::class.java).setAction(ACTION_USER_START)") &&
+    service.includes("(intent == null || intent.action == ACTION_AUTO_START) && !autoStartEnabled"),
+  "User-initiated starts remain available while null-intent and reboot recovery still require explicit auto-start opt-in."
 );
 
 check(
@@ -174,6 +205,10 @@ runtime(
 runtime(
   "Physical reboot recovery",
   "Requires device restart followed by eligible service/pairing recovery; Android may restrict background starts."
+);
+runtime(
+  "Android 15+ background-service recovery",
+  "A dataSync foreground service cannot start directly from BOOT_COMPLETED on target API 35+ and has a six-hour-per-24-hour limit; the user must reopen the app to resume after the OS stops or blocks it."
 );
 runtime(
   "Internet OFF/ON",

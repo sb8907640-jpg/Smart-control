@@ -1,6 +1,8 @@
 package com.smartcontrol.presentation.consent
 
 import android.content.Context
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +19,7 @@ fun ConsentScreen(context: Context, onAccepted: () -> Unit) {
     var saveFailed by remember { mutableStateOf(false) }
 
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Legal & Privacy Consent", style = MaterialTheme.typography.headlineSmall)

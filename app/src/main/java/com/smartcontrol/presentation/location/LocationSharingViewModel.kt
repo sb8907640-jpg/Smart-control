@@ -7,15 +7,21 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.smartcontrol.data.location.FirestoreLocationSharingRepository
 import com.smartcontrol.domain.location.SharedLocation
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -30,25 +36,89 @@ class LocationSharingViewModel @Inject constructor(
     val sharing: StateFlow<Boolean> = _sharing
     private val _lastLocation = MutableStateFlow<SharedLocation?>(null)
     val lastLocation: StateFlow<SharedLocation?> = _lastLocation
+    private val _status = MutableStateFlow<String?>(null)
+    val status: StateFlow<String?> = _status
     val hasPermission: Boolean
         get() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    private var lastObservedUid = auth.currentUser?.uid.orEmpty()
+
+    init {
+        viewModelScope.launch {
+            callbackFlow {
+                val listener = FirebaseAuth.AuthStateListener { state ->
+                    trySend(state.currentUser?.uid.orEmpty())
+                }
+                auth.addAuthStateListener(listener)
+                trySend(auth.currentUser?.uid.orEmpty())
+                awaitClose { auth.removeAuthStateListener(listener) }
+            }.distinctUntilChanged().collect { uid ->
+                if (uid != lastObservedUid) {
+                    lastObservedUid = uid
+                    _sharing.value = false
+                    _lastLocation.value = null
+                    _status.value = null
+                }
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun publishCurrentLocation() = viewModelScope.launch {
-        val uid = auth.currentUser?.uid ?: return@launch
-        if (!privacyPrefs.getBoolean("allow_location_sharing", true)) return@launch
-        if (!hasPermission) return@launch
-        val location = LocationServices.getFusedLocationProviderClient(context).lastLocation.await() ?: return@launch
-        val shared = SharedLocation(uid, location.latitude, location.longitude, location.accuracy, System.currentTimeMillis())
-        repository.publish(shared)
-        _lastLocation.value = shared
-        _sharing.value = true
+        val uid = auth.currentUser?.uid ?: run { _status.value = "Sign in before sharing location."; return@launch }
+        if (!privacyPrefs.getBoolean("allow_location_sharing", true)) {
+            _status.value = "Location sharing is disabled in Privacy Controls."
+            return@launch
+        }
+        if (!hasPermission) {
+            _status.value = "Allow location permission in Android Settings first."
+            return@launch
+        }
+        val priority = if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        ) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val currentLocationRequest = CurrentLocationRequest.Builder()
+            .setPriority(priority)
+            .setMaxUpdateAgeMillis(0)
+            .setDurationMillis(30_000)
+            .build()
+        val location = try {
+            LocationServices.getFusedLocationProviderClient(context)
+                .getCurrentLocation(currentLocationRequest, CancellationTokenSource().token)
+                .await()
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not obtain a current location fix."
+            return@launch
+        } ?: run {
+            _status.value = "No current location fix is available. Turn on Location and try again."
+            return@launch
+        }
+        val capturedAtEpochMs = location.time
+        val ageMs = System.currentTimeMillis() - capturedAtEpochMs
+        if (capturedAtEpochMs <= 0L || ageMs > 2 * 60 * 1000L) {
+            _status.value = "The location fix is older than two minutes. Try again after the device gets a fresh fix."
+            return@launch
+        }
+        val shared = SharedLocation(uid, location.latitude, location.longitude, location.accuracy, capturedAtEpochMs)
+        try {
+            repository.publish(shared)
+            _lastLocation.value = shared
+            _sharing.value = true
+            _status.value = "Location shared successfully."
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Location sharing failed. Check connectivity and Owner policy."
+        }
     }
 
     fun stopSharing() = viewModelScope.launch {
-        val uid = auth.currentUser?.uid ?: return@launch
-        repository.stopSharing(uid)
-        _sharing.value = false
+        val uid = auth.currentUser?.uid ?: run { _status.value = "Sign in first."; return@launch }
+        try {
+            repository.stopSharing(uid)
+            _sharing.value = false
+            _status.value = "Location sharing stopped."
+        } catch (error: Exception) {
+            _status.value = error.message ?: "Could not stop location sharing."
+        }
     }
 }

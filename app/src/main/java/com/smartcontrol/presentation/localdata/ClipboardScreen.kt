@@ -1,5 +1,7 @@
 package com.smartcontrol.presentation.localdata
 import android.content.ClipData
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.*
@@ -11,7 +13,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ClipboardScreen(onBack:()->Unit){
  val context=LocalContext.current;var text by remember{mutableStateOf("")}
- Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
   Text("Clipboard",style=MaterialTheme.typography.headlineSmall)
   Text("Visible local clipboard viewer. It does not monitor the clipboard in the background or sync it remotely.")
   Button(onClick={val cm=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager;text=cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()},modifier=Modifier.fillMaxWidth()){Text("Read current clipboard")}

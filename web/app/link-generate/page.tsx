@@ -69,8 +69,17 @@ export default function LinkGeneratePage() {
     setNotice("");
     setInvite(null);
     try {
-      const base = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").replace(/\/$/, "");
-      if (!base) throw new Error("Smart Control API URL is not configured.");
+      const rawBase = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").trim();
+      if (!rawBase) throw new Error("Smart Control API URL is not configured.");
+      const parsedBase = new URL(rawBase);
+      const host = parsedBase.hostname.toLowerCase();
+      const isLocalHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+      if (parsedBase.username || parsedBase.password ||
+          (parsedBase.protocol !== "https:" && !(parsedBase.protocol === "http:" && isLocalHost)) ||
+          parsedBase.search || parsedBase.hash) {
+        throw new Error("Smart Control API must use HTTPS (HTTP is allowed only for localhost development).");
+      }
+      const base = parsedBase.toString().replace(/\/$/, "");
       const token = await user.getIdToken();
       const response = await fetch(base + "/api/pairing/invites", {
         method: "POST",
@@ -93,10 +102,9 @@ export default function LinkGeneratePage() {
     const message = [
       "🔗 Family Suraksha device-link invitation",
       invite.link,
-      `🔑 Verification code: ${invite.code}`,
       `👤 From: ${invite.senderRole}`,
       `🎯 To: ${invite.receiverRole}`,
-      "Open the link, enter the code, and review the request before confirming.",
+      "Open the link and review the request. The six-digit verification code will be shared separately.",
       "⏳ This invitation expires in 10 minutes."
     ].join("\n");
     try {
@@ -168,7 +176,7 @@ export default function LinkGeneratePage() {
             <input id="invite-code" className="verification-code" readOnly value={invite.code} onFocus={e => e.currentTarget.select()} />
             <div className="role-summary"><span>👤 From: <strong>{invite.senderRole}</strong></span><span>🎯 To: <strong>{invite.receiverRole}</strong></span></div>
             <button type="button" className="share-button" onClick={copyAndOpenWhatsApp}>⭐ 📋 Copy share message & open WhatsApp</button>
-            <p className="share-preview">The share message includes the invitation link, verification code, sender and receiver roles.</p>
+            <p className="share-preview">The share message includes the invitation link and roles. Share the six-digit verification code separately through another channel.</p>
           </div>
         ) : null}
         {notice ? <p className="notice" role="status">{notice}</p> : null}

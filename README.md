@@ -11,7 +11,7 @@ All sensitive device capabilities will require explicit Android consent and visi
 The repository includes a dedicated GitHub Actions workflow for APK generation:
 - Open **Actions → Android APK Download**.
 - Choose **Run workflow** and select **all**, **debug**, or **release**.
-- After the run succeeds, download the **family-Suraksha-apks** artifact.
+- After the run succeeds, download the **smart-control-apks** artifact.
 - The artifact contains the generated Owner, Lite, and Full APKs requested by the selected build type.
 
 The existing Android CI and Production Readiness workflows are unchanged; this workflow only adds a dedicated APK build/download path.
@@ -26,9 +26,9 @@ Remote camera, microphone and screen sessions use short-lived, per-user TURN cre
    ```sh
    firebase functions:secrets:set SMARTCONTROL_TURN_CREDENTIAL
    ```
-3. Deploy Functions and Firestore rules:
+3. Deploy Functions, Firestore rules/indexes, and Storage rules:
    ```sh
-   firebase deploy --only functions,firestore:rules
+   firebase deploy --only functions,firestore,storage
    ```
 4. Verify with two real devices on different carrier/Wi-Fi networks. If TURN is not configured, the app uses STUN fallback and displays a warning; restrictive NATs may prevent the session from connecting.
 

@@ -42,7 +42,7 @@ For repository status, **Complete** means the master specification data/status h
 - Dynamic pricing safety: **COMPLETE** — Owner can change future plan prices, discounts, tax, duration and limits; each activated subscription snapshots its purchase-time price, final amount, currency, plan discounts/tax and plan version so later plan edits do not rewrite the existing subscription terms.
 - Payment ledger lifecycle (create/verify/refund), EMI application, coupons, subscriptions, reports and payout records: **COMPLETE**
 - Owner payment/finance dashboard controls: **COMPLETE**
-- Payment gateway execution: **COMPLETE at provider-neutral integration level** (Owner-selectable gateway provider, LIVE/TEST mode, configured payment methods, per-provider webhook secret support, signed webhook lifecycle, gateway snapshot retained on each payment); real provider credentials/SDK configuration remain deployment configuration.
+- Payment gateway execution: **Razorpay implemented end-to-end; other providers NOT implemented**. Owner settings expose provider/mode configuration fields, but changing a display name or selecting an unsupported provider does not create a provider adapter. Real Razorpay credentials, webhook configuration, and a live transaction test remain deployment requirements.
 - Connection/reconnect policy data: **COMPLETE**
 - Notification/content/security policy data: **COMPLETE**
 - Live Firestore owner-settings observation: **COMPLETE**
@@ -50,7 +50,7 @@ For repository status, **Complete** means the master specification data/status h
 - Local data deletion control: **COMPLETE** — the user can clear Smart Control local preferences/legal-consent state and stop the visible service; server-side billing/audit records are intentionally retained.
 - Master catalog CI verification: **COMPLETE** — CI now validates the catalog remains at least 42 tables / 60 API contracts.
 - Remote Config / Socket.IO / production FCM infrastructure: **NOT CLAIMED COMPLETE** because the repository does not contain the required backend endpoint/project credentials.
-- Production build verification: **CI VERIFIED** for the previously reconciled head; the current gateway/CI changes are committed and the workflow now validates both functions/index.js and functions/billing.js syntax on every main push.
+- Production build verification: **CI VERIFIED only for the specific commit and jobs linked in GitHub Actions**. Do not generalize an earlier successful build to later commits; verify the current PR head and all required jobs before release. The workflow validates both functions/index.js and functions/billing.js syntax.
 - Real two-device WebRTC/MediaProjection smoke test: **NOT REPRODUCIBLE in CI**; Android system-consent/device behavior still requires a physical device environment.
 
 ## Important distinction

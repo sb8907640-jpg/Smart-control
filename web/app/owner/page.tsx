@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -53,11 +53,27 @@ function authClient() {
   return getAuth(app);
 }
 function apiBase() {
-  return (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").replace(/\/$/, "");
+  const raw = (process.env.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL ?? "").trim();
+  if (!raw) return "";
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("Smart Control API URL is invalid.");
+  }
+  const host = url.hostname.toLowerCase();
+  const isLocalHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+  if (url.username || url.password || (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalHost))) {
+    throw new Error("Smart Control API must use HTTPS. HTTP is allowed only for localhost development.");
+  }
+  if (url.search || url.hash) throw new Error("Smart Control API URL cannot contain a query or fragment.");
+  return url.toString().replace(/\/$/, "");
 }
 async function apiRequest<T>(path: string, user: User, method = "GET", payload?: unknown): Promise<T> {
+  const base = apiBase();
+  if (!base) throw new Error("Smart Control API URL is not configured.");
   const token = await user.getIdToken();
-  const response = await fetch(apiBase() + path, {
+  const response = await fetch(base + path, {
     method,
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(payload === undefined ? {} : { "Content-Type": "application/json" }) },
     body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -334,6 +350,7 @@ export default function OwnerPanel() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
   const [linkPlanId, setLinkPlanId] = useState("");
   const [freeGrantText, setFreeGrantText] = useState(jsonText({ userName: "", email: "", mobile: "", userId: "", durationPreset: "CUSTOM", startsAt: Date.now(), endsAt: Date.now() + 7 * 86400000, all19: true, features: [], reason: "" }));
   const currentTab = useMemo(() => TABS.find(tab => tab.id === active) ?? TABS[0], [active]);
@@ -351,7 +368,7 @@ export default function OwnerPanel() {
 
   useEffect(() => {
     const auth = authClient();
-    return onAuthStateChanged(auth, async nextUser => {
+    const unsubscribe = onAuthStateChanged(auth, async nextUser => {
       setUser(nextUser);
       setPanel(null);
       setRows([]);
@@ -370,6 +387,11 @@ export default function OwnerPanel() {
         setStatus(e instanceof Error ? e.message : "OWNER verification failed.");
       }
     });
+    return () => {
+      unsubscribe();
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+    };
   }, []);
 
   const loadTab = useCallback(async (tabId: TabId, selectedUser = user) => {
@@ -517,14 +539,22 @@ export default function OwnerPanel() {
       return;
     }
     setError(""); setStatus("Sending verification code…");
+    setBusy(true);
     try {
-      const verifier = new RecaptchaVerifier(authClient(), "owner-recaptcha-container", { size: "invisible" });
-      const result = await signInWithPhoneNumber(authClient(), normalized, verifier);
+      const auth = authClient();
+      if (!recaptchaRef.current) {
+        recaptchaRef.current = new RecaptchaVerifier(auth, "owner-recaptcha-container", { size: "invisible" });
+      }
+      const result = await signInWithPhoneNumber(auth, normalized, recaptchaRef.current);
       setConfirmation(result);
       setStatus("Verification code sent. Enter the code to finish sign-in.");
     } catch (e) {
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setError(e instanceof Error ? e.message : "Phone verification could not start.");
       setStatus("Phone sign-in did not complete.");
+    } finally {
+      setBusy(false);
     }
   };
   const verifyPhoneOtp = async () => {
@@ -533,12 +563,17 @@ export default function OwnerPanel() {
       return;
     }
     setError(""); setStatus("Verifying phone identity…");
+    setBusy(true);
     try {
       await confirmation.confirm(otp.trim());
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
       setConfirmation(null); setOtp("");
       setStatus("Phone verified. Checking OWNER permissions…");
     } catch (e) {
       setError(e instanceof Error ? e.message : "The verification code was rejected.");
+    } finally {
+      setBusy(false);
     }
   };
 

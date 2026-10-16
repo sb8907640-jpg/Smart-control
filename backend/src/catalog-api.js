@@ -141,22 +141,66 @@ function installCatalogRoutes(app, { db, requireAuth }) {
         linkValidityValue:linkValidity?.value ?? null,
         linkValidityUnit:linkValidity?.unit ?? "LIFETIME"
       });
-      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{code,planId:plan?.id || requestedPlanId || null,expiresAt});
+      await audit(req.catalogUid,"LINK_CODE_GENERATED","pairingCode",{codeIssued:true,planId:plan?.id || requestedPlanId || null,expiresAt});
       res.status(201).json({code,expiresAt,planId:plan?.id || requestedPlanId || null});
     } catch(e){next(e);}
   });
 
   app.post("/api/link/join", async (req,res,next) => {
     try {
+      if (req.body?.consent !== true) {
+        return res.status(400).json({error:"Explicit receiver consent is required before joining a device link."});
+      }
+      if (!db || typeof db.runTransaction !== "function") {
+        return res.status(503).json({error:"Pairing data service is unavailable."});
+      }
       const code=String(req.body?.code||"").trim().toUpperCase();
-      if(!code) return res.status(400).json({error:"Pairing code is required."});
+      if(!/^[A-Z0-9_-]{8,32}$/.test(code)) return res.status(400).json({error:"A valid pairing code is required."});
       const ref=firestoreCollection("pairingCodes").doc(code);
-      const snap=await ref.get(); const data=snap.exists?snap.data():null;
-      if(!data||data.status!=="PENDING"||Number(data.expiresAt)<now()) return res.status(404).json({error:"Pairing code is invalid or expired."});
-      await ref.set({clientUid:req.catalogUid,status:"PAIRED",pairedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(req.catalogUid).set({controllerUid:data.ownerUid,pairingActive:true,updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{code});
-      res.json({ok:true,ownerUid:data.ownerUid});
+      const deviceRef=firestoreCollection("devices").doc(req.catalogUid);
+      const result=await db.runTransaction(async transaction => {
+        const snap=await transaction.get(ref);
+        if(!snap.exists) return {failure:{status:404,message:"Pairing code is invalid or expired."}};
+        const data=snap.data() || {};
+        const expiry=data.expiresAt == null ? null : Number(data.expiresAt);
+        if(data.status!=="PENDING" || (expiry !== null && (!Number.isFinite(expiry) || expiry <= now()))) {
+          return {failure:{status:404,message:"Pairing code is invalid or expired."}};
+        }
+        if(typeof data.ownerUid!=="string" || !data.ownerUid || data.ownerUid===req.catalogUid) {
+          return {failure:{status:400,message:"This account cannot join its own device link."}};
+        }
+        const ownerUserRef=firestoreCollection("users").doc(data.ownerUid);
+        const ownerAccessRef=firestoreCollection("userAccess").doc(data.ownerUid);
+        const ownerUserSnap=await transaction.get(ownerUserRef);
+        const ownerAccessSnap=await transaction.get(ownerAccessRef);
+        const ownerStatus=String(ownerUserSnap.exists ? ownerUserSnap.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
+        if(["SUSPENDED","BLOCKED","BANNED","DISABLED"].includes(ownerStatus) ||
+           (ownerAccessSnap.exists && ownerAccessSnap.data()?.blocked===true)) {
+          return {failure:{status:403,message:"The invitation sender is suspended or blocked."}};
+        }
+        const deviceSnap=await transaction.get(deviceRef);
+        const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+        if(device.pairingActive===true && typeof device.controllerUid==="string" && device.controllerUid) {
+          return {failure:{status:409,message:"This device is already paired. Unpair it before joining another link."}};
+        }
+        const pairedAt=now();
+        const validRoles=["Father","Mother","Son","Daughter","Brother","Sister","Husband","Wife","Mechanic","Engineer","Other"];
+        const senderRole=validRoles.includes(data.senderRole) ? data.senderRole : "Other";
+        const receiverRole=validRoles.includes(data.receiverRole) ? data.receiverRole : "Other";
+        transaction.update(ref,{clientUid:req.catalogUid,status:"PAIRED",pairedAt});
+        transaction.set(deviceRef,{
+          controllerUid:data.ownerUid,
+          pairedAt,
+          pairingActive:true,
+          senderRole,
+          receiverRole,
+          updatedAt:pairedAt
+        },{merge:true});
+        return {ownerUid:data.ownerUid,pairedAt};
+      });
+      if(result.failure) return res.status(result.failure.status).json({error:result.failure.message});
+      await audit(req.catalogUid,"LINK_JOINED","pairingCode",{consent:true,pairedAt:result.pairedAt});
+      res.json({ok:true,ownerUid:result.ownerUid,pairedAt:result.pairedAt});
     }catch(e){next(e);}
   });
 
@@ -170,24 +214,25 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     }catch(e){next(e);}
   });
 
-  app.post("/api/connect", async(req,res,next)=>{
-    try{
-      const deviceId=String(req.body?.deviceId||"").trim();
-      if(!deviceId)return res.status(400).json({error:"deviceId is required."});
-      const id=await add("connections",{userId:req.catalogUid,deviceId,status:"CONNECTED",connectedAt:now(),lastSeenAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({controllerUid:req.catalogUid,connectionId:id,connectionStatus:"CONNECTED",lastSeenAt:now(),updatedAt:now()},{merge:true});
-      await audit(req.catalogUid,"CONNECTED","device",{deviceId,connectionId:id});
-      res.status(201).json({ok:true,status:"CONNECTED",deviceId,connectionId:id});
-    }catch(e){next(e);}
+  // Legacy direct-connect is intentionally disabled: it could overwrite a device's
+  // controllerUid without a pairing code or receiver consent. Use the pairing flow.
+  app.post("/api/connect", (_req,res) => {
+    res.status(410).json({error:"Direct device linking is disabled. Use the consent-based pairing invitation flow."});
   });
 
   app.post("/api/disconnect", async(req,res,next)=>{
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef=firestoreCollection("devices").doc(deviceId);
+      const deviceSnap=await deviceRef.get();
+      const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+      if(!deviceSnap.exists || (deviceId!==req.catalogUid && device.userId!==req.catalogUid && device.controllerUid!==req.catalogUid)) {
+        return res.status(404).json({error:"Device not found."});
+      }
       const snap=await firestoreCollection("connections").where("userId","==",req.catalogUid).where("deviceId","==",deviceId).limit(1).get();
       if(!snap.empty) await snap.docs[0].ref.set({status:"DISCONNECTED",disconnectedAt:now(),updatedAt:now()},{merge:true});
-      await firestoreCollection("devices").doc(deviceId).set({connectionStatus:"DISCONNECTED",updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionStatus:"DISCONNECTED",updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"DISCONNECTED","device",{deviceId});
       res.json({ok:true,status:"DISCONNECTED",deviceId});
     }catch(e){next(e);}
@@ -197,8 +242,14 @@ function installCatalogRoutes(app, { db, requireAuth }) {
     try{
       const deviceId=String(req.body?.deviceId||"").trim();
       if(!deviceId)return res.status(400).json({error:"deviceId is required."});
+      const deviceRef=firestoreCollection("devices").doc(deviceId);
+      const deviceSnap=await deviceRef.get();
+      const device=deviceSnap.exists ? deviceSnap.data() || {} : {};
+      if(!deviceSnap.exists || (deviceId!==req.catalogUid && device.userId!==req.catalogUid && device.controllerUid!==req.catalogUid)) {
+        return res.status(404).json({error:"Device not found."});
+      }
       const id=await add("reconnectQueue",{userId:req.catalogUid,deviceId,status:"QUEUED",attemptCount:0,nextAttemptAt:now()});
-      await firestoreCollection("devices").doc(deviceId).set({connectionStatus:"RECONNECTING",reconnectQueuedAt:now(),updatedAt:now()},{merge:true});
+      await deviceRef.set({connectionStatus:"RECONNECTING",reconnectQueuedAt:now(),updatedAt:now()},{merge:true});
       await audit(req.catalogUid,"RECONNECT_QUEUED","device",{deviceId,reconnectId:id});
       res.status(202).json({ok:true,status:"QUEUED",deviceId,reconnectId:id});
     }catch(e){next(e);}
@@ -273,8 +324,10 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   app.get("/api/plans",async(req,res,next)=>{try{const s=await firestoreCollection("plans").where("enabled","==",true).limit(100).get();const plans=s.docs.map(d=>({id:d.id,...d.data()})).filter(plan=>!isOwnerOnlyFreePlan(plan));res.json({plans});}catch(e){next(e);}});
   app.get("/api/plans/:id",async(req,res,next)=>{try{const s=await firestoreCollection("plans").doc(req.params.id).get();if(!s.exists)return res.status(404).json({error:"Plan not found."});const plan={id:s.id,...s.data()};if(plan.enabled!==true||isOwnerOnlyFreePlan(plan))return res.status(404).json({error:"Plan not found."});res.json({plan});}catch(e){next(e);}});
   app.post("/api/subscribe",async(req,res,next)=>{try{const planId=String(req.body?.planId||"").trim();if(!planId)return res.status(400).json({error:"planId is required."});const p=await firestoreCollection("plans").doc(planId).get();if(!p.exists||p.data()?.enabled!==true||isOwnerOnlyFreePlan(p.data()))return res.status(404).json({error:"Plan not found."});const plan={id:p.id,...p.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const id=await add("subscriptions",{userId:req.catalogUid,planId,status:"PENDING_PAYMENT",planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms});await audit(req.catalogUid,"SUBSCRIPTION_CREATED","subscription",{id,planId,planDurationUnit:duration.unit});res.status(201).json({id,status:"PENDING_PAYMENT",planId,planDurationValue:duration.value,planDurationUnit:duration.unit});}catch(e){next(e);}});
-  app.post("/api/payment/initiate",async(req,res,next)=>{try{const subscriptionId=String(req.body?.subscriptionId||"");const amountMinor=Number(req.body?.amountMinor||0);if(!subscriptionId||!Number.isFinite(amountMinor)||amountMinor<0)return res.status(400).json({error:"subscriptionId and valid amountMinor are required."});const id=await add("payments",{userId:req.catalogUid,subscriptionId,amountMinor,currency:"INR",provider:String(req.body?.provider||"UNSPECIFIED"),status:"INITIATED"});await audit(req.catalogUid,"PAYMENT_INITIATED","payment",{id});res.status(201).json({paymentId:id,status:"INITIATED"});}catch(e){next(e);}});
-  app.post("/api/payment/verify",async(req,res,next)=>{try{const id=String(req.body?.paymentId||"");if(!id)return res.status(400).json({error:"paymentId is required."});const ref=firestoreCollection("payments").doc(id);const s=await ref.get();if(!s.exists||s.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Payment not found."});const payment=s.data();const subRef=firestoreCollection("subscriptions").doc(payment.subscriptionId);const subSnap=await subRef.get();if(!subSnap.exists||subSnap.data()?.userId!==req.catalogUid)return res.status(404).json({error:"Subscription not found."});const sub=subSnap.data();const planSnap=await firestoreCollection("plans").doc(sub.planId).get();if(!planSnap.exists||planSnap.data()?.enabled!==true||isOwnerOnlyFreePlan(planSnap.data()))return res.status(400).json({error:"Paid plan is unavailable."});const plan={id:planSnap.id,...planSnap.data()};const duration=getPlanDuration(plan);if(!duration)return res.status(400).json({error:"Plan duration is not configured."});const startsAt=now();const expiresAt=calculateExpiry(startsAt,duration);await ref.set({status:"VERIFIED",verifiedAt:startsAt,updatedAt:startsAt},{merge:true});await subRef.set({status:"ACTIVE",startsAt,expiresAt,planDurationValue:duration.value,planDurationUnit:duration.unit,planDurationMs:duration.ms,updatedAt:startsAt},{merge:true});await audit(req.catalogUid,"PAYMENT_VERIFIED","payment",{id,subscriptionId:payment.subscriptionId});res.json({paymentId:id,status:"VERIFIED",subscriptionStatus:"ACTIVE",startsAt,expiresAt});}catch(e){next(e);}});
+  // Legacy payment endpoints are disabled: this API has no verified gateway adapter.
+  // Use Firebase billing callables, which verify the provider transaction server-side.
+  app.post("/api/payment/initiate", (_req,res) => res.status(410).json({error:"Legacy payment initiation is disabled. Use the verified billing flow."}));
+  app.post("/api/payment/verify", (_req,res) => res.status(410).json({error:"Client-triggered payment verification is disabled. Only verified gateway checks may activate a subscription."}));
   app.post("/api/emi/apply",async(req,res,next)=>{try{const paymentId=String(req.body?.paymentId||"");const installmentCount=Number(req.body?.installmentCount||0);if(!paymentId||!Number.isInteger(installmentCount)||installmentCount<1||installmentCount>60)return res.status(400).json({error:"paymentId and installmentCount 1-60 are required."});const id=await add("emiApplications",{userId:req.catalogUid,paymentId,installmentCount,status:"PENDING_REVIEW"});await audit(req.catalogUid,"EMI_APPLICATION_CREATED","emi",{id});res.status(201).json({id,status:"PENDING_REVIEW"});}catch(e){next(e);}});
   app.get("/api/free-access/status",async(req,res,next)=>{
     try {
@@ -301,8 +354,31 @@ function installCatalogRoutes(app, { db, requireAuth }) {
   app.post("/api/admin/free-access/grant",requireOwnerAdmin,async(req,res,next)=>{try{const userId=String(req.body?.userId||"");if(!userId)return res.status(400).json({error:"userId is required."});const id=await add("freeAccessGrants",{userId,grantedBy:req.catalogUid,reason:String(req.body?.reason||"").slice(0,500),status:"ACTIVE",startsAt:now(),endsAt:req.body?.endsAt||null});await audit(req.catalogUid,"FREE_ACCESS_GRANTED","freeAccessGrant",{id,userId});res.status(201).json({id,status:"ACTIVE"});}catch(e){next(e);}});
   app.post("/api/admin/free-access/edit",requireOwnerAdmin,async(req,res,next)=>{try{const id=String(req.body?.grantId||"");if(!id)return res.status(400).json({error:"grantId is required."});await firestoreCollection("freeAccessGrants").doc(id).set({updatedAt:now(),reason:String(req.body?.reason||"").slice(0,500),endsAt:req.body?.endsAt||null},{merge:true});await audit(req.catalogUid,"FREE_ACCESS_EDITED","freeAccessGrant",{id});res.json({id,status:"UPDATED"});}catch(e){next(e);}});
   app.post("/api/admin/free-access/revoke",requireOwnerAdmin,async(req,res,next)=>{try{const id=String(req.body?.grantId||"");if(!id)return res.status(400).json({error:"grantId is required."});await firestoreCollection("freeAccessGrants").doc(id).set({status:"REVOKED",revokedAt:now(),updatedAt:now()},{merge:true});await audit(req.catalogUid,"FREE_ACCESS_REVOKED","freeAccessGrant",{id});res.json({id,status:"REVOKED"});}catch(e){next(e);}});
-  app.post("/api/admin/user/ban",requireAdmin,async(req,res,next)=>{try{const uid=String(req.body?.userId||"");if(!uid)return res.status(400).json({error:"userId is required."});await firestoreCollection("users").doc(uid).set({status:"BANNED",bannedAt:now(),bannedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"USER_BANNED","user",{uid});res.json({userId:uid,status:"BANNED"});}catch(e){next(e);}});
-  app.post("/api/admin/user/unban",requireAdmin,async(req,res,next)=>{try{const uid=String(req.body?.userId||"");if(!uid)return res.status(400).json({error:"userId is required."});await firestoreCollection("users").doc(uid).set({status:"ACTIVE",unbannedAt:now(),unbannedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"USER_UNBANNED","user",{uid});res.json({userId:uid,status:"ACTIVE"});}catch(e){next(e);}});
+  const changeUserStatus = (status, action) => async (req,res,next) => {
+    try {
+      const uid=String(req.body?.userId||"").trim();
+      if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return res.status(400).json({error:"A valid userId is required."});
+      if(uid===req.catalogUid) return res.status(409).json({error:"You cannot change your own account status."});
+      const ref=firestoreCollection("users").doc(uid);
+      const snap=await ref.get();
+      if(!snap.exists) return res.status(404).json({error:"User not found."});
+      const actorRole=req.user?.owner===true ? "OWNER" : String(req.user?.role || (req.user?.admin === true ? "ADMIN" : "USER")).toUpperCase();
+      const targetRole=String(snap.data()?.role||"USER").toUpperCase();
+      const rank={USER:0,SUPPORT:1,MODERATOR:2,FINANCE_ADMIN:2,LEGAL_ADMIN:2,ADMIN:3,OWNER:4,SUPER_ADMIN:5};
+      if(!(actorRole in rank) || !(targetRole in rank) || rank[targetRole]>=rank[actorRole]) {
+        return res.status(403).json({error:"Insufficient role authority to change this account status."});
+      }
+      const timestamp=now();
+      const fields=status==="BANNED"
+        ? {status,bannedAt:timestamp,bannedBy:req.catalogUid}
+        : {status,unbannedAt:timestamp,unbannedBy:req.catalogUid};
+      await ref.set({...fields,updatedAt:timestamp,updatedBy:req.catalogUid},{merge:true});
+      await audit(req.catalogUid,action,"user",{uid,targetRole});
+      return res.json({userId:uid,status});
+    } catch(e) { next(e); }
+  };
+  app.post("/api/admin/user/ban",requireAdmin,changeUserStatus("BANNED","USER_BANNED"));
+  app.post("/api/admin/user/unban",requireAdmin,changeUserStatus("ACTIVE","USER_UNBANNED"));
   app.post("/api/admin/system/config",requireAdmin,async(req,res,next)=>{try{const values=req.body?.values;if(!values||typeof values!=="object"||Array.isArray(values))return res.status(400).json({error:"values object is required."});await firestoreCollection("systemConfig").doc("current").set({values,updatedAt:now(),updatedBy:req.catalogUid},{merge:true});await audit(req.catalogUid,"SYSTEM_CONFIG_UPDATED","systemConfig");res.json({ok:true,status:"UPDATED"});}catch(e){next(e);}});
   app.post("/api/admin/login",requireAdmin,async(req,res)=>res.json({ok:true,uid:req.catalogUid,admin:true}));
 

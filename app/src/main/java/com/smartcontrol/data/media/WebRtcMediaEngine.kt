@@ -7,6 +7,7 @@ import com.smartcontrol.domain.media.IceCandidateModel
 import com.smartcontrol.domain.media.IceServerConfig
 import com.smartcontrol.domain.media.MediaCapability
 import com.smartcontrol.domain.media.MediaSignalingRepository
+import com.smartcontrol.domain.media.MediaSessionStatus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -45,78 +46,132 @@ class WebRtcMediaEngine(
     private val eglBase: EglBase = EglBase.create()
     private lateinit var factory: PeerConnectionFactory
 
+    @Synchronized
     fun initialize() {
-        if (!initialized.compareAndSet(false, true)) return
+        if (initialized.get()) return
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
         )
-        factory = PeerConnectionFactory.builder()
+        val createdFactory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
             .createPeerConnectionFactory()
+        factory = createdFactory
+        // Mark initialized only after native factory creation succeeds so a failed
+        // initialization can be retried safely on the next user-approved session.
+        initialized.set(true)
     }
 
-    suspend fun publish(sessionId: String, capabilities: Set<MediaCapability>, mediaProjectionData: Intent?, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
-        initialize()
-        val pc = createPeerConnection(sessionId, iceServers, null)
+    suspend fun publish(
+        sessionId: String,
+        capabilities: Set<MediaCapability>,
+        mediaProjectionData: Intent?,
+        iceServers: List<IceServerConfig> = defaultIceServers()
+    ): Result<Unit> {
         val resources = mutableListOf<AutoCloseable>()
-        if (MediaCapability.MICROPHONE in capabilities) {
-            val audio = factory.createAudioSource(MediaConstraints())
-            pc.addTrack(factory.createAudioTrack("audio-$sessionId", audio), emptyList())
-            resources += AutoCloseable { audio.dispose() }
+        return runCatching {
+            initialize()
+            val pc = createPeerConnection(sessionId, iceServers, null)
+            if (MediaCapability.MICROPHONE in capabilities) {
+                val audioSource = factory.createAudioSource(MediaConstraints())
+                val audioTrack = try {
+                    factory.createAudioTrack("audio-$sessionId", audioSource)
+                } catch (error: Exception) {
+                    // Track creation can fail before the source is registered with
+                    // the session cleanup list; dispose the source on this path too.
+                    runCatching { audioSource.dispose() }
+                    throw error
+                }
+                resources += AutoCloseable {
+                    runCatching { audioTrack.dispose() }
+                    runCatching { audioSource.dispose() }
+                }
+                pc.addTrack(audioTrack, emptyList())
+            }
+            if (MediaCapability.CAMERA in capabilities) {
+                val camera = createCameraTrack(sessionId)
+                resources += camera
+                pc.addTrack(camera.track, emptyList())
+            }
+            if (MediaCapability.SCREEN_SHARING in capabilities) {
+                require(mediaProjectionData != null) { "Screen sharing requires MediaProjection consent" }
+                val screen = createScreenTrack(sessionId, mediaProjectionData)
+                resources += screen
+                pc.addTrack(screen.track, emptyList())
+            }
+            captures[sessionId] = resources
+            val offer = createOffer(pc)
+            pc.setLocalDescriptionAwait(offer)
+            signaling.writeOffer(sessionId, offer.description).getOrThrow()
+            waitForAnswerAndCandidates(sessionId, pc)
+            signaling.markActive(sessionId).getOrThrow()
+        }.onFailure {
+            // A failed offer/signaling step must not leave the camera, microphone,
+            // screen capturer, or peer connection running in the background.
+            val failedResources = captures.remove(sessionId) ?: resources
+            failedResources.forEach { resource -> runCatching { resource.close() } }
+            candidateJobs.remove(sessionId)?.cancel()
+            peerConnections.remove(sessionId)?.let { connection ->
+                runCatching { connection.close() }
+                runCatching { connection.dispose() }
+            }
         }
-        if (MediaCapability.CAMERA in capabilities) {
-            val camera = createCameraTrack(sessionId)
-            pc.addTrack(camera.track, emptyList())
-            resources += camera
-        }
-        if (MediaCapability.SCREEN_SHARING in capabilities) {
-            require(mediaProjectionData != null) { "Screen sharing requires MediaProjection consent" }
-            val screen = createScreenTrack(sessionId, mediaProjectionData)
-            pc.addTrack(screen.track, emptyList())
-            resources += screen
-        }
-        captures[sessionId] = resources
-        val offer = createOffer(pc)
-        pc.setLocalDescriptionAwait(offer)
-        signaling.writeOffer(sessionId, offer.description).getOrThrow()
-        waitForAnswerAndCandidates(sessionId, pc)
-        signaling.markActive(sessionId).getOrThrow()
     }
 
-    suspend fun view(sessionId: String, remoteVideoSink: org.webrtc.VideoSink? = null, iceServers: List<IceServerConfig> = defaultIceServers()): Result<Unit> = runCatching {
+    suspend fun view(
+        sessionId: String,
+        remoteVideoSink: org.webrtc.VideoSink? = null,
+        iceServers: List<IceServerConfig> = defaultIceServers()
+    ): Result<Unit> = runCatching {
         initialize()
         val pc = createPeerConnection(sessionId, iceServers, remoteVideoSink)
-        val session = signaling.observeSession(sessionId).filterNotNull().first { !it.offerSdp.isNullOrBlank() }
+        val session = signaling.observeSession(sessionId).filterNotNull().first {
+            !it.offerSdp.isNullOrBlank() || it.status == MediaSessionStatus.STOPPED
+        }
+        require(session.status != MediaSessionStatus.STOPPED && !session.offerSdp.isNullOrBlank()) {
+            "Media session stopped before the offer arrived."
+        }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.OFFER, session.offerSdp!!))
         val answer = createAnswer(pc)
         pc.setLocalDescriptionAwait(answer)
         signaling.writeAnswer(sessionId, answer.description).getOrThrow()
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
         signaling.markActive(sessionId).getOrThrow()
+    }.onFailure {
+        candidateJobs.remove(sessionId)?.cancel()
+        peerConnections.remove(sessionId)?.let { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
     }
 
     suspend fun stop(sessionId: String) {
-        signaling.stopSession(sessionId)
+        // Session status is managed by MediaSessionViewModel; this method only
+        // releases local resources so remote-stop cleanup does not write STOPPED twice.
         captures.remove(sessionId)?.forEach { runCatching { it.close() } }
         candidateJobs.remove(sessionId)?.cancel()
-        peerConnections.remove(sessionId)?.close()
+        peerConnections.remove(sessionId)?.let { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
     }
 
     fun eglBase(): EglBase = eglBase
 
     fun release() {
-        peerConnections.values.forEach { it.close() }
+        peerConnections.values.forEach { connection ->
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
         peerConnections.clear()
         captures.values.flatten().forEach { runCatching { it.close() } }
         captures.clear()
         candidateJobs.values.forEach(Job::cancel)
         candidateJobs.clear()
-        if (initialized.get()) {
-            factory.dispose()
-            eglBase.release()
-            initialized.set(false)
-        }
+        // This engine is provided as a process-wide Hilt singleton. Release active
+        // session resources when a ViewModel is cleared, but keep the shared
+        // PeerConnectionFactory/EGL context alive so a later ViewModel can reuse it.
+        // The operating system reclaims these process-lifetime resources at exit.
     }
 
     private fun createPeerConnection(sessionId: String, iceServers: List<IceServerConfig>, remoteSink: org.webrtc.VideoSink?): PeerConnection {
@@ -149,7 +204,12 @@ class WebRtcMediaEngine(
     }
 
     private suspend fun waitForAnswerAndCandidates(sessionId: String, pc: PeerConnection) {
-        val session = signaling.observeSession(sessionId).filterNotNull().first { !it.answerSdp.isNullOrBlank() }
+        val session = signaling.observeSession(sessionId).filterNotNull().first {
+            !it.answerSdp.isNullOrBlank() || it.status == MediaSessionStatus.STOPPED
+        }
+        require(session.status != MediaSessionStatus.STOPPED && !session.answerSdp.isNullOrBlank()) {
+            "Media session stopped before the answer arrived."
+        }
         pc.setRemoteDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp!!))
         candidateJobs[sessionId] = scope.launch { collectRemoteCandidates(sessionId, pc) }
     }
@@ -176,25 +236,73 @@ class WebRtcMediaEngine(
 
     private fun createCameraTrack(sessionId: String): CapturedVideo {
         val enumerator = Camera2Enumerator(context)
-        val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } ?: enumerator.deviceNames.firstOrNull() ?: error("No camera available")
+        val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+            ?: enumerator.deviceNames.firstOrNull()
+            ?: error("No camera available")
         val capturer = enumerator.createCapturer(device, null) ?: error("Unable to open camera")
-        val source = factory.createVideoSource(capturer.isScreencast)
-        val helper = SurfaceTextureHelper.create("camera-$sessionId", eglBase.eglBaseContext)
-        capturer.initialize(helper, context, source.capturerObserver)
-        capturer.startCapture(1280, 720, 24)
-        return CapturedVideo(factory.createVideoTrack("camera-$sessionId", source)) {
-            runCatching { capturer.stopCapture() }; capturer.dispose(); helper.dispose(); source.dispose()
+
+        // Create every native resource inside the guarded block. In particular,
+        // SurfaceTextureHelper creation can fail after VideoSource allocation.
+        var source: org.webrtc.VideoSource? = null
+        var helper: SurfaceTextureHelper? = null
+        var track: VideoTrack? = null
+        try {
+            val createdSource = factory.createVideoSource(capturer.isScreencast)
+            source = createdSource
+            val createdHelper = SurfaceTextureHelper.create("camera-$sessionId", eglBase.eglBaseContext)
+            helper = createdHelper
+            capturer.initialize(createdHelper, context, createdSource.capturerObserver)
+            capturer.startCapture(1280, 720, 24)
+            val createdTrack = factory.createVideoTrack("camera-$sessionId", createdSource)
+            track = createdTrack
+            return CapturedVideo(createdTrack) {
+                runCatching { createdTrack.dispose() }
+                runCatching { capturer.stopCapture() }
+                runCatching { capturer.dispose() }
+                runCatching { createdHelper.dispose() }
+                runCatching { createdSource.dispose() }
+            }
+        } catch (error: Exception) {
+            runCatching { track?.dispose() }
+            runCatching { capturer.stopCapture() }
+            runCatching { capturer.dispose() }
+            runCatching { helper?.dispose() }
+            runCatching { source?.dispose() }
+            throw error
         }
     }
 
     private fun createScreenTrack(sessionId: String, data: Intent): CapturedVideo {
         val capturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
-        val source = factory.createVideoSource(true)
-        val helper = SurfaceTextureHelper.create("screen-$sessionId", eglBase.eglBaseContext)
-        capturer.initialize(helper, context, source.capturerObserver)
-        capturer.startCapture(1280, 720, 15)
-        return CapturedVideo(factory.createVideoTrack("screen-$sessionId", source)) {
-            runCatching { capturer.stopCapture() }; capturer.dispose(); helper.dispose(); source.dispose()
+
+        // Keep partial MediaProjection capture resources in scope for cleanup if
+        // source/helper/track creation or capture initialization fails.
+        var source: org.webrtc.VideoSource? = null
+        var helper: SurfaceTextureHelper? = null
+        var track: VideoTrack? = null
+        try {
+            val createdSource = factory.createVideoSource(true)
+            source = createdSource
+            val createdHelper = SurfaceTextureHelper.create("screen-$sessionId", eglBase.eglBaseContext)
+            helper = createdHelper
+            capturer.initialize(createdHelper, context, createdSource.capturerObserver)
+            capturer.startCapture(1280, 720, 15)
+            val createdTrack = factory.createVideoTrack("screen-$sessionId", createdSource)
+            track = createdTrack
+            return CapturedVideo(createdTrack) {
+                runCatching { createdTrack.dispose() }
+                runCatching { capturer.stopCapture() }
+                runCatching { capturer.dispose() }
+                runCatching { createdHelper.dispose() }
+                runCatching { createdSource.dispose() }
+            }
+        } catch (error: Exception) {
+            runCatching { track?.dispose() }
+            runCatching { capturer.stopCapture() }
+            runCatching { capturer.dispose() }
+            runCatching { helper?.dispose() }
+            runCatching { source?.dispose() }
+            throw error
         }
     }
 

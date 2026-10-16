@@ -39,13 +39,18 @@ function isOwnerIdentity(user, allowlist = getOwnerAllowlist()) {
 
 function applyOwnerRole(user, allowlist = getOwnerAllowlist()) {
   if (!user || typeof user !== "object") return user;
+  const role = String(user.role || "").trim().toUpperCase();
+
+  // Firebase custom claims are server-signed. Preserve explicit role claims so
+  // backend authorization does not depend solely on deployment environment lists.
+  if (user.owner === true || role === "OWNER") {
+    return { ...user, role: "OWNER", admin: true, owner: true };
+  }
+  if (role === "SUPER_ADMIN") {
+    return { ...user, role: "SUPER_ADMIN", admin: true };
+  }
   if (!isOwnerIdentity(user, allowlist)) return user;
-  return {
-    ...user,
-    role: "OWNER",
-    admin: true,
-    owner: true
-  };
+  return { ...user, role: "OWNER", admin: true, owner: true };
 }
 
 module.exports = {

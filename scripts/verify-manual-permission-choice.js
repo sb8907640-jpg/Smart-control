@@ -48,7 +48,7 @@ check("Both manual choices are represented",
 check("Allow All is tied to a user interaction",
   /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ALL|Allow All|allowAll)/i.test(source));
 check("One-by-One is tied to a user interaction",
-  /(onClick|onTap|clickable|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ONE-BY-ONE|Allow One-by-One|allowOneByOne|oneByOne)/i.test(source));
+  /(onClick|onTap|onCheckedChange|clickable|PolicySwitch|Switch|Button|button|setOnClickListener)[\s\S]{0,500}(ALLOW ONE-BY-ONE|Allow One-by-One|allowOneByOne|oneByOne)/i.test(source));
 const forbiddenAutoAllow = /(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)\s*(?:=|:|\bto\b)\s*(?:true|[\'"]true[\'"])|(?:fun|function|const|let|var)\s+(?:autoAllow|auto_grant|backgroundAllow|silentGrant|grantAllAutomatically|requestAllInBackground)\b/i;
 const autoAllowMatches = files.flatMap(file => {
   const text = fs.readFileSync(file, "utf8");
@@ -70,6 +70,17 @@ check("Sensitive Android permissions remain declared", [
   "android.permission.RECORD_AUDIO",
   "android.permission.POST_NOTIFICATIONS"
 ].every(p => manifest.includes(p)));
+
+const permissionScreen = read("app/src/main/java/com/smartcontrol/presentation/permission/PermissionCenterScreen.kt");
+check("Allow All skips skipped and already-granted permissions",
+  permissionScreen.includes("skippedItems.contains(index)") &&
+    permissionScreen.includes("!granted(permissionItems[index])") &&
+    permissionScreen.includes("requestedItemIndex + 1"),
+  "The sequential permission flow advances after the actual requested item and never reopens a skipped or granted item.");
+check("Approximate location permission is represented correctly",
+  permissionScreen.includes("anyPermissionSuffices = true") &&
+    permissionScreen.includes("Allowed (approximate)"),
+  "Android 12+ approximate-location grants count as granted without misreporting precise access.");
 
 runtime("Allow All — manual tap", "Physical device must show the button and require the user to tap it.");
 runtime("Allow All — sequential permission dialogs", "Physical Android evidence is required for the complete user-driven permission sequence.");

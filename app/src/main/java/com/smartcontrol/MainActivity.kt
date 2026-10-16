@@ -1,18 +1,29 @@
 package com.smartcontrol
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
@@ -25,6 +36,7 @@ import com.razorpay.PaymentResultWithDataListener
 import com.smartcontrol.domain.billing.Payment
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
 import org.json.JSONObject
 import android.widget.Toast
@@ -61,6 +73,7 @@ import com.smartcontrol.presentation.safety.SafetyAlertsScreen
 import com.smartcontrol.presentation.session.SessionScreen
 import com.smartcontrol.presentation.settings.SettingsScreen
 import com.smartcontrol.service.FamilySafetyService
+import com.smartcontrol.service.SmartControlMessagingService
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -68,6 +81,14 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private var pendingRazorpayPaymentId: String? = null
+
+    @Suppress("DEPRECATION")
+    private fun isFamilySafetyServiceRunning(): Boolean {
+        val manager = getSystemService(ActivityManager::class.java) ?: return false
+        return manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == FamilySafetyService::class.java.name
+        }
+    }
 
     private fun startRazorpayCheckout(payment: Payment) {
         val orderId = payment.gatewayOrderId?.takeIf { it.isNotBlank() }
@@ -143,16 +164,59 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    private var notificationPermissionResultHandler: ((Boolean) -> Unit)? = null
+
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            FamilySafetyService.start(this)
-            FamilySafetyService.setSyncing(this)
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                FamilySafetyService.start(this)
+                FamilySafetyService.setSyncing(this)
+            } else {
+                Toast.makeText(
+                    this,
+                    "Notifications permission was denied. Family Safety sync was not started.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            notificationPermissionResultHandler?.invoke(granted)
+            notificationPermissionResultHandler = null
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
+            MaterialTheme(
+                colorScheme = lightColorScheme(
+                    primary = Color(0xFF2458E6),
+                    onPrimary = Color(0xFFFFFFFF),
+                    primaryContainer = Color(0xFFEAF0FF),
+                    onPrimaryContainer = Color(0xFF10213F),
+                    secondary = Color(0xFF0F766E),
+                    onSecondary = Color(0xFFFFFFFF),
+                    secondaryContainer = Color(0xFFD9F5EC),
+                    onSecondaryContainer = Color(0xFF064E42),
+                    background = Color(0xFFF3F6FB),
+                    onBackground = Color(0xFF172033),
+                    surface = Color(0xFFFFFFFF),
+                    onSurface = Color(0xFF172033),
+                    surfaceVariant = Color(0xFFF7F9FC),
+                    onSurfaceVariant = Color(0xFF65728A),
+                    outline = Color(0xFFD6DEEA),
+                    outlineVariant = Color(0xFFE1E7F0),
+                    error = Color(0xFFB42332),
+                    onError = Color(0xFFFFFFFF)
+                ),
+                shapes = Shapes(
+                    extraSmall = RoundedCornerShape(6.dp),
+                    small = RoundedCornerShape(10.dp),
+                    medium = RoundedCornerShape(16.dp),
+                    large = RoundedCornerShape(24.dp),
+                    extraLarge = RoundedCornerShape(28.dp)
+                )
+            ) {
+                // Keep every screen clear of status/navigation bars, including Android 15+ edge-to-edge layouts.
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             val featureAccessViewModel: FeatureAccessViewModel = hiltViewModel()
             val featureSettings by featureAccessViewModel.settings.collectAsState()
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
@@ -178,8 +242,26 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         .getString("mode", null) != null
                 )
             }
-            var running by remember { mutableStateOf(false) }
+            var running by remember { mutableStateOf(isFamilySafetyServiceRunning()) }
+            LaunchedEffect(Unit) {
+                // Keep Start/Stop controls aligned with the actual service after activity
+                // recreation or the notification's Stop Sync action.
+                while (true) {
+                    running = isFamilySafetyServiceRunning()
+                    delay(1_500)
+                }
+            }
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
+
+            // Keep Android's system Back button aligned with in-app navigation.
+            // Pairing returns to the session hub; feature/detail pages return to the feature center.
+            BackHandler(enabled = route != "session") {
+                route = when (route) {
+                    "pairing" -> "session"
+                    "features" -> "session"
+                    else -> "features"
+                }
+            }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
             LaunchedEffect(pendingPairLink) {
@@ -196,6 +278,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 )
             }
             val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+
+            LaunchedEffect(signedIn) {
+                if (signedIn) SmartControlMessagingService.registerCurrentToken()
+            }
 
             LaunchedEffect(signedIn, consented, consentSyncAttempt) {
                 if (!signedIn || !consented) {
@@ -234,7 +320,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         Manifest.permission.POST_NOTIFICATIONS
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
+                    notificationPermissionResultHandler = { granted -> running = granted }
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    return
                 } else {
                     FamilySafetyService.start(this@MainActivity)
                     FamilySafetyService.setSyncing(this@MainActivity)
@@ -249,8 +337,12 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 running = false
             }
 
-            LaunchedEffect(autoStart, modeSelected, signedIn, consented, ageVerified) {
-                if (autoStart && signedIn && consented && ageVerified && modeSelected && !running) {
+            LaunchedEffect(autoStart, modeSelected, signedIn, consented, ageVerified, consentSyncState) {
+                // Local consent alone must not auto-start the service while the server-side
+                // consent record is still pending or has failed to synchronize.
+                if (autoStart && signedIn && consented && ageVerified && modeSelected &&
+                    consentSyncState == "SYNCED" && !running
+                ) {
                     startServiceFromUserAction()
                 }
             }
@@ -389,6 +481,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                         }
                     )
                     }
+                }
+            }
                 }
             }
         }

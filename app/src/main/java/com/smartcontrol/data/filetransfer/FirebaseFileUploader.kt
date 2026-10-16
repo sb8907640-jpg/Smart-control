@@ -16,6 +16,19 @@ class FirebaseFileUploader @Inject constructor(
     private val auth: FirebaseAuth,
     private val storage: FirebaseStorage
 ) {
+    private fun safeFileName(fileName: String): String =
+        fileName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[\\u0000-\\u001F]"), "_")
+            .take(180)
+            .ifBlank { "selected-file" }
+            .let { if (it == "." || it == "..") "selected-file" else it }
+
+    fun storagePathFor(uid: String, transferId: String, fileName: String): String {
+        require(uid.isNotBlank() && '/' !in uid) { "Invalid sender UID." }
+        require(transferId.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Invalid transfer ID." }
+        return "fileTransfers/" + uid + "/" + transferId + "/" + safeFileName(fileName)
+    }
+
     /**
      * Uploads only a file explicitly selected by the device user.
      * No directory scanning or background filesystem access is performed.
@@ -27,11 +40,7 @@ class FirebaseFileUploader @Inject constructor(
         mimeType: String?
     ): String {
         val uid = auth.currentUser?.uid ?: error("Sign in first.")
-        val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
-            .replace(Regex("[\\u0000-\\u001F]"), "_")
-            .take(180)
-            .ifBlank { "selected-file" }
-        val path = "fileTransfers/$uid/$transferId/$safeName"
+        val path = storagePathFor(uid, transferId, fileName)
         val ref = storage.reference.child(path)
         context.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Selected file could not be opened." }
@@ -43,10 +52,20 @@ class FirebaseFileUploader @Inject constructor(
         return path
     }
 
+    suspend fun deleteUploadedFile(storagePath: String) {
+        val uid = auth.currentUser?.uid ?: error("Sign in first.")
+        val parts = storagePath.split('/')
+        require(parts.size == 4 && parts[0] == "fileTransfers" && parts[1] == uid &&
+            parts[2].isNotBlank() && parts[3].isNotBlank() && parts.none { it == "." || it == ".." }
+        ) { "Invalid transfer storage path." }
+        storage.reference.child(storagePath).delete().await()
+    }
+
     suspend fun downloadToUri(storagePath: String, targetUri: Uri) {
-        require(storagePath.startsWith("fileTransfers/") && !storagePath.contains("..")) {
-            "Invalid transfer storage path."
-        }
+        val parts = storagePath.split('/')
+        require(parts.size == 4 && parts[0] == "fileTransfers" &&
+            parts.all { it.isNotBlank() && it != "." && it != ".." }
+        ) { "Invalid transfer storage path." }
         val tempFile = File.createTempFile("family-suraksha-transfer-", ".bin", context.cacheDir)
         try {
             storage.reference.child(storagePath).getFile(tempFile).await()

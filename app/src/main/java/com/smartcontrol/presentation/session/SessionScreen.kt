@@ -117,6 +117,7 @@ fun SessionScreen(
                         Switch(checked = autoStart, onCheckedChange = onAutoStartChanged)
                     }
                     Text("Android permissions are never granted silently. Camera, microphone, and screen sharing require visible user consent.")
+                    Text("Android 15+ limits data-sync foreground services to six hours per 24-hour period and blocks automatic data-sync start directly after reboot. If sync pauses, open the app to resume; device and manufacturer power settings may also interrupt background work.")
                 }
             }
         }

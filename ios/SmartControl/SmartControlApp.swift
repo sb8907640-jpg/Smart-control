@@ -1,6 +1,25 @@
 import SwiftUI
 import Security
 
+private func validatedBackendURL(_ value: String) -> URL? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let url = URL(string: normalized),
+          let scheme = url.scheme?.lowercased(),
+          let host = url.host?.lowercased(),
+          url.user == nil,
+          url.password == nil,
+          url.query == nil,
+          url.fragment == nil else {
+        return nil
+    }
+    let isLocalHost = ["localhost", "127.0.0.1", "::1"].contains(host)
+    guard scheme == "https" || (scheme == "http" && isLocalHost) else {
+        return nil
+    }
+    return url
+}
+
 @main
 struct SmartControlApp: App {
     @StateObject private var session = AppSession()
@@ -30,8 +49,14 @@ final class AppSession: ObservableObject {
     private var client = BackendClient()
 
     init() {
-        apiBaseURL = UserDefaults.standard.string(forKey: "smartcontrol.apiBaseURL") ?? ""
-        client.setBaseURL(apiBaseURL)
+        let savedURL = UserDefaults.standard.string(forKey: "smartcontrol.apiBaseURL") ?? ""
+        if let validURL = validatedBackendURL(savedURL) {
+            apiBaseURL = validURL.absoluteString
+            client.setBaseURL(apiBaseURL)
+        } else {
+            apiBaseURL = ""
+            UserDefaults.standard.removeObject(forKey: "smartcontrol.apiBaseURL")
+        }
         if let token = tokenStore.read() {
             client.setBearerToken(token)
             authenticated = true
@@ -39,7 +64,11 @@ final class AppSession: ObservableObject {
     }
 
     func saveBaseURL(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let validURL = validatedBackendURL(value) else {
+            errorMessage = "Backend URL must use HTTPS. HTTP is allowed only for localhost development."
+            return
+        }
+        let normalized = validURL.absoluteString
         apiBaseURL = normalized
         UserDefaults.standard.set(normalized, forKey: "smartcontrol.apiBaseURL")
         client.setBaseURL(normalized)
@@ -60,8 +89,13 @@ final class AppSession: ObservableObject {
             authenticated = true
             await refreshAuthenticatedData()
         } catch {
+            tokenStore.delete()
             client.clearBearerToken()
             authenticated = false
+            account = nil
+            devices = []
+            systemStatus = nil
+            remoteConfig = [:]
             errorMessage = error.localizedDescription
         }
     }
@@ -74,6 +108,7 @@ final class AppSession: ObservableObject {
         devices = []
         systemStatus = nil
         lastHealth = nil
+        remoteConfig = [:]
         errorMessage = nil
     }
 
@@ -103,8 +138,20 @@ final class AppSession: ObservableObject {
             devices = deviceResult.devices
             systemStatus = try await status
             residency = try await residencyResult
-            remoteConfig = (try await configResult).values.compactMapValues { $0 }
+            // Remote Config is supplemental. Its outage must not turn an otherwise
+            // successful authenticated dashboard refresh into an error state.
+            let fetchedConfig = try? await configResult
+            remoteConfig = (fetchedConfig?.values ?? [:]).compactMapValues { $0 }
         } catch {
+            if let clientError = error as? ClientError, case .authentication(_) = clientError {
+                tokenStore.delete()
+                client.clearBearerToken()
+                authenticated = false
+                account = nil
+                devices = []
+                systemStatus = nil
+                remoteConfig = [:]
+            }
             errorMessage = error.localizedDescription
         }
     }
@@ -171,8 +218,7 @@ final class BackendClient {
     private let decoder = JSONDecoder()
 
     func setBaseURL(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        baseURL = URL(string: normalized.isEmpty ? "" : normalized)
+        baseURL = validatedBackendURL(value)
     }
 
     func setBearerToken(_ token: String) {
@@ -225,6 +271,9 @@ final class BackendClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClientError.network("Invalid server response.") }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 {
+                throw ClientError.authentication("Authentication token expired or is invalid. Sign in again.")
+            }
             let message = (try? decoder.decode(BackendError.self, from: data).error) ?? "Backend request failed (HTTP \(http.statusCode))."
             throw ClientError.network(message)
         }

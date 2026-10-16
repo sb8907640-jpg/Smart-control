@@ -1,6 +1,9 @@
 package com.smartcontrol.presentation.auth
 
 import android.app.Activity
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +20,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -30,7 +32,7 @@ fun AuthScreen(
     LaunchedEffect(state.user?.uid) {
         if (state.user != null) onAuthenticated()
     }
-    val activity = LocalContext.current as? Activity
+    val activity = LocalActivity.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (activity != null && result.resultCode != Activity.RESULT_CANCELED && result.data != null) {
             viewModel.signInWithGoogle(activity, result.data!!)
@@ -38,7 +40,7 @@ fun AuthScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Family Suraksha")

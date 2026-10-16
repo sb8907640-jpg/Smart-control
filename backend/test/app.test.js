@@ -19,6 +19,11 @@ function makeOwnerTestDb() {
       ["user-1", { name: "Test User", email: "user@example.test", status: "ACTIVE", role: "USER" }],
       ["owner-1", { name: "Owner", email: "owner@example.test", status: "ACTIVE", role: "OWNER" }]
     ]),
+    devices: new Map([
+      ["controlled-1", { controllerUid: "user-1", pairingActive: true, pairedAt: 123, name: "Test device", platform: "android", pairingToken: "must-not-leak" }],
+      ["unrelated-1", { controllerUid: "other-user", pairingActive: true, userId: "user-1", name: "Unrelated device" }],
+      ["inactive-1", { controllerUid: "user-1", pairingActive: false, name: "Unpaired device" }]
+    ]),
     ownerSettings: new Map([["global", {}]]),
     auditLogs: [],
     securityEvents: [],
@@ -122,12 +127,83 @@ test("health and readiness endpoints are public", async () => {
   });
 });
 
+test("system status reports unconfigured services as unhealthy", async () => {
+  const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/system/status", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.firestore, "unconfigured");
+  });
+});
+
 test("protected API rejects requests without bearer authentication", async () => {
   const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
   await withServer(app, async base => {
     const response = await fetch(base + "/api/auth/session");
     assert.equal(response.status, 401);
   });
+});
+
+test("browser origins require an explicit CORS allowlist", async () => {
+  const previous = process.env.CORS_ORIGIN;
+  delete process.env.CORS_ORIGIN;
+  try {
+    const app = createApp({ verifyIdToken: async () => ({ uid: "u1" }) });
+    await withServer(app, async base => {
+      const browser = await fetch(base + "/api/auth/session", {
+        headers: { authorization: "Bearer test-token", origin: "https://untrusted.example" }
+      });
+      assert.equal(browser.status, 403);
+
+      const nonBrowser = await fetch(base + "/api/auth/session", {
+        headers: { authorization: "Bearer test-token" }
+      });
+      assert.equal(nonBrowser.status, 200);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.CORS_ORIGIN;
+    else process.env.CORS_ORIGIN = previous;
+  }
+});
+
+test("Owner Accounts allowlist grants backend Owner routes", async () => {
+  const db = makeOwnerTestDb();
+  db.data.ownerAccounts = new Map([["config", {
+    emails: ["owner@example.test"],
+    mobiles: []
+  }]]);
+  const previousEmails = process.env.OWNER_EMAILS;
+  const previousMobiles = process.env.OWNER_MOBILE_NUMBERS;
+  delete process.env.OWNER_EMAILS;
+  delete process.env.OWNER_MOBILE_NUMBERS;
+  try {
+    const app = createApp({
+      db,
+      verifyIdToken: async () => ({
+        uid: "owner-1",
+        email: "owner@example.test",
+        role: "USER",
+        admin: true
+      })
+    });
+    await withServer(app, async base => {
+      const response = await fetch(base + "/api/owner/panel", {
+        headers: { authorization: "Bearer test-token" }
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.owner, true);
+    });
+  } finally {
+    if (previousEmails === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = previousEmails;
+    if (previousMobiles === undefined) delete process.env.OWNER_MOBILE_NUMBERS;
+    else process.env.OWNER_MOBILE_NUMBERS = previousMobiles;
+  }
 });
 
 test("protected API accepts a verified Firebase identity", async () => {
@@ -143,6 +219,50 @@ test("protected API accepts a verified Firebase identity", async () => {
     const body = await response.json();
     assert.equal(body.uid, "u1");
     assert.equal(body.authenticated, true);
+  });
+});
+
+test("Firestore device fallback follows Android pairing schema and redacts pairing tokens", async () => {
+  const db = makeOwnerTestDb();
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/devices", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.devices.map(device => device.id), ["controlled-1"]);
+    assert.equal(body.devices[0].name, "Test device");
+    assert.equal(body.devices[0].platform, "android");
+    assert.equal(body.devices[0].status, "PAIRED");
+    assert.equal(Object.hasOwn(body.devices[0], "pairingToken"), false);
+    assert.equal(Object.hasOwn(body.devices[0], "controllerUid"), false);
+  });
+});
+
+test("device dashboard merges PostgreSQL registrations with canonical Firestore pairings", async () => {
+  const db = makeOwnerTestDb();
+  const app = createApp({
+    db,
+    postgres: {
+      listDevices: async () => [
+        { id: 7, device_key: "postgres-device", name: "Postgres Device", platform: "desktop" }
+      ]
+    },
+    verifyIdToken: async () => ({ uid: "user-1", email: "user@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/devices", {
+      headers: { authorization: "Bearer test-token" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.devices.map(device => device.id).sort(), ["controlled-1", "postgres-device"]);
+    assert.equal(body.devices.find(device => device.id === "postgres-device").platform, "desktop");
+    assert.equal(body.devices.find(device => device.id === "controlled-1").status, "PAIRED");
   });
 });
 
@@ -463,5 +583,130 @@ test("Owner permission history returns scoped permission, consent, and audit eve
     assert.ok(body.events.every(event => event.userId === "user-1"));
     assert.match(body.note, /not proof that consent was granted/i);
     assert.equal(db.data.auditLogs[0].action, "OWNER_USER_PERMISSION_HISTORY_VIEWED");
+  });
+});
+
+test("legacy direct-connect endpoint cannot bypass consent-based pairing", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "attacker-1", email: "attacker@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/connect", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: "victim-device" })
+    });
+    assert.equal(response.status, 410);
+    assert.match((await response.json()).error, /consent-based pairing/i);
+  });
+});
+
+test("legacy link join requires explicit receiver consent before accessing pairing data", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "receiver-1", email: "receiver@example.test" })
+  });
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/link/join", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify({ code: "ABCD1234" })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /explicit receiver consent/i);
+  });
+});
+
+test("disconnect and reconnect reject devices unrelated to the authenticated user", async () => {
+  const db = {
+    collection(name) {
+      return {
+        doc(id) {
+          return {
+            async get() {
+              if (name === "users") return { exists: false, data: () => undefined };
+              if (name === "devices" && id === "victim-device") {
+                return { exists: true, data: () => ({ controllerUid: "victim-controller", pairingActive: true }) };
+              }
+              return { exists: false, data: () => undefined };
+            }
+          };
+        }
+      };
+    }
+  };
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "attacker-1", email: "attacker@example.test" })
+  });
+  await withServer(app, async base => {
+    for (const route of ["/api/disconnect", "/api/reconnect"]) {
+      const response = await fetch(base + route, {
+        method: "POST",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({ deviceId: "victim-device" })
+      });
+      assert.equal(response.status, 404, route);
+    }
+  });
+});
+
+test("legacy payment endpoints return Gone and direct callers to the verified billing flow", async () => {
+  const app = createApp({
+    verifyIdToken: async () => ({ uid: "sample-user", email: "sample@example.test" })
+  });
+  await withServer(app, async base => {
+    for (const [route, body] of [
+      ["/api/payment/initiate", { subscriptionId: "sample-subscription", amountMinor: 0 }],
+      ["/api/payment/verify", { paymentId: "sample-payment" }]
+    ]) {
+      const response = await fetch(base + route, {
+        method: "POST",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      assert.equal(response.status, 410, route);
+    }
+  });
+});
+
+test("legacy admin status routes enforce role hierarchy and prevent self-lockout", async () => {
+  const users = new Map([
+    ["admin-user", { status: "ACTIVE", role: "ADMIN" }],
+    ["owner-user", { status: "ACTIVE", role: "OWNER" }]
+  ]);
+  const db = {
+    collection(name) {
+      return {
+        doc(id) {
+          return {
+            async get() {
+              const value = name === "users" ? users.get(id) : undefined;
+              return { exists: value !== undefined, data: () => value ? { ...value } : undefined };
+            },
+            async set(value, options = {}) {
+              if (name !== "users") throw new Error("Unexpected test write: " + name);
+              users.set(id, options.merge ? { ...(users.get(id) || {}), ...value } : { ...value });
+            }
+          };
+        }
+      };
+    }
+  };
+  const app = createApp({
+    db,
+    verifyIdToken: async () => ({ uid: "admin-user", email: "admin@example.test", role: "ADMIN", admin: true })
+  });
+  await withServer(app, async base => {
+    const headers = { authorization: "Bearer test-token", "content-type": "application/json" };
+    const ownerResponse = await fetch(base + "/api/admin/user/ban", {
+      method: "POST", headers, body: JSON.stringify({ userId: "owner-user" })
+    });
+    assert.equal(ownerResponse.status, 403);
+    const selfResponse = await fetch(base + "/api/admin/user/ban", {
+      method: "POST", headers, body: JSON.stringify({ userId: "admin-user" })
+    });
+    assert.equal(selfResponse.status, 409);
+    assert.equal(users.get("owner-user").status, "ACTIVE");
+    assert.equal(users.get("admin-user").status, "ACTIVE");
   });
 });
