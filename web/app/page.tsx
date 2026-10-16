@@ -323,7 +323,7 @@ export default function Home() {
             </section>
           ) : null}
           {remoteConfig ? (
-            <section>
+            <section className="config-panel">
               <h2>Remote configuration</h2>
               <pre><code>{JSON.stringify(remoteConfig, null, 2)}</code></pre>
             </section>
