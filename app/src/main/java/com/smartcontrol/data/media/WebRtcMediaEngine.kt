@@ -236,50 +236,72 @@ class WebRtcMediaEngine(
 
     private fun createCameraTrack(sessionId: String): CapturedVideo {
         val enumerator = Camera2Enumerator(context)
-        val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } ?: enumerator.deviceNames.firstOrNull() ?: error("No camera available")
+        val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+            ?: enumerator.deviceNames.firstOrNull()
+            ?: error("No camera available")
         val capturer = enumerator.createCapturer(device, null) ?: error("Unable to open camera")
-        val source = factory.createVideoSource(capturer.isScreencast)
-        val helper = SurfaceTextureHelper.create("camera-$sessionId", eglBase.eglBaseContext)
+
+        // Create every native resource inside the guarded block. In particular,
+        // SurfaceTextureHelper creation can fail after VideoSource allocation.
+        var source: org.webrtc.VideoSource? = null
+        var helper: SurfaceTextureHelper? = null
+        var track: VideoTrack? = null
         try {
-            capturer.initialize(helper, context, source.capturerObserver)
+            val createdSource = factory.createVideoSource(capturer.isScreencast)
+            source = createdSource
+            val createdHelper = SurfaceTextureHelper.create("camera-$sessionId", eglBase.eglBaseContext)
+            helper = createdHelper
+            capturer.initialize(createdHelper, context, createdSource.capturerObserver)
             capturer.startCapture(1280, 720, 24)
-            val track = factory.createVideoTrack("camera-$sessionId", source)
-            return CapturedVideo(track) {
-                runCatching { track.dispose() }
+            val createdTrack = factory.createVideoTrack("camera-$sessionId", createdSource)
+            track = createdTrack
+            return CapturedVideo(createdTrack) {
+                runCatching { createdTrack.dispose() }
                 runCatching { capturer.stopCapture() }
                 runCatching { capturer.dispose() }
-                runCatching { helper.dispose() }
-                runCatching { source.dispose() }
+                runCatching { createdHelper.dispose() }
+                runCatching { createdSource.dispose() }
             }
         } catch (error: Exception) {
+            runCatching { track?.dispose() }
             runCatching { capturer.stopCapture() }
             runCatching { capturer.dispose() }
-            runCatching { helper.dispose() }
-            runCatching { source.dispose() }
+            runCatching { helper?.dispose() }
+            runCatching { source?.dispose() }
             throw error
         }
     }
 
     private fun createScreenTrack(sessionId: String, data: Intent): CapturedVideo {
         val capturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
-        val source = factory.createVideoSource(true)
-        val helper = SurfaceTextureHelper.create("screen-$sessionId", eglBase.eglBaseContext)
+
+        // Keep partial MediaProjection capture resources in scope for cleanup if
+        // source/helper/track creation or capture initialization fails.
+        var source: org.webrtc.VideoSource? = null
+        var helper: SurfaceTextureHelper? = null
+        var track: VideoTrack? = null
         try {
-            capturer.initialize(helper, context, source.capturerObserver)
+            val createdSource = factory.createVideoSource(true)
+            source = createdSource
+            val createdHelper = SurfaceTextureHelper.create("screen-$sessionId", eglBase.eglBaseContext)
+            helper = createdHelper
+            capturer.initialize(createdHelper, context, createdSource.capturerObserver)
             capturer.startCapture(1280, 720, 15)
-            val track = factory.createVideoTrack("screen-$sessionId", source)
-            return CapturedVideo(track) {
-                runCatching { track.dispose() }
+            val createdTrack = factory.createVideoTrack("screen-$sessionId", createdSource)
+            track = createdTrack
+            return CapturedVideo(createdTrack) {
+                runCatching { createdTrack.dispose() }
                 runCatching { capturer.stopCapture() }
                 runCatching { capturer.dispose() }
-                runCatching { helper.dispose() }
-                runCatching { source.dispose() }
+                runCatching { createdHelper.dispose() }
+                runCatching { createdSource.dispose() }
             }
         } catch (error: Exception) {
+            runCatching { track?.dispose() }
             runCatching { capturer.stopCapture() }
             runCatching { capturer.dispose() }
-            runCatching { helper.dispose() }
-            runCatching { source.dispose() }
+            runCatching { helper?.dispose() }
+            runCatching { source?.dispose() }
             throw error
         }
     }
