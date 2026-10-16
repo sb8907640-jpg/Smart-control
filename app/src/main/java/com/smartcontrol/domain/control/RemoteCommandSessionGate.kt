@@ -17,15 +17,29 @@ class RemoteCommandSessionGate(
 ) {
     fun accept(
         command: RemoteCommand,
-        activeSessionId: String?,
-        accessibilityEnabled: Boolean
+        activeSession: RemoteSession?,
+        grantedCapabilities: Set<SessionCapability>,
+        accessibilityEnabled: Boolean,
+        visibleIndicatorActive: Boolean
     ): Result<RemoteCommand> {
-        if (activeSessionId == null || activeSessionId != command.sessionId) {
+        if (activeSession == null || activeSession.request.sessionId != command.sessionId) {
             return Result.failure(IllegalStateException("No matching active session."))
         }
 
-        if (command.targetDeviceId.isBlank() || command.requesterId.isBlank()) {
-            return Result.failure(IllegalArgumentException("Invalid command identity."))
+        if (activeSession.request.requesterId != command.requesterId ||
+            activeSession.request.targetDeviceId != command.targetDeviceId
+        ) {
+            return Result.failure(IllegalArgumentException("Command identity does not match the approved session."))
+        }
+
+        if (!isAllowed(
+                activeSession,
+                SessionCapability.REMOTE_CONTROL,
+                grantedCapabilities,
+                visibleIndicatorActive
+            )
+        ) {
+            return Result.failure(IllegalStateException("Remote control is not allowed for this active session."))
         }
 
         if (command.expiresAtEpochMs <= nowEpochMs()) {
