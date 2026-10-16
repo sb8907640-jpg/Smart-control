@@ -48,6 +48,7 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, targetUrl) => {
     if (trustedOrigin && isTrustedOrigin(targetUrl)) return;
+    if (!trustedOrigin && targetUrl.startsWith("data:text/html;charset=utf-8,")) return;
     event.preventDefault();
   });
 
