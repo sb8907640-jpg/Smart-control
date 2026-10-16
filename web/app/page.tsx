@@ -11,6 +11,10 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
+const firebaseConfigured = Object.values(firebaseConfig).every(
+  value => typeof value === "string" && value.trim().length > 0
+);
+
 type BackendSession = {
   authenticated: boolean;
   uid: string;
@@ -79,15 +83,37 @@ export default function Home() {
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
 
   useEffect(() => {
-    const client = authClient();
-    setAuth(client);
-    return onAuthStateChanged(client, setUser);
+    if (!firebaseConfigured) {
+      setStatus("Firebase is not configured. Add the required NEXT_PUBLIC_FIREBASE_* environment variables and rebuild the web app.");
+      return;
+    }
+
+    try {
+      const client = authClient();
+      setAuth(client);
+      return onAuthStateChanged(client, nextUser => {
+        setUser(nextUser);
+        if (!nextUser) {
+          // Clear account-scoped data whenever Firebase auth is lost, not only on the sign-out button.
+          setSession(null);
+          setDevices([]);
+          setSystem(null);
+          setRemoteConfig(null);
+          setConfirmation(null);
+        }
+      });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Firebase initialization failed.");
+    }
   }, []);
 
   async function signIn() {
+    if (!auth) {
+      setStatus("Firebase authentication is unavailable. Check the web environment configuration.");
+      return;
+    }
     setBusy(true);
     setStatus("Signing in with Google...");
-    if (!auth) return;
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       setStatus("Signed in. Verifying backend session...");
@@ -160,8 +186,11 @@ export default function Home() {
   }
 
   async function logout() {
+    if (!auth) {
+      setStatus("Firebase authentication is unavailable.");
+      return;
+    }
     setBusy(true);
-    if (!auth) return;
     try {
       await signOut(auth);
       setSession(null);
@@ -177,6 +206,13 @@ export default function Home() {
     <main>
       <h1>Smart Control</h1>
       <p>Consent-based family safety and remote support. Sensitive actions remain subject to platform permissions and explicit sessions.</p>
+
+      {!firebaseConfigured ? (
+        <section role="alert">
+          <h2>Setup required</h2>
+          <p>Firebase web configuration is missing. Add the required public Firebase settings and API URL in the deployment environment, then rebuild the application. Sign-in is disabled until configuration is valid.</p>
+        </section>
+      ) : null}
 
       <section>
         <h2>Authentication</h2>
