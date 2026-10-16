@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const sourcePath = path.join(__dirname, "../app/src/main/java/com/smartcontrol/data/media/WebRtcMediaEngine.kt");
 const source = fs.readFileSync(sourcePath, "utf8");
+const viewModel = fs.readFileSync(path.join(__dirname, "../app/src/main/java/com/smartcontrol/presentation/media/MediaSessionViewModel.kt"), "utf8");
 
 function method(name, nextMarker) {
   const start = source.indexOf(name);
@@ -20,7 +21,8 @@ const checks = [
   ["Screen source allocation is inside guarded cleanup scope", screen.indexOf("try {") >= 0 && screen.indexOf("try {") < screen.indexOf("factory.createVideoSource(")],
   ["Screen helper allocation is inside guarded cleanup scope", screen.indexOf("try {") >= 0 && screen.indexOf("try {") < screen.indexOf("SurfaceTextureHelper.create(")],
   ["Screen failure disposes partial capturer/source/helper/track", ["capturer.dispose()", "source?.dispose()", "helper?.dispose()", "track?.dispose()"].every(value => screen.includes(value))],
-  ["Successful capture close disposes track and native capture resources", [camera, screen].every(value => ["createdTrack.dispose()", "capturer.stopCapture()", "createdHelper.dispose()", "createdSource.dispose()"].every(token => value.includes(token)))]
+  ["Successful capture close disposes track and native capture resources", [camera, screen].every(value => ["createdTrack.dispose()", "capturer.stopCapture()", "createdHelper.dispose()", "createdSource.dispose()"].every(token => value.includes(token)))],
+  ["ViewModel teardown stops screen-projection foreground service", viewModel.includes("override fun onCleared()") && viewModel.includes("engine.release()") && viewModel.includes("MediaProjectionForegroundService.stop(context)")]
 ];
 for (const [name, passed] of checks) console.log((passed ? "PASS " : "FAIL ") + name);
 if (checks.some(([, passed]) => !passed)) {
