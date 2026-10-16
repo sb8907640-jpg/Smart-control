@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     onPrimary = Color(0xFFFFFFFF),
                     primaryContainer = Color(0xFFEAF0FF),
                     onPrimaryContainer = Color(0xFF10213F),
-                    secondary = Color(0xFF0F8B75),
+                    secondary = Color(0xFF0F766E),
                     onSecondary = Color(0xFFFFFFFF),
                     secondaryContainer = Color(0xFFD9F5EC),
                     onSecondaryContainer = Color(0xFF064E42),
