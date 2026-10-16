@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, Auth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User, RecaptchaVerifier, ConfirmationResult, signInWithPhoneNumber } from "firebase/auth";
 
@@ -81,6 +81,7 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     if (!firebaseConfigured) {
@@ -91,17 +92,20 @@ export default function Home() {
     try {
       const client = authClient();
       setAuth(client);
-      return onAuthStateChanged(client, nextUser => {
+      const unsubscribe = onAuthStateChanged(client, nextUser => {
+        // Never carry account-scoped backend data across any auth-state transition.
+        setSession(null);
+        setDevices([]);
+        setSystem(null);
+        setRemoteConfig(null);
+        setConfirmation(null);
         setUser(nextUser);
-        if (!nextUser) {
-          // Clear account-scoped data whenever Firebase auth is lost, not only on the sign-out button.
-          setSession(null);
-          setDevices([]);
-          setSystem(null);
-          setRemoteConfig(null);
-          setConfirmation(null);
-        }
       });
+      return () => {
+        unsubscribe();
+        recaptchaRef.current?.clear();
+        recaptchaRef.current = null;
+      };
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Firebase initialization failed.");
     }
@@ -125,7 +129,10 @@ export default function Home() {
   }
 
   async function sendOtp() {
-    if (!auth) return;
+    if (!auth) {
+      setStatus("Firebase authentication is unavailable. Check the web environment configuration.");
+      return;
+    }
     const normalized = phone.trim();
     if (!/^\+[1-9]\d{9,14}$/.test(normalized)) {
       setStatus("Enter a valid phone number with country code.");
@@ -133,8 +140,8 @@ export default function Home() {
     }
     setBusy(true);
     try {
-      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
-      const result = await signInWithPhoneNumber(auth, normalized, verifier);
+      recaptchaRef.current ??= new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      const result = await signInWithPhoneNumber(auth, normalized, recaptchaRef.current);
       setConfirmation(result);
       setStatus("OTP sent. Enter the verification code.");
     } catch (error) {
@@ -196,7 +203,12 @@ export default function Home() {
       setSession(null);
       setDevices([]);
       setSystem(null);
+      setRemoteConfig(null);
+      setConfirmation(null);
+      setOtp("");
       setStatus("Signed out");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Sign-out failed");
     } finally {
       setBusy(false);
     }
@@ -217,10 +229,10 @@ export default function Home() {
       <section>
         <h2>Authentication</h2>
         <p>{user ? `Signed in as ${user.email ?? user.uid}` : "Not signed in"}</p>
-        <button onClick={signIn} disabled={busy || Boolean(user)}>Continue with Google</button>{" "}
+        <button onClick={signIn} disabled={!auth || busy || Boolean(user)}>Continue with Google</button>{" "}
         <div id="recaptcha-container" />
-        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" disabled={busy || Boolean(user)} />
-        <button onClick={sendOtp} disabled={busy || Boolean(user)}>Send OTP</button>
+        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" disabled={!auth || busy || Boolean(user)} />
+        <button onClick={sendOtp} disabled={!auth || busy || Boolean(user)}>Send OTP</button>
         {confirmation ? (
           <>
             <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit OTP" disabled={busy} />
