@@ -8,7 +8,7 @@
   "scripts": {
     "check": "node --check src/main.js && node --check src/preload.js",
     "start": "electron .",
-    "build:linux": "electron-builder --linux AppImage --publish never"
+    "build:linux": "node scripts/write-desktop-config.js && electron-builder --linux AppImage --publish never"
   },
   "dependencies": {},
   "devDependencies": {
