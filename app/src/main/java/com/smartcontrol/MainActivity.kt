@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
@@ -176,6 +181,35 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         super.onCreate(savedInstanceState)
 
         setContent {
+            MaterialTheme(
+                colorScheme = lightColorScheme(
+                    primary = Color(0xFF2458E6),
+                    onPrimary = Color(0xFFFFFFFF),
+                    primaryContainer = Color(0xFFEAF0FF),
+                    onPrimaryContainer = Color(0xFF10213F),
+                    secondary = Color(0xFF0F8B75),
+                    onSecondary = Color(0xFFFFFFFF),
+                    secondaryContainer = Color(0xFFD9F5EC),
+                    onSecondaryContainer = Color(0xFF064E42),
+                    background = Color(0xFFF3F6FB),
+                    onBackground = Color(0xFF172033),
+                    surface = Color(0xFFFFFFFF),
+                    onSurface = Color(0xFF172033),
+                    surfaceVariant = Color(0xFFF7F9FC),
+                    onSurfaceVariant = Color(0xFF65728A),
+                    outline = Color(0xFFD6DEEA),
+                    outlineVariant = Color(0xFFE1E7F0),
+                    error = Color(0xFFB42332),
+                    onError = Color(0xFFFFFFFF)
+                ),
+                shapes = Shapes(
+                    extraSmall = RoundedCornerShape(6.dp),
+                    small = RoundedCornerShape(10.dp),
+                    medium = RoundedCornerShape(16.dp),
+                    large = RoundedCornerShape(24.dp),
+                    extraLarge = RoundedCornerShape(28.dp)
+                )
+            ) {
             val featureAccessViewModel: FeatureAccessViewModel = hiltViewModel()
             val featureSettings by featureAccessViewModel.settings.collectAsState()
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
@@ -431,6 +465,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     )
                     }
                 }
+            }
             }
         }
     }
