@@ -29,6 +29,9 @@ jobs:
       - working-directory: desktop
         run: npm run check
       - working-directory: desktop
+        env:
+          SMARTCONTROL_WEB_URL: ${{ vars.SMARTCONTROL_WEB_URL }}
+          SMARTCONTROL_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_SMARTCONTROL_API_BASE_URL }}
         run: npm run build:linux
       - uses: actions/upload-artifact@v4
         if: success()
