@@ -358,6 +358,22 @@ async function main() {
       status: "REQUESTED",
       createdAt: Date.now()
     }));
+    await assertSucceeds(setDoc(doc(mediaController.firestore(), "mediaSessions", "session-with-reason"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now(),
+      reason: "User-requested camera support"
+    }));
+    await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "overlong-reason"), {
+      controllerUid: "media-controller",
+      targetDeviceId: "media-target",
+      capabilities: ["CAMERA"],
+      status: "REQUESTED",
+      createdAt: Date.now(),
+      reason: "x".repeat(501)
+    }));
     await assertFails(setDoc(doc(mediaController.firestore(), "mediaSessions", "forged-active"), {
       controllerUid: "media-controller",
       targetDeviceId: "media-target",
