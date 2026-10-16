@@ -1,8 +1,10 @@
 const { app, BrowserWindow, session, desktopCapturer, dialog } = require("electron");
 const path = require("node:path");
 
-const apiBase = String(process.env.SMARTCONTROL_API_BASE_URL || "").trim().replace(/\/$/, "");
-const configuredWebUrl = String(process.env.SMARTCONTROL_WEB_URL || "").trim();
+let buildConfig = {};
+try { buildConfig = require("./build-config.json"); } catch (_) { /* source checkout may not have generated packaging config */ }
+const apiBase = String(process.env.SMARTCONTROL_API_BASE_URL || buildConfig.apiBaseUrl || "").trim().replace(/\/$/, "");
+const configuredWebUrl = String(process.env.SMARTCONTROL_WEB_URL || buildConfig.webUrl || "").trim();
 
 function validatedWebUrl(value) {
   try {
