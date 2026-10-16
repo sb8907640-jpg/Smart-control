@@ -43,9 +43,40 @@ function createWindow() {
     }
   });
 
-  // Do not let the trusted app window navigate to an untrusted origin or open
-  // a second window that escapes the configured application origin.
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Keep the main application pinned to its configured origin. Firebase/Google
+  // sign-in needs an HTTPS popup, so allow only HTTPS popup URLs and give those
+  // child windows the same isolated, sandboxed renderer settings.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const target = new URL(url);
+      if (!trustedOrigin || target.protocol !== "https:" || !target.hostname || target.username || target.password) {
+        return { action: "deny" };
+      }
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webSecurity: true
+          }
+        }
+      };
+    } catch (_) {
+      return { action: "deny" };
+    }
+  });
+  win.webContents.on("did-create-window", child => {
+    child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    child.webContents.on("will-navigate", (event, targetUrl) => {
+      try {
+        const target = new URL(targetUrl);
+        if (target.protocol === "https:" && target.hostname && !target.username && !target.password) return;
+      } catch (_) { /* invalid target is blocked below */ }
+      event.preventDefault();
+    });
+  });
   win.webContents.on("will-navigate", (event, targetUrl) => {
     if (trustedOrigin && isTrustedOrigin(targetUrl)) return;
     if (!trustedOrigin && targetUrl.startsWith("data:text/html;charset=utf-8,")) return;
