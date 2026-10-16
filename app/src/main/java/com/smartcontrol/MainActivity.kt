@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -245,6 +246,16 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                 }
             }
             var route by remember { mutableStateOf(if (intent.data?.host == "pair") "pairing" else "session") }
+
+            // Keep Android's system Back button aligned with in-app navigation.
+            // Pairing returns to the session hub; feature/detail pages return to the feature center.
+            BackHandler(enabled = route != "session") {
+                route = when (route) {
+                    "pairing" -> "session"
+                    "features" -> "session"
+                    else -> "features"
+                }
+            }
             var pairingLink by remember { mutableStateOf(intent.data?.takeIf { it.scheme == "smartcontrol" && it.host == "pair" }) }
             val pendingPairLink by incomingPairLink
             LaunchedEffect(pendingPairLink) {
