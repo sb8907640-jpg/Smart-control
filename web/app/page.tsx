@@ -110,7 +110,19 @@ export default function Home() {
   useEffect(() => {
     const client = authClient();
     setAuth(client);
-    const unsubscribe = onAuthStateChanged(client, setUser);
+    const unsubscribe = onAuthStateChanged(client, nextUser => {
+      setUser(nextUser);
+      if (!nextUser) {
+        // Clear all account-scoped UI state on every auth transition, including
+        // token revocation or sign-out from another tab/window.
+        setSession(null);
+        setDevices([]);
+        setSystem(null);
+        setRemoteConfig({});
+        setConfirmation(null);
+        setOtp("");
+      }
+    });
     return () => {
       unsubscribe();
       recaptchaRef.current?.clear();
