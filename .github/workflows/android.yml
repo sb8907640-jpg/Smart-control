@@ -128,6 +128,14 @@ jobs:
           {
             echo "Node:"
             node --version
+            echo "Firebase Functions dependencies:"
+            npm --prefix functions install --no-audit --no-fund
+            functions_install_status=$?
+            echo "functions_install_status=$functions_install_status"
+            echo "Firebase Functions unit suite:"
+            npm --prefix functions test
+            functions_test_status=$?
+            echo "functions_test_status=$functions_test_status"
             echo "index.js:"
             node --check functions/index.js
             index_status=$?
@@ -140,7 +148,7 @@ jobs:
             node -e "const c=require('./functions/spec/masterCatalog'); if(c.TABLES.length < 42 || c.API.length < 60) process.exit(1); console.log('tables='+c.TABLES.length+' api='+c.API.length)"
             catalog_status=$?
             echo "catalog_status=$catalog_status"
-            echo "validation_status=$(( index_status || billing_status || catalog_status ))"
+            echo "validation_status=$(( functions_install_status || functions_test_status || index_status || billing_status || catalog_status ))"
           } 2>&1 | tee functions-validation.log
           exit "$(grep '^validation_status=' functions-validation.log | cut -d= -f2)"
 
