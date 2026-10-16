@@ -11,6 +11,10 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
+const firebaseConfigured = Object.values(firebaseConfig).every(
+  value => typeof value === "string" && value.trim().length > 0
+);
+
 type BackendSession = {
   authenticated: boolean;
   uid: string;
@@ -108,26 +112,32 @@ export default function Home() {
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
-    const client = authClient();
-    setAuth(client);
-    const unsubscribe = onAuthStateChanged(client, nextUser => {
-      setUser(nextUser);
-      if (!nextUser) {
-        // Clear all account-scoped UI state on every auth transition, including
-        // token revocation or sign-out from another tab/window.
+    if (!firebaseConfigured) {
+      setStatus("Firebase is not configured. Add the required NEXT_PUBLIC_FIREBASE_* environment variables and rebuild the web app.");
+      return;
+    }
+
+    try {
+      const client = authClient();
+      setAuth(client);
+      const unsubscribe = onAuthStateChanged(client, nextUser => {
+        // Never carry account-scoped backend data across any auth-state transition.
         setSession(null);
         setDevices([]);
         setSystem(null);
-        setRemoteConfig({});
+        setRemoteConfig(null);
         setConfirmation(null);
         setOtp("");
-      }
-    });
-    return () => {
-      unsubscribe();
-      recaptchaRef.current?.clear();
-      recaptchaRef.current = null;
-    };
+        setUser(nextUser);
+      });
+      return () => {
+        unsubscribe();
+        recaptchaRef.current?.clear();
+        recaptchaRef.current = null;
+      };
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Firebase initialization failed.");
+    }
   }, []);
 
   async function signIn() {
@@ -148,7 +158,10 @@ export default function Home() {
   }
 
   async function sendOtp() {
-    if (!auth) return;
+    if (!auth) {
+      setStatus("Firebase authentication is unavailable. Check the web environment configuration.");
+      return;
+    }
     const normalized = phone.trim();
     if (!/^\+[1-9]\d{9,14}$/.test(normalized)) {
       setStatus("Enter a valid phone number with country code.");
@@ -226,7 +239,12 @@ export default function Home() {
       setSession(null);
       setDevices([]);
       setSystem(null);
+      setRemoteConfig(null);
+      setConfirmation(null);
+      setOtp("");
       setStatus("Signed out");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Sign-out failed");
     } finally {
       setBusy(false);
     }
@@ -234,26 +252,36 @@ export default function Home() {
 
   return (
     <main>
+      <div className="hero-kicker"><span className="brand-mark" aria-hidden="true" /> FAMILY SAFETY COMMAND CENTER</div>
       <h1>Smart Control</h1>
-      <p>Consent-based family safety and remote support. Sensitive actions remain subject to platform permissions and explicit sessions.</p>
+      <p className="hero-copy">Stay connected. Stay in control. Manage trusted devices, approved sessions, and system health from one clear dashboard.</p>
 
-      <section>
-        <h2>Authentication</h2>
+      {!firebaseConfigured ? (
+        <section className="setup-panel" role="alert">
+          <h2>Setup required</h2>
+          <p>Firebase web configuration is missing. Add the required public Firebase settings and API URL in the deployment environment, then rebuild the application. Sign-in is disabled until configuration is valid.</p>
+        </section>
+      ) : null}
+
+      <section className="auth-panel">
+        <h2>Account access</h2>
         <p>{user ? `Signed in as ${user.email ?? user.uid}` : "Not signed in"}</p>
-        <button onClick={signIn} disabled={busy || Boolean(user)}>Continue with Google</button>{" "}
-        <div id="recaptcha-container" />
-        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" disabled={busy || Boolean(user)} />
-        <button onClick={sendOtp} disabled={busy || Boolean(user)}>Send OTP</button>
+        <button onClick={signIn} disabled={!auth || busy || Boolean(user)}>Continue with Google</button>{" "}
+        <div id="recaptcha-container" aria-hidden="true" />
+        <label className="field-label" htmlFor="phone-number">Phone number</label>
+        <input id="phone-number" type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX" aria-label="Phone number with country code" disabled={!auth || busy || Boolean(user)} />
+        <button onClick={sendOtp} disabled={!auth || busy || Boolean(user)}>Send OTP</button>
         {confirmation ? (
           <>
-            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit OTP" disabled={busy} />
+            <label className="field-label" htmlFor="phone-otp">Verification code</label>
+            <input id="phone-otp" type="text" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit OTP" aria-label="Six-digit verification code" disabled={busy} />
             <button onClick={verifyOtp} disabled={busy}>Verify OTP</button>
           </>
         ) : null}
         <button onClick={logout} disabled={busy || !user}>Sign out</button>
       </section>
 
-      <section>
+      <section className="support-panel">
         <h2>Support</h2>
         <button onClick={async () => {
           if (!user) { setStatus("Sign in to contact support."); return; }
@@ -263,10 +291,10 @@ export default function Home() {
         <p>Click → Talk to Support</p>
       </section>
 
-      <section>
+      <section className="backend-panel">
         <h2>Backend session</h2>
         <button onClick={verifySession} disabled={busy || !user}>Verify authenticated session</button>
-        <p>{status}</p>
+        <p className="status-message" role="status" aria-live="polite">{status}</p>
         {session ? (
           <pre><code>{JSON.stringify(session, null, 2)}</code></pre>
         ) : null}
@@ -274,8 +302,8 @@ export default function Home() {
 
       {session ? (
         <>
-          <section>
-            <h2>Devices</h2>
+          <section className="devices-panel">
+            <h2>Trusted devices</h2>
             {devices.length === 0 ? <p>No devices returned.</p> : (
               <ul>
                 {devices.map(device => (
@@ -289,7 +317,7 @@ export default function Home() {
           </section>
 
           {system ? (
-            <section>
+            <section className="system-panel">
               <h2>System status</h2>
               <p>{system.ok ? "Healthy" : "Degraded"} · Firestore: {system.firestore} · PostgreSQL: {system.postgres.ok ? "Healthy" : system.postgres.configured ? "Unavailable" : "Not configured"}</p>
             </section>
