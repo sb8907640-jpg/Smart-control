@@ -11,6 +11,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -211,6 +215,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     extraLarge = RoundedCornerShape(28.dp)
                 )
             ) {
+                // Keep every screen clear of status/navigation bars, including Android 15+ edge-to-edge layouts.
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             val featureAccessViewModel: FeatureAccessViewModel = hiltViewModel()
             val featureSettings by featureAccessViewModel.settings.collectAsState()
             var signedIn by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
@@ -477,6 +483,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     }
                 }
             }
+                }
             }
         }
     }
