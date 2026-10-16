@@ -72,6 +72,7 @@ const mediaViewModel = read("app/src/main/java/com/smartcontrol/presentation/med
 const firestoreRules = read("firestore.rules");
 const storageRules = read("storage.rules");
 const iceServers = read("functions/ice-servers.js");
+const turnConfig = read("functions/spec/turn-config.js");
 const gradle = read("app/build.gradle.kts");
 const featureCenter = read("app/src/main/java/com/smartcontrol/presentation/features/FeatureCenterScreen.kt");
 const ownerAdmin = read("app/src/main/java/com/smartcontrol/presentation/owner/OwnerAdminScreen.kt");
@@ -274,7 +275,7 @@ check("Transfer path validation uses exact path segments",
   "Download and cleanup paths are constrained to the sender/transfer/file structure without rejecting ordinary filenames containing two dots.");
 check("TURN shared secret is not embedded in Android APK",
   !gradle.includes("TURN_CREDENTIAL") && iceServers.includes('defineSecret("SMARTCONTROL_TURN_CREDENTIAL")') &&
-    iceServers.includes('createHmac("sha1", sharedSecret)'),
+    turnConfig.includes('createHmac("sha1", secret)') && turnConfig.includes("expiresAtEpochSeconds"),
   "Authenticated callable issues expiring TURN REST credentials server-side.");
 check("Media session requests server-authorized ICE configuration",
   mediaViewModel.includes('getHttpsCallable("getWebRtcIceServers")') &&
