@@ -132,10 +132,10 @@ jobs:
             npm --prefix functions install --no-audit --no-fund
             functions_install_status=$?
             echo "functions_install_status=$functions_install_status"
-            echo "Firebase Functions unit suite:"
-            npm --prefix functions test
+            echo "Firebase Functions static checks and unit suite:"
+            npm --prefix functions run check
             functions_test_status=$?
-            echo "functions_test_status=$functions_test_status"
+            echo "functions_check_and_test_status=$functions_test_status"
             echo "index.js:"
             node --check functions/index.js
             index_status=$?
