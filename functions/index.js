@@ -13,6 +13,9 @@ const { CURRENT_LEGAL_CONSENT_VERSION, isCurrentConsentRecord } = require("./spe
 initializeApp();
 const db = getFirestore();
 
+// Re-export the WebRTC ICE callable so Firebase deploy discovers it from this entry point.
+Object.assign(exports, require("./ice-servers"));
+
 async function assertAccountActive(uid) {
   const [profileSnapshot, accessSnapshot] = await Promise.all([
     db.collection("users").doc(uid).get(),
