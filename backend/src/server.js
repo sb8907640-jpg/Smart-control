@@ -5,7 +5,14 @@ function createRealtimeServer({ app, verifyToken, firestore }) {
   const httpServer = createServer(app);
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
   const io = new Server(httpServer, {
-    cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true },
+    cors: {
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error("CORS origin is not allowed."));
+      },
+      credentials: true
+    },
     transports: ["websocket", "polling"]
   });
 
@@ -15,14 +22,19 @@ function createRealtimeServer({ app, verifyToken, firestore }) {
       if (!token) return next(new Error("Authentication required."));
       const verifiedUser = await verifyToken(token, true);
       if (firestore && typeof firestore.collection === "function" && verifiedUser?.uid) {
-        const account = await firestore.collection("users").doc(verifiedUser.uid).get();
+        const [account, access] = await Promise.all([
+          firestore.collection("users").doc(verifiedUser.uid).get(),
+          firestore.collection("userAccess").doc(verifiedUser.uid).get()
+        ]);
         const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
-        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+        const accessBlocked = access.exists && access.data()?.blocked === true;
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus) || accessBlocked) {
+          const blockReason = accessBlocked ? "OWNER_BLOCKED" : accountStatus;
           try {
             await firestore.collection("securityEvents").add({
               event: "SOCKET_REJECTED_ACCOUNT_STATUS",
               userId: verifiedUser.uid,
-              status: accountStatus,
+              status: blockReason,
               createdAtEpochMs: Date.now()
             });
           } catch (_) {

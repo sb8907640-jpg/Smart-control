@@ -48,6 +48,22 @@ function installPairingApi(app, { db, authenticate }) {
           return { failure: { statusCode: 400, message: "The sender cannot accept their own invitation." } };
         }
 
+        const senderUserRef = db.collection("users").doc(invite.creatorUid);
+        const senderAccessRef = db.collection("userAccess").doc(invite.creatorUid);
+        const deviceRef = db.collection("devices").doc(req.user.uid);
+        const senderUserSnap = await transaction.get(senderUserRef);
+        const senderAccessSnap = await transaction.get(senderAccessRef);
+        const deviceSnap = await transaction.get(deviceRef);
+        const senderStatus = String(senderUserSnap.exists ? senderUserSnap.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
+        const senderBlocked = senderAccessSnap.exists && senderAccessSnap.data()?.blocked === true;
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(senderStatus) || senderBlocked) {
+          return { failure: { statusCode: 403, message: "The invitation sender is suspended or blocked." } };
+        }
+        const currentDevice = deviceSnap.exists ? deviceSnap.data() || {} : {};
+        if (currentDevice.controllerUid && currentDevice.pairingActive === true) {
+          return { failure: { statusCode: 409, message: "This receiver is already paired. Unpair the existing device before accepting a new invitation." } };
+        }
+
         const linkedAtEpochMs = Date.now();
         transaction.create(pairingRef, {
           senderUid: invite.creatorUid,
@@ -63,6 +79,15 @@ function installPairingApi(app, { db, authenticate }) {
           acceptedByUid: req.user.uid,
           acceptedAtEpochMs: linkedAtEpochMs
         });
+        // This is the canonical record consumed by Android pairing, media sessions,
+        // file transfers, and the web device dashboard.
+        transaction.set(deviceRef, {
+          controllerUid: invite.creatorUid,
+          pairedAt: linkedAtEpochMs,
+          pairingActive: true,
+          senderRole: invite.senderRole,
+          receiverRole: invite.receiverRole
+        }, { merge: true });
         return {
           pairingId: tokenHash,
           senderRole: invite.senderRole,

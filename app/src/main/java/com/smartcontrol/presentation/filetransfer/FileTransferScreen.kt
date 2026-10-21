@@ -1,10 +1,12 @@
 package com.smartcontrol.presentation.filetransfer
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -39,14 +41,22 @@ fun FileTransferScreen(
     var pendingDownloadId by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            runCatching {
+        uri?.let { selected ->
+            val retained = runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    selected,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
+            }.isSuccess
+            if (retained) {
+                viewModel.uploadSelectedFile(selected)
+            } else {
+                Toast.makeText(
+                    context,
+                    "This file provider did not allow persistent access. Choose a file from a provider that supports persistent access so the upload can resume after approval.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            viewModel.uploadSelectedFile(it)
         }
     }
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
@@ -96,8 +106,22 @@ fun FileTransferScreen(
                     Text("Status: ${request.status.name}")
                     when (request.status) {
                         com.smartcontrol.domain.filetransfer.FileTransferRequest.Status.REQUESTED -> {
-                            Button(onClick = { viewModel.approve(request.transferId) }) {
-                                Text("Approve transfer")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { viewModel.approve(request.transferId) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Approve")
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.reject(request.transferId) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Reject")
+                                }
                             }
                         }
                         com.smartcontrol.domain.filetransfer.FileTransferRequest.Status.READY -> {

@@ -29,7 +29,7 @@ class FirestoreLocationSharingRepository @Inject constructor(
     override suspend fun stopSharing(deviceId: String) {
         firestore.collection("devices").document(deviceId)
             .collection("sharedLocation").document("current")
-            .set(mapOf("sharingActive" to false, "stoppedAtEpochMs" to System.currentTimeMillis()))
+            .update("sharingActive", false, "stoppedAtEpochMs", System.currentTimeMillis())
             .await()
     }
 }

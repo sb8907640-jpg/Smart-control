@@ -1,17 +1,34 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { anchorAuditRoot } = require("./blockchain-audit");
-const { ROLES, normalizeRole, canManageRole } = require("./spec/roles");
+const { ROLES, normalizeRole, canManageUser, canManageOwnerAccounts } = require("./spec/roles");
+const { mediaCapabilitiesAllowed } = require("./spec/media-policy");
+const { globalFileTransferEnabled, userFileTransferEnabled } = require("./spec/file-transfer-policy");
+const { CURRENT_LEGAL_CONSENT_VERSION, isCurrentConsentRecord } = require("./spec/consent-policy");
 
 initializeApp();
 const db = getFirestore();
 
+// Re-export the WebRTC ICE callable so Firebase deploy discovers it from this entry point.
+Object.assign(exports, require("./ice-servers"));
 
-const CURRENT_LEGAL_CONSENT_VERSION = 1;
+async function assertAccountActive(uid) {
+  const [profileSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("userAccess").doc(uid).get()
+  ]);
+  const status = String(profileSnapshot.data()?.status || "ACTIVE").toUpperCase();
+  if ((profileSnapshot.exists && status !== "ACTIVE") ||
+      (accessSnapshot.exists && accessSnapshot.data()?.blocked === true)) {
+    throw new HttpsError("permission-denied", "This account is suspended or blocked.");
+  }
+}
+
+
 
 // Record consent with server-controlled identity and a server timestamp.
 exports.recordLegalConsent = onCall(async (request) => {
@@ -31,6 +48,7 @@ exports.recordLegalConsent = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "A valid local acceptance timestamp is required.");
   }
   const userId = request.auth.uid;
+  await assertAccountActive(userId);
   const ref = db.collection("consentHistory").doc(userId + "_" + version);
   const result = await db.runTransaction(async (transaction) => {
     const existing = await transaction.get(ref);
@@ -52,12 +70,19 @@ exports.recordLegalConsent = onCall(async (request) => {
 });
 
 exports.getDevicePairingPolicy = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in before generating a pairing code.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const claims = request.auth.token || {};
-  const isOwner = claims.admin === true || String(claims.role || "").toUpperCase() === "OWNER";
+  if (canManageOwnerAccounts(claims)) return { isOwner: true, expiryMinutes: 0 };
+
+  const ownerAccountsSnapshot = await db.collection("ownerAccounts").doc("config").get();
+  const ownerAccounts = ownerAccountsSnapshot.exists ? ownerAccountsSnapshot.data() || {} : {};
+  const ownerEmails = Array.isArray(ownerAccounts.emails) ? ownerAccounts.emails : [];
+  const ownerMobiles = Array.isArray(ownerAccounts.mobiles) ? ownerAccounts.mobiles : [];
+  const isOwner = canManageOwnerAccounts(claims, ownerEmails, ownerMobiles);
   if (isOwner) return { isOwner: true, expiryMinutes: 0 };
 
   // Only expose the pairing-code lifetime, never the private owner settings document.
@@ -79,6 +104,86 @@ exports.getDevicePairingPolicy = onCall(async (request) => {
   return { isOwner: false, expiryMinutes };
 });
 
+exports.approveMediaSession = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in before approving a media session.");
+  }
+  const sessionId = String(request.data?.sessionId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
+    throw new HttpsError("invalid-argument", "A valid media session ID is required.");
+  }
+
+  const sessionRef = db.collection("mediaSessions").doc(sessionId);
+  const globalPolicyRef = db.collection("featurePolicy").doc("global");
+  const userPolicyRef = db.collection("featurePolicyUsers").doc(request.auth.uid);
+  return db.runTransaction(async (transaction) => {
+    const sessionSnapshot = await transaction.get(sessionRef);
+    if (!sessionSnapshot.exists) throw new HttpsError("not-found", "Media session not found.");
+    const session = sessionSnapshot.data() || {};
+    if (session.targetDeviceId !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Only the receiving device can approve this session.");
+    }
+    if (session.status !== "REQUESTED") {
+      throw new HttpsError("failed-precondition", "This session is no longer awaiting approval.");
+    }
+
+    const deviceSnapshot = await transaction.get(db.collection("devices").doc(session.targetDeviceId));
+    const controllerUserSnapshot = await transaction.get(db.collection("users").doc(session.controllerUid));
+    const targetUserSnapshot = await transaction.get(db.collection("users").doc(session.targetDeviceId));
+    const controllerAccessSnapshot = await transaction.get(db.collection("userAccess").doc(session.controllerUid));
+    const targetAccessSnapshot = await transaction.get(db.collection("userAccess").doc(session.targetDeviceId));
+    const device = deviceSnapshot.exists ? deviceSnapshot.data() || {} : {};
+    if (!deviceSnapshot.exists || device.controllerUid !== session.controllerUid || device.pairingActive !== true) {
+      throw new HttpsError("failed-precondition", "The device pairing is no longer active.");
+    }
+    const isActiveAccount = (snapshot) =>
+      !snapshot.exists || String(snapshot.data()?.status || "ACTIVE").toUpperCase() === "ACTIVE";
+    if (!isActiveAccount(controllerUserSnapshot) || !isActiveAccount(targetUserSnapshot) ||
+        (controllerAccessSnapshot.exists && controllerAccessSnapshot.data()?.blocked === true) ||
+        (targetAccessSnapshot.exists && targetAccessSnapshot.data()?.blocked === true)) {
+      throw new HttpsError("permission-denied", "A suspended or blocked account cannot approve media sessions.");
+    }
+
+    const globalPolicySnapshot = await transaction.get(globalPolicyRef);
+    const userPolicySnapshot = await transaction.get(userPolicyRef);
+    const controllerConsentSnapshot = await transaction.get(
+      db.collection("consentHistory").doc(`${session.controllerUid}_${CURRENT_LEGAL_CONSENT_VERSION}`)
+    );
+    const targetConsentSnapshot = await transaction.get(
+      db.collection("consentHistory").doc(`${session.targetDeviceId}_${CURRENT_LEGAL_CONSENT_VERSION}`)
+    );
+    const userPolicy = userPolicySnapshot.exists ? userPolicySnapshot.data() || {} : null
+    if (!isCurrentConsentRecord(
+          controllerConsentSnapshot.exists ? controllerConsentSnapshot.data() : null,
+          session.controllerUid
+        ) ||
+        !isCurrentConsentRecord(
+          targetConsentSnapshot.exists ? targetConsentSnapshot.data() : null,
+          session.targetDeviceId
+        )) {
+      throw new HttpsError(
+        "permission-denied",
+        "Both devices must have a current server-recorded legal consent before media approval."
+      );
+    };
+    if (!globalPolicySnapshot.exists || !mediaCapabilitiesAllowed(
+      session.capabilities,
+      globalPolicySnapshot.data() || {},
+      userPolicy
+    )) {
+      throw new HttpsError("permission-denied", "Owner feature policy does not allow one or more requested capabilities.");
+    }
+
+    const approvedAtEpochMs = Date.now();
+    transaction.update(sessionRef, {
+      status: "APPROVED",
+      approvedAtEpochMs,
+      approvedByUid: request.auth.uid
+    });
+    return { ok: true, sessionId, status: "APPROVED", approvedAtEpochMs };
+  });
+});
+
 function validatePin(pin) {
   return typeof pin === "string" && /^\d{4}$/.test(pin);
 }
@@ -92,10 +197,47 @@ function newSecret(pin) {
   return { salt, pinHash: hashPin(pin, salt) };
 }
 
+const PARENT_PIN_MAX_ATTEMPTS = 5;
+const PARENT_PIN_WINDOW_MS = 15 * 60 * 1000;
+
+function parentPinAttemptRef(parentUid, requesterUid) {
+  return db.collection("parentPinAttempts").doc(parentUid + "_" + requesterUid);
+}
+
+async function consumeParentPinAttempt(parentUid, requesterUid) {
+  const ref = parentPinAttemptRef(parentUid, requesterUid);
+  const now = Date.now();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const startedAt = Number(snapshot.get("windowStartedAtEpochMs") || 0);
+    const expired = !startedAt || now - startedAt >= PARENT_PIN_WINDOW_MS;
+    const windowStartedAtEpochMs = expired ? now : startedAt;
+    const attempts = expired ? 0 : Number(snapshot.get("attempts") || 0);
+    if (attempts >= PARENT_PIN_MAX_ATTEMPTS) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many PIN attempts. Try again in 15 minutes."
+      );
+    }
+    transaction.set(ref, {
+      parentUid,
+      requesterUid,
+      attempts: attempts + 1,
+      windowStartedAtEpochMs,
+      updatedAtEpochMs: now
+    }, { merge: true });
+  });
+}
+
+async function clearParentPinAttempts(parentUid, requesterUid) {
+  await parentPinAttemptRef(parentUid, requesterUid).delete();
+}
+
 exports.changeParentPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
   const pin = request.data?.pin;
   if (!validatePin(pin)) {
     throw new HttpsError("invalid-argument", "PIN must contain exactly 4 digits.");
@@ -109,9 +251,10 @@ exports.changeParentPin = onCall(async (request) => {
 });
 
 exports.verifyParentPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const parentUid = request.data?.parentUid;
   const pin = request.data?.pin;
@@ -135,20 +278,23 @@ exports.verifyParentPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  await consumeParentPinAttempt(parentUid, request.auth.uid);
   const actual = hashPin(pin, salt);
   const matches = crypto.timingSafeEqual(
     Buffer.from(actual, "hex"),
     Buffer.from(expected, "hex")
   );
+  if (matches) await clearParentPinAttempts(parentUid, request.auth.uid);
 
   return { ok: matches };
 });
 
 
 exports.stopSessionWithPin = onCall(async (request) => {
-  if (!request.auth) {
+  if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
   }
+  await assertAccountActive(request.auth.uid);
 
   const pin = request.data?.pin;
   if (!validatePin(pin)) {
@@ -176,6 +322,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Parent PIN configuration is invalid.");
   }
 
+  await consumeParentPinAttempt(parentUid, request.auth.uid);
   const actual = hashPin(pin, salt);
   const expectedBuffer = Buffer.from(expected, "hex");
   const actualBuffer = Buffer.from(actual, "hex");
@@ -183,6 +330,7 @@ exports.stopSessionWithPin = onCall(async (request) => {
       !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) {
     return { ok: false, stoppedCount: 0 };
   }
+  await clearParentPinAttempts(parentUid, request.auth.uid);
 
   const snapshot = await db.collection("mediaSessions")
     .where("targetDeviceId", "==", request.auth.uid)
@@ -208,6 +356,20 @@ function requireAdmin(request) {
   }
 }
 
+async function requireOwnerAccountManager(request) {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in first.");
+  }
+  await assertAccountActive(request.auth.uid);
+  const claims = request.auth.token || {};
+  const snapshot = await db.collection("ownerAccounts").doc("config").get();
+  const config = snapshot.exists ? snapshot.data() || {} : {};
+  const emails = Array.isArray(config.emails) ? config.emails : [];
+  const mobiles = Array.isArray(config.mobiles) ? config.mobiles : [];
+  if (canManageOwnerAccounts(claims, emails, mobiles)) return;
+  throw new HttpsError("permission-denied", "Only a configured Owner or Super Admin can manage Owner Accounts.");
+}
+
 async function findAuthUser(identifier) {
   try {
     if (identifier.includes("@")) return await getAuth().getUserByEmail(identifier);
@@ -221,6 +383,7 @@ async function findAuthUser(identifier) {
 
 exports.listOwnerUsers = onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const result = [];
   let pageToken;
   do {
@@ -252,28 +415,66 @@ exports.listOwnerUsers = onCall(async (request) => {
 
 exports.updateOwnerUser = onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
   if (!uid) throw new HttpsError("invalid-argument", "User ID is required.");
 
   const target = await getAuth().getUser(uid);
   const action = typeof request.data?.action === "string" ? request.data.action : "set";
+  if (action === "set" && typeof request.data?.role !== "string") {
+    throw new HttpsError("invalid-argument", "A target role is required.");
+  }
   const role = normalizeRole(request.data?.role);
   if (typeof request.data?.role === "string" && !ROLES.includes(request.data.role.trim().toUpperCase())) {
     throw new HttpsError("invalid-argument", "Unsupported user role.");
   }
-  const actorRole = normalizeRole(request.auth.token?.role);
-  if (!canManageRole(actorRole, role) && uid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Insufficient role authority.");
+  const claimedActorRole = normalizeRole(request.auth.token?.role);
+  let actorRole = claimedActorRole;
+  if (claimedActorRole !== "SUPER_ADMIN") {
+    const ownerConfigSnapshot = await db.collection("ownerAccounts").doc("config").get();
+    const ownerConfig = ownerConfigSnapshot.exists ? ownerConfigSnapshot.data() || {} : {};
+    if (canManageOwnerAccounts(
+      request.auth.token || {},
+      Array.isArray(ownerConfig.emails) ? ownerConfig.emails : [],
+      Array.isArray(ownerConfig.mobiles) ? ownerConfig.mobiles : []
+    )) {
+      actorRole = "OWNER";
+    }
+  }
+  const currentTargetRole = normalizeRole(target.customClaims?.role);
+  if (!canManageUser(
+    request.auth.uid,
+    uid,
+    actorRole,
+    currentTargetRole,
+    action === "set" ? role : null
+  )) {
+    if (uid === request.auth.uid) {
+      throw new HttpsError("failed-precondition", "You cannot change your own role or access through this endpoint.");
+    }
+    throw new HttpsError("permission-denied", "Insufficient role authority for the target account or requested role.");
   }
 
   if (action === "set") {
     const access = request.data?.access === true;
-    const expiresAtEpochMs = Number(request.data?.accessExpiresAtEpochMs || 0);
+    const rawExpiry = request.data?.accessExpiresAtEpochMs;
+    const expiresAtEpochMs = rawExpiry == null || rawExpiry === "" ? 0 : Number(rawExpiry);
+    if (!Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs < 0) {
+      throw new HttpsError("invalid-argument", "Access expiry must be a non-negative epoch-millisecond integer.");
+    }
+    if (access && expiresAtEpochMs > 0 && expiresAtEpochMs <= Date.now()) {
+      throw new HttpsError("invalid-argument", "Access expiry must be in the future.");
+    }
     const claims = { ...(target.customClaims || {}), role, access };
     if (role === "SUPER_ADMIN") {
       claims.admin = true;
-    } else if (target.uid !== request.auth.uid) {
+      delete claims.owner;
+    } else if (role === "OWNER") {
+      claims.admin = true;
+      claims.owner = true;
+    } else {
       delete claims.admin;
+      delete claims.owner;
     }
     await getAuth().setCustomUserClaims(uid, claims);
     const updatedAtEpochMs = Date.now();
@@ -303,6 +504,19 @@ exports.updateOwnerUser = onCall(async (request) => {
     const disabled = action === "block";
     await getAuth().updateUser(uid, { disabled });
     const updatedAtEpochMs = Date.now();
+    // Storage Rules can check only two unique Firestore documents per request:
+    // the account status and the transfer record. Keep block state in this profile
+    // document as well as in the richer per-user feature policy projection.
+    await db.collection("users").doc(uid).set({
+      status: disabled ? "BLOCKED" : "ACTIVE",
+      updatedAtEpochMs,
+      updatedBy: request.auth.uid
+    }, { merge: true });
+    await db.collection("userAccess").doc(uid).set({
+      blocked: disabled,
+      updatedAtEpochMs,
+      updatedBy: request.auth.uid
+    }, { merge: true });
     if (disabled) {
       await db.collection("featurePolicyUsers").doc(uid).set({
         enabled: false,
@@ -330,51 +544,108 @@ exports.updateOwnerUser = onCall(async (request) => {
 });
 
 exports.syncOwnerAccounts = onCall(async (request) => {
-  requireAdmin(request);
+  await requireOwnerAccountManager(request);
 
-  const emails = Array.isArray(request.data?.emails)
-    ? request.data.emails.map(String).map(v => v.trim().toLowerCase()).filter(Boolean)
-    : [];
-  const mobiles = Array.isArray(request.data?.mobiles)
-    ? request.data.mobiles.map(String).map(v => v.trim()).filter(Boolean)
-    : [];
-
-  const requestedIdentifiers = new Set([...emails, ...mobiles]);
-  if (requestedIdentifiers.size === 0) {
-    throw new HttpsError("invalid-argument", "At least one owner email or mobile is required.");
+  const requestedEmails = new Set(
+    (Array.isArray(request.data?.emails) ? request.data.emails : [])
+      .map(value => String(value).trim().toLowerCase())
+      .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+  );
+  const requestedMobiles = new Set(
+    (Array.isArray(request.data?.mobiles) ? request.data.mobiles : [])
+      .map(value => String(value).trim())
+      .filter(value => /^\+[1-9]\d{7,14}$/.test(value))
+  );
+  if (requestedEmails.size === 0 && requestedMobiles.size === 0) {
+    throw new HttpsError("invalid-argument", "Provide at least one valid owner email or E.164 mobile number.");
   }
 
   const currentProfile = await db.collection("ownerAccounts").doc("config").get();
-  const previous = currentProfile.exists ? currentProfile.data() : {};
+  const previous = currentProfile.exists ? currentProfile.data() || {} : {};
   const previousIdentifiers = new Set([
-    ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(v => v.trim().toLowerCase()) : []),
-    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(v => v.trim()) : [])
+    ...(Array.isArray(previous.emails) ? previous.emails.map(String).map(value => value.trim().toLowerCase()) : []),
+    ...(Array.isArray(previous.mobiles) ? previous.mobiles.map(String).map(value => value.trim()) : [])
   ]);
+
+  const unresolved = [];
+  const resolvedUsers = new Map();
+  const resolvedEmails = new Set();
+  const resolvedMobiles = new Set();
+  const resolvedIdentifiers = new Set();
+
+  for (const email of requestedEmails) {
+    const user = await findAuthUser(email);
+    // An unverified email must never become an Owner allowlist identity.
+    if (!user || user.emailVerified !== true || !user.email) {
+      unresolved.push(email);
+      continue;
+    }
+    const canonicalEmail = user.email.trim().toLowerCase();
+    resolvedEmails.add(canonicalEmail);
+    resolvedIdentifiers.add(canonicalEmail);
+    resolvedUsers.set(user.uid, user);
+  }
+
+  for (const mobile of requestedMobiles) {
+    const user = await findAuthUser(mobile);
+    if (!user || !user.phoneNumber) {
+      unresolved.push(mobile);
+      continue;
+    }
+    const canonicalMobile = user.phoneNumber.trim();
+    resolvedMobiles.add(canonicalMobile);
+    resolvedIdentifiers.add(canonicalMobile);
+    resolvedUsers.set(user.uid, user);
+  }
+
+  if (resolvedIdentifiers.size === 0) {
+    throw new HttpsError("failed-precondition", "No valid, existing, verified Owner account was found; existing configuration was left unchanged.");
+  }
 
   let granted = 0;
   let revoked = 0;
-  const unresolved = [];
-
-  for (const identifier of requestedIdentifiers) {
-    const user = await findAuthUser(identifier);
-    if (!user) {
-      unresolved.push(identifier);
-      continue;
-    }
+  for (const user of resolvedUsers.values()) {
     const claims = { ...(user.customClaims || {}), admin: true };
     await getAuth().setCustomUserClaims(user.uid, claims);
     granted += 1;
   }
 
   for (const identifier of previousIdentifiers) {
-    if (requestedIdentifiers.has(identifier)) continue;
+    if (resolvedIdentifiers.has(identifier)) continue;
     const user = await findAuthUser(identifier);
-    if (!user || user.uid === request.auth.uid) continue;
+    if (!user) continue;
+    // An account may remain configured through its phone number after its email
+    // identifier is removed (or vice versa). Never revoke claims from a user who
+    // is still present in the resolved allowlist under another verified identifier.
+    if (resolvedUsers.has(user.uid)) continue;
+    if (user.uid === request.auth.uid) {
+      const actorClaims = request.auth.token || {};
+      const actorRole = normalizeRole(actorClaims.role);
+      // Preserve role-based Owners/Super Admins, but revoke a removed email/mobile
+      // allowlist account's generic admin claim instead of leaving stale access behind.
+      if (actorClaims.owner === true || actorRole === "OWNER" || actorRole === "SUPER_ADMIN") {
+        continue;
+      }
+    }
     const claims = { ...(user.customClaims || {}) };
+    const currentRole = normalizeRole(claims.role);
+    // An explicitly role-assigned Owner is independent of the email/mobile
+    // allowlist. Only revoke the generic admin claim granted by this allowlist
+    // sync; never demote a separately assigned OWNER or SUPER_ADMIN role.
+    if (currentRole === "SUPER_ADMIN" || currentRole === "OWNER" || claims.owner === true) continue;
     delete claims.admin;
+    delete claims.owner;
+    if (currentRole === "OWNER") claims.role = "USER";
     await getAuth().setCustomUserClaims(user.uid, claims);
     revoked += 1;
   }
+
+  await db.collection("ownerAccounts").doc("config").set({
+    emails: [...resolvedEmails],
+    mobiles: [...resolvedMobiles],
+    updatedAtEpochMs: Date.now(),
+    updatedBy: request.auth.uid
+  });
 
   return { ok: true, granted, revoked, unresolved };
 });
@@ -382,6 +653,7 @@ exports.syncOwnerAccounts = onCall(async (request) => {
 
 exports.anchorAuditRoot = require("firebase-functions/v2/https").onCall(async (request) => {
   requireAdmin(request);
+  await assertAccountActive(request.auth.uid);
   const root = typeof request.data?.root === "string" ? request.data.root : "";
   if (!/^0x[0-9a-fA-F]{64}$/.test(root)) {
     throw new HttpsError("invalid-argument", "A 32-byte audit root is required.");
@@ -402,6 +674,68 @@ exports.getPaymentGatewayProviderCatalog = gatewayPermitFunctions.getPaymentGate
 exports.savePaymentGatewayProviderDraft = gatewayPermitFunctions.savePaymentGatewayProviderDraft;
 Object.assign(exports, require("./ice-servers"));
 
+
+const ACTIVE_FILE_TRANSFER_STATUSES = ["REQUESTED", "APPROVED", "UPLOADING"];
+
+async function cancelFileTransferDocs(documents, reason) {
+  const unique = new Map();
+  for (const doc of documents) {
+    if (ACTIVE_FILE_TRANSFER_STATUSES.includes(String(doc.get("status") || ""))) {
+      unique.set(doc.ref.path, doc);
+    }
+  }
+  const docs = [...unique.values()];
+  for (let offset = 0; offset < docs.length; offset += 450) {
+    const batch = db.batch();
+    docs.slice(offset, offset + 450).forEach((doc) => batch.update(doc.ref, {
+      status: "CANCELLED",
+      cancellationReason: reason,
+      updatedAt: Date.now()
+    }));
+    await batch.commit();
+  }
+}
+
+async function cancelAllActiveFileTransfers(reason) {
+  while (true) {
+    const snapshot = await db.collection("fileTransfers")
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .limit(450)
+      .get();
+    if (snapshot.empty) return;
+    await cancelFileTransferDocs(snapshot.docs, reason);
+    if (snapshot.size < 450) return;
+  }
+}
+
+async function cancelActiveFileTransfersForUser(uid) {
+  const [sent, received] = await Promise.all([
+    db.collection("fileTransfers")
+      .where("senderDeviceId", "==", uid)
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .get(),
+    db.collection("fileTransfers")
+      .where("receiverDeviceId", "==", uid)
+      .where("status", "in", ACTIVE_FILE_TRANSFER_STATUSES)
+      .get()
+  ]);
+  await cancelFileTransferDocs([...sent.docs, ...received.docs], "USER_FILE_TRANSFER_POLICY_DISABLED");
+}
+
+exports.enforceGlobalFileTransferPolicy = onDocumentWritten("featurePolicy/global", async (event) => {
+  const after = event.data?.after;
+  const policy = after?.exists ? after.data() || {} : null;
+  if (globalFileTransferEnabled(policy)) return;
+  await cancelAllActiveFileTransfers("GLOBAL_FILE_TRANSFER_POLICY_DISABLED");
+});
+
+exports.enforcePerUserFileTransferPolicy = onDocumentWritten("featurePolicyUsers/{uid}", async (event) => {
+  const after = event.data?.after;
+  // Deleting a per-user override returns to the documented global-policy default.
+  if (!after?.exists) return;
+  if (userFileTransferEnabled(after.data() || {})) return;
+  await cancelActiveFileTransfersForUser(event.params.uid);
+});
 
 exports.detectConsentAnomaly = onDocumentCreated("auditLogs/{eventId}", async (event) => {
   const snapshot = event.data;

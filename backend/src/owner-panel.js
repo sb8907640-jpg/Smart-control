@@ -1,4 +1,4 @@
-function installOwnerPanelRoutes(app, { db }) {
+function installOwnerPanelRoutes(app, { db, auth }) {
   const collection = (name) => db.collection(name);
   const crypto = require("node:crypto");
   const { getLinkValidity, calculateExpiry } = require("./plan-policy");
@@ -150,6 +150,20 @@ function installOwnerPanelRoutes(app, { db }) {
     const ref = collection("users").doc(id);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: "User not found." });
+    const profileRole = String(snap.data()?.role || "USER").toUpperCase();
+    let authRole = null;
+    if (auth && typeof auth.getUser === "function") {
+      try {
+        const targetAuthUser = await auth.getUser(id);
+        const claims = targetAuthUser.customClaims || {};
+        authRole = String(claims.role || (claims.admin === true ? "SUPER_ADMIN" : "USER")).toUpperCase();
+      } catch (error) {
+        if (error.code !== "auth/user-not-found") throw error;
+      }
+    }
+    if (profileRole === "SUPER_ADMIN" || authRole === "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Owner accounts cannot change a Super Admin account status." });
+    }
     const previousStatus = String(snap.data()?.status || "ACTIVE").toUpperCase();
     const timestamp = now();
     const statusFields = status === "ACTIVE"
@@ -157,7 +171,22 @@ function installOwnerPanelRoutes(app, { db }) {
       : status === "SUSPENDED"
         ? { status, suspendedAt: timestamp, suspendedBy: req.user.uid }
         : { status, blockedAt: timestamp, blockedBy: req.user.uid };
+    const syncAuthStatus = async () => {
+      if (!auth || typeof auth.updateUser !== "function") return;
+      try {
+        await auth.updateUser(id, { disabled: status !== "ACTIVE" });
+        if (status !== "ACTIVE" && typeof auth.revokeRefreshTokens === "function") {
+          await auth.revokeRefreshTokens(id);
+        }
+      } catch (error) {
+        if (error.code !== "auth/user-not-found") throw error;
+      }
+    };
+    // Suspension is persisted first (fail-closed). Unsuspension enables Auth first,
+    // so a failed Auth update cannot restore Firestore access to a disabled account.
+    if (status === "ACTIVE") await syncAuthStatus();
     await ref.set({ ...statusFields, updatedAt: timestamp, updatedBy: req.user.uid }, { merge: true });
+    if (status !== "ACTIVE") await syncAuthStatus();
     await audit(req, action, "user", { id, previousStatus, status });
     return res.json({ ok: true, id, previousStatus, status });
   };

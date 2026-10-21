@@ -89,8 +89,6 @@ class FirestorePairingRepository @Inject constructor(
 
         // Never read the private ownerSettings document from a normal client.
         // The callable returns only the effective pairing-code lifetime.
-        val claims = auth.currentUser?.getIdToken(false)?.await()?.claims.orEmpty()
-        val isOwner = claims["admin"] == true || claims["role"]?.toString()?.uppercase() == "OWNER"
         val policy = runCatching {
             FirebaseFunctions.getInstance()
                 .getHttpsCallable("getDevicePairingPolicy")
@@ -98,6 +96,9 @@ class FirestorePairingRepository @Inject constructor(
                 .await()
                 .getData() as? Map<*, *>
         }.getOrNull()
+        // The server is the authority for Owner status; a local admin claim must not
+        // bypass the configured pairing-code expiry policy.
+        val isOwner = policy?.get("isOwner") as? Boolean == true
         val expiryMinutes = if (isOwner) {
             NO_EXPIRY_MINUTES
         } else {
@@ -132,6 +133,7 @@ class FirestorePairingRepository @Inject constructor(
         val deviceUid = db.runTransaction { tx ->
             val snap = tx.get(ref)
             val deviceUid = snap.getString("deviceUid") ?: error("Invalid pairing token")
+            require(deviceUid != controllerUid) { "You cannot pair a device to itself." }
             val expires = snap.getLong("expiresAt") ?: 0L
             require(expires > System.currentTimeMillis()) { "Pairing token expired" }
             val senderRole = snap.getString("senderRole")?.takeIf { it in ROLE_TYPES } ?: "Other"
@@ -169,6 +171,20 @@ class FirestorePairingRepository @Inject constructor(
             .await()
         controlled.documents.forEach { refs[it.reference.path] = it.reference }
 
+        // Unpairing must also stop pending/active media sessions so camera, microphone,
+        // or screen capture cannot remain live after the link is revoked.
+        val controllerSessions = db.collection("mediaSessions")
+            .whereEqualTo("controllerUid", uid)
+            .get()
+            .await()
+        val targetSessions = db.collection("mediaSessions")
+            .whereEqualTo("targetDeviceId", uid)
+            .get()
+            .await()
+        val activeSessions = (controllerSessions.documents + targetSessions.documents)
+            .distinctBy { it.reference.path }
+            .filter { it.getString("status") in setOf("REQUESTED", "APPROVED", "ACTIVE") }
+
         val batch = db.batch()
         refs.values.forEach { ref ->
             batch.set(
@@ -177,7 +193,10 @@ class FirestorePairingRepository @Inject constructor(
                 SetOptions.merge()
             )
         }
-        if (refs.isNotEmpty()) batch.commit().await()
+        activeSessions.forEach { session ->
+            batch.update(session.reference, "status", "STOPPED")
+        }
+        if (refs.isNotEmpty() || activeSessions.isNotEmpty()) batch.commit().await()
     }
 
     private fun buildToken(): String {

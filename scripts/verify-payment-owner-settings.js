@@ -66,6 +66,75 @@ check("Manual reference verification cannot activate real-gateway payments",
 check("Owner panel exposes permanent permit and secret entry fields",
   ownerPanel.includes("PaymentGatewayPermitPanel") && ownerPanel.includes("savePaymentGatewayPermit") &&
   ownerPanel.includes("Razorpay Webhook Secret"));
+const razorpayVerifyBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.verifyRazorpayPayment"),
+  billingFunctions.indexOf("exports.applyEmi")
+);
+const razorpayWebhookBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.razorpayWebhook"),
+  billingFunctions.indexOf("exports.paymentGatewayWebhook")
+);
+check("Verified payment activation cannot overwrite a concurrent refund lock",
+  !/activateSubscriptionForPayment[\s\S]{0,500}await ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayVerifyBlock) &&
+    !/activateSubscriptionForPayment[\s\S]{0,500}paymentDoc\.ref\.update\(\{\s*status:\s*"SUCCESS"/.test(razorpayWebhookBlock),
+  "The activation transaction persists success atomically; no redundant follow-up write may revert REFUND_PENDING.");
+
+const genericPaymentWebhookBlock = billingFunctions.slice(
+  billingFunctions.indexOf("exports.paymentGatewayWebhook")
+);
+check("Generic payment webhook cannot downgrade successful or refund-locked payments",
+  genericPaymentWebhookBlock.includes("activateSubscriptionForPayment(paymentId, payment, {") &&
+    genericPaymentWebhookBlock.includes('latestPayment.status !== "PENDING"') &&
+    genericPaymentWebhookBlock.includes('if (latestPayment.status === "REFUNDED") return;') &&
+    genericPaymentWebhookBlock.includes("tx.set(db.collection(\"subscriptions\").doc(latestPayment.subscriptionId)") &&
+    !/await ref\.update\(\{\s*status:\s*"SUCCESS"/.test(genericPaymentWebhookBlock) &&
+    !/status:\s*"PENDING"/.test(genericPaymentWebhookBlock),
+  "Success metadata is atomic, failures only change PENDING records, refunds cancel subscriptions transactionally, and unknown states never reset payment status.");
+
+const paymentFailedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "payment.failed"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.created"')
+);
+const refundFailedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.failed"'),
+  razorpayWebhookBlock.indexOf('eventName === "payment.refunded"')
+);
+check("Delayed payment failure cannot overwrite a captured payment",
+  paymentFailedWebhookBlock.includes("db.runTransaction") &&
+    paymentFailedWebhookBlock.includes('latestPayment.status !== "PENDING"'),
+  "Failure events only transition a payment that is still PENDING inside a transaction.");
+check("Failed refund event cannot revert a completed refund",
+  refundFailedWebhookBlock.includes("db.runTransaction") &&
+    refundFailedWebhookBlock.includes('latestPayment.status !== "REFUND_PENDING"') &&
+    refundFailedWebhookBlock.includes("latestPayment.gatewayRefundId === refundId"),
+  "A refund failure only restores SUCCESS while the same refund remains pending.");
+
+const refundCreatedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.created"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.processed"')
+);
+const refundProcessedWebhookBlock = razorpayWebhookBlock.slice(
+  razorpayWebhookBlock.indexOf('eventName === "refund.processed"'),
+  razorpayWebhookBlock.indexOf('eventName === "refund.failed"')
+);
+check("Refund webhooks reconcile only the current refund attempt",
+  refundCreatedWebhookBlock.includes("db.runTransaction") &&
+    refundCreatedWebhookBlock.includes("previousGatewayRefundId === refundId") &&
+    refundProcessedWebhookBlock.includes("db.runTransaction") &&
+    refundProcessedWebhookBlock.includes("latestPayment.gatewayRefundId !== refundId"),
+  "Late events from an earlier refund attempt cannot overwrite the active attempt's status.");
+
+check("Refund API responses preserve webhook-completed state",
+  billingFunctions.includes("const finalStatus = await db.runTransaction") &&
+    billingFunctions.includes("latestPayment.previousGatewayRefundId === gatewayRefundId") &&
+    billingFunctions.includes("gatewayRefundId: FieldValue.delete()"),
+  "Late API responses cannot regress REFUNDED or reuse a prior attempt's refund ID.");
+
+check("Refund status and subscription cancellation are atomic",
+  billingFunctions.includes('tx.set(subscriptionRef, {\n            status: "CANCELLED"') &&
+    billingFunctions.includes("const finalStatus = await db.runTransaction"),
+  "A completed refund cannot leave its subscription active if the process exits between writes.");
+
 check("Gateway credential versions are retained for pending payment verification",
   gatewayPermit.includes("paymentGatewayPermitVersions") && billingFunctions.includes("gatewayPermitRevision"));
 check("Android checkout submits success details for server verification",

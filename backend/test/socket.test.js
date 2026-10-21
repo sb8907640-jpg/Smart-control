@@ -20,6 +20,13 @@ function fakeFirestore(session, accountStatus = "ACTIVE") {
       if (name === "securityEvents") {
         return { add: async event => { securityEvents.push(event); return { id: "security-1" }; } };
       }
+      if (name === "userAccess") {
+        return {
+          doc(_id) {
+            return { get: async () => ({ exists: true, data: () => ({ blocked: false }) }) };
+          }
+        };
+      }
       assert.equal(name, "mediaSessions");
       return {
         doc(id) {

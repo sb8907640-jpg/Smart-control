@@ -10,12 +10,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 /**
@@ -30,21 +32,37 @@ class FeatureAccessViewModel @Inject constructor(
 ) : ViewModel() {
     private val _settings = MutableStateFlow<FeaturePolicy?>(null)
     val settings = _settings.asStateFlow()
+    private val _settingsUserId = MutableStateFlow<String?>(null)
 
     init {
         viewModelScope.launch {
             val auth = FirebaseAuth.getInstance()
             callbackFlow {
                 val listener = FirebaseAuth.AuthStateListener { state ->
-                    trySend(state.currentUser != null)
+                    trySend(state.currentUser?.uid)
                 }
                 auth.addAuthStateListener(listener)
-                trySend(auth.currentUser != null)
+                trySend(auth.currentUser?.uid)
                 awaitClose { auth.removeAuthStateListener(listener) }
             }.distinctUntilChanged()
-                .flatMapLatest { signedIn ->
-                    if (signedIn) repository.observe().map<FeaturePolicy, FeaturePolicy?> { it }
-                    else flowOf(null)
+                .onEach { uid ->
+                    // Clear the previous account's policy immediately when the UID
+                    // changes; never reuse another account's feature availability.
+                    _settings.value = null
+                    _settingsUserId.value = uid
+                }
+                .flatMapLatest { uid ->
+                    if (!uid.isNullOrBlank()) {
+                        repository.observe(uid)
+                            .map<FeaturePolicy, FeaturePolicy?> { it }
+                            .catch {
+                                // Firestore permission/network errors must fail closed
+                                // without terminating the auth-state observer.
+                                emit(null)
+                            }
+                    } else {
+                        flowOf(null)
+                    }
                 }
                 .collect { _settings.value = it }
         }
@@ -59,6 +77,7 @@ class FeatureAccessViewModel @Inject constructor(
     }
 
     fun isEnabled(featureId: FeatureId, userId: String): Boolean {
+        if (userId.isBlank() || _settingsUserId.value != userId) return false
         if (!isGloballyEnabled(featureId)) return false
         val perUser = _settings.value?.userPolicy ?: return true
         if (!perUser.enabled || !perUser.ownerEnabled) return false

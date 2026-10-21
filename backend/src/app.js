@@ -11,16 +11,35 @@ const { installCatalogRoutes } = require("./catalog-api");
 const { applyOwnerRole } = require("./owner-auth");
 const { installOwnerPanelRoutes } = require("./owner-panel");
 
-function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
+function resolvePublicAppUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password ||
+        url.search || url.hash || url.pathname !== "/") {
+      return null;
+    }
+    return url.origin;
+  } catch (_) {
+    return null;
+  }
+}
+
+function createApp({ verifyIdToken, db, auth, postgres, postgresPool } = {}) {
   const app = express();
   const allowedOrigins = String(process.env.CORS_ORIGIN || "").split(",").map(v => v.trim()).filter(Boolean);
+  const sensitiveRemoteConfigKey = /(?:secret|pass(?:word|wd)?|private|credential|webhook|(?:access|refresh|id|auth|bearer)?[_-]?token|(?:api|client|service)[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?account|turn[_-]?server)/i;
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
+      // Non-browser clients may omit Origin. Browser origins must be explicitly
+      // allowlisted; an unset CORS_ORIGIN must never silently allow every site.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("CORS origin is not allowed."));
     },
     credentials: true
@@ -72,19 +91,49 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     }
     req.user = applyOwnerRole(verifiedUser);
 
+    // Owner Accounts is the server-managed allowlist shared with Firebase Functions.
+    // Resolve it for admin-claim accounts so a newly configured Owner is recognized
+    // consistently by the web Owner panel without trusting a client-supplied role.
+    const currentRole = String(req.user?.role || "").toUpperCase();
+    if (db && req.user?.admin === true && req.user.owner !== true &&
+        currentRole !== "OWNER" && currentRole !== "SUPER_ADMIN") {
+      try {
+        const ownerConfigSnap = await db.collection("ownerAccounts").doc("config").get();
+        const ownerConfig = ownerConfigSnap.exists ? ownerConfigSnap.data() || {} : {};
+        const email = String(req.user.email || "").trim().toLowerCase();
+        const phone = String(req.user.phone_number || req.user.phoneNumber || "").trim();
+        const ownerEmails = Array.isArray(ownerConfig.emails)
+          ? ownerConfig.emails.map(value => String(value).trim().toLowerCase())
+          : [];
+        const ownerMobiles = Array.isArray(ownerConfig.mobiles)
+          ? ownerConfig.mobiles.map(value => String(value).trim())
+          : [];
+        if ((email && ownerEmails.includes(email)) || (phone && ownerMobiles.includes(phone))) {
+          req.user = { ...req.user, role: "OWNER", owner: true, admin: true };
+        }
+      } catch (_) {
+        // Never infer Owner authority from a failed allowlist lookup.
+      }
+    }
+
     // Owner suspend/block controls must be enforced by the server, not just
     // displayed in the UI. Missing user profiles remain compatible with older
     // installations; a configured Firestore status lookup failure fails closed.
     if (db && typeof db.collection === "function" && req.user?.uid) {
       try {
-        const account = await db.collection("users").doc(req.user.uid).get();
+        const [account, access] = await Promise.all([
+          db.collection("users").doc(req.user.uid).get(),
+          db.collection("userAccess").doc(req.user.uid).get()
+        ]);
         const accountStatus = String(account.exists ? account.data()?.status || "ACTIVE" : "ACTIVE").toUpperCase();
-        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus)) {
+        const accessBlocked = access.exists && access.data()?.blocked === true;
+        if (["SUSPENDED", "BLOCKED", "BANNED", "DISABLED"].includes(accountStatus) || accessBlocked) {
+          const blockReason = accessBlocked ? "OWNER_BLOCKED" : accountStatus;
           try {
             await db.collection("securityEvents").add({
               event: "AUTH_REJECTED_ACCOUNT_STATUS",
               userId: req.user.uid,
-              status: accountStatus,
+              status: blockReason,
               createdAtEpochMs: Date.now()
             });
           } catch (_) {
@@ -107,7 +156,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     next();
   };
 
-  if (postgresPool) installPostgresRoutes(app, { pool: postgresPool });
+  if (postgresPool) installPostgresRoutes(app, { pool: postgresPool, authenticate });
 
   app.get("/api/config", authenticate, async (_req, res, next) => {
     try {
@@ -115,6 +164,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const template = await getRemoteConfig().getTemplate();
       const values = {};
       for (const [key, parameter] of Object.entries(template.parameters || {})) {
+        if (sensitiveRemoteConfigKey.test(key)) continue;
         const v = parameter.defaultValue;
         values[key] = v?.value ?? null;
       }
@@ -132,6 +182,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const template = await remoteConfig.getTemplate();
       for (const [key, value] of Object.entries(values)) {
         if (!/^[A-Za-z0-9_-]{1,200}$/.test(key)) return res.status(400).json({ error: "Invalid Remote Config key." });
+        if (sensitiveRemoteConfigKey.test(key)) return res.status(400).json({ error: "Secret or credential values must not be stored in Remote Config." });
         if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return res.status(400).json({ error: "Remote Config values must be scalar." });
         template.parameters[key] = { defaultValue: { value: String(value) } };
       }
@@ -156,7 +207,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
     try {
       const token = String(req.body?.token || "");
       if (token.length < 20 || token.length > 4096) return res.status(400).json({ error: "Invalid FCM token." });
-      await firestore.collection("fcmTokens").doc(req.user.uid).collection("tokens").doc(Buffer.from(token).toString("base64url").slice(0, 128)).set({
+      await firestore.collection("fcmTokens").doc(req.user.uid).collection("tokens").doc(crypto.createHash("sha256").update(token).digest("hex")).set({
         token, platform: String(req.body?.platform || "unknown").slice(0, 32),
         updatedAtEpochMs: Date.now()
       }, { merge: true });
@@ -176,8 +227,10 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         firestoreStatus = "error";
       }
     }
+    const firestoreOk = firestoreStatus === "ok";
+    const postgresOk = postgresStatus.configured !== true || postgresStatus.ok === true;
     res.json({
-      ok: firestoreStatus !== "error",
+      ok: firestoreOk && postgresOk,
       service: "smart-control-backend",
       firestore: firestoreStatus,
       postgres: postgresStatus
@@ -192,15 +245,23 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       const body = String(req.body?.body || "").trim().slice(0, 1000);
       if (!uid || !title || !body) return res.status(400).json({ error: "uid, title and body are required." });
       const snap = await firestore.collection("fcmTokens").doc(uid).collection("tokens").limit(500).get();
-      const tokens = snap.docs.map(d => d.data().token).filter(Boolean);
+      const tokenDocs = snap.docs.filter(d => Boolean(d.data().token));
+      const tokens = tokenDocs.map(d => d.data().token);
       if (!tokens.length) return res.status(404).json({ error: "No registered FCM tokens." });
       const { getMessaging } = require("firebase-admin/messaging");
-      const result = await getMessaging().sendEachForMulticast({ tokens, notification: { title, body }, data: { source: "smart-control-backend" } });
+      // Use data-only messages so the Android client can verify the signed-in UID
+      // before displaying notification content. A stale token on a shared device
+      // must not let a previous account's message appear under a different account.
+      const result = await getMessaging().sendEachForMulticast({
+        tokens,
+        data: { source: "smart-control-backend", targetUid: uid, title, body },
+        android: { priority: "high" }
+      });
       const invalidCodes = new Set(["messaging/invalid-registration-token", "messaging/registration-token-not-registered"]);
       const cleanup = [];
       result.responses.forEach((response, index) => {
         if (!response.success && invalidCodes.has(response.error?.code)) {
-          cleanup.push(snap.docs[index].ref.delete());
+          cleanup.push(tokenDocs[index].ref.delete());
         }
       });
       await Promise.allSettled(cleanup);
@@ -225,10 +286,44 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
 
   app.get("/api/devices", authenticate, async (req, res, next) => {
     try {
-      if (postgres) return res.json({ devices: await postgres.listDevices(req.user.uid) });
-      if (!firestore) return res.status(503).json({ error: "Data service is unavailable." });
-      const snap = await firestore.collection("devices").where("userId", "==", req.user.uid).limit(100).get();
-      return res.json({ devices: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+      const firestoreAvailable = firestore && typeof firestore.collection === "function";
+      if (!postgres && !firestoreAvailable) return res.status(503).json({ error: "Data service is unavailable." });
+      const devicesById = new Map();
+
+      // PostgreSQL device registrations are supplemental. The authenticated
+      // Firestore pairing document remains canonical for Android media/file flows.
+      if (postgres) {
+        const rows = await postgres.listDevices(req.user.uid);
+        for (const row of rows) {
+          const id = String(row.device_key || row.id || "").trim();
+          if (!id) continue;
+          devicesById.set(id, {
+            id,
+            name: String(row.name || ("Device " + id.slice(0, 8))),
+            ...(typeof row.platform === "string" ? { platform: row.platform } : {}),
+            status: "REGISTERED"
+          });
+        }
+      }
+
+      if (firestoreAvailable) {
+        const snap = await firestore.collection("devices")
+          .where("controllerUid", "==", req.user.uid)
+          .where("pairingActive", "==", true)
+          .limit(100)
+          .get();
+        for (const doc of snap.docs) {
+          const data = doc.data() || {};
+          const serviceAlive = data.health?.serviceAlive;
+          devicesById.set(doc.id, {
+            id: doc.id,
+            name: String(data.name || data.deviceName || ("Device " + doc.id.slice(0, 8))),
+            ...(typeof data.platform === "string" ? { platform: data.platform } : {}),
+            status: serviceAlive === true ? "ONLINE" : serviceAlive === false ? "OFFLINE" : "PAIRED"
+          });
+        }
+      }
+      return res.json({ devices: [...devicesById.values()].slice(0, 100) });
     } catch (error) { next(error); }
   });
 
@@ -288,6 +383,12 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
       if (senderRole === receiverRole && senderRole !== "Other") {
         return res.status(400).json({ error: "Sender and receiver relationships must be different." });
       }
+      // Invitation URLs must use the operator-configured trusted app origin.
+      // Never fall back to a request Origin header for a security-sensitive link.
+      const baseUrl = resolvePublicAppUrl(process.env.PUBLIC_APP_URL);
+      if (!baseUrl) {
+        return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to a trusted HTTPS app origin before generating links." });
+      }
       const now = Date.now();
       const recent = await firestore.collection("pairingInvites")
         .where("creatorUid", "==", req.user.uid)
@@ -304,11 +405,6 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
         creatorUid: req.user.uid, senderRole, receiverRole, tokenHash, codeHash,
         status: "pending", createdAtEpochMs: now, expiresAtEpochMs
       });
-      const baseUrl = String(process.env.PUBLIC_APP_URL || req.get("origin") || "").replace(/\/$/, "");
-      if (!baseUrl || !/^https:\/\//i.test(baseUrl)) {
-        await firestore.collection("pairingInvites").doc(tokenHash).delete();
-        return res.status(503).json({ error: "PUBLIC_APP_URL must be configured to an HTTPS app URL before generating links." });
-      }
       return res.status(201).json({
         link: baseUrl + "/link?token=" + encodeURIComponent(token),
         code, senderRole, receiverRole, expiresAtEpochMs
@@ -378,7 +474,7 @@ function createApp({ verifyIdToken, db, postgres, postgresPool } = {}) {
 
   require("./pairing-api").installPairingApi(app, { db: firestore, authenticate });
   installCatalogRoutes(app, { db: firestore, requireAuth: authenticate });
-  installOwnerPanelRoutes(app, { db: firestore });
+  installOwnerPanelRoutes(app, { db: firestore, auth });
 
   app.use((error, _req, res, _next) => {
     if (error?.message === "CORS origin is not allowed.") return res.status(403).json({ error: error.message });
@@ -402,10 +498,11 @@ function createProductionApp() {
   const { createPostgresRepository } = require("./postgres-repository");
   return createApp({
     db,
+    auth,
     postgres: postgresPool ? createPostgresRepository(postgresPool) : null,
     postgresPool,
     verifyIdToken: (token, checkRevoked) => auth.verifyIdToken(token, checkRevoked)
   });
 }
 
-module.exports = { createApp, createProductionApp };
+module.exports = { createApp, createProductionApp, resolvePublicAppUrl };

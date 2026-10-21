@@ -67,7 +67,7 @@ check("owner allowlist is environment-backed", ownerAuth.includes("OWNER_EMAILS"
 check("owner role assignment is exact allowlist based", ownerAuth.includes("applyOwnerRole") && ownerAuth.includes('role: "OWNER"') && ownerAuth.includes("owner: true"));
 check("owner role is applied after authentication", backendApp.includes("applyOwnerRole(verifiedUser)"));
 check("owner identity is not hard-coded in source", !/(gmail\.com|@.*\.com|\+91\d{10})/i.test(ownerAuth));
-check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore })"));
+check("owner panel mounted", backendApp.includes("installOwnerPanelRoutes(app, { db: firestore, auth })"));
 check("owner panel requires OWNER role", ownerPanel.includes("req.user?.owner !== true") && ownerPanel.includes('!== "OWNER"'));
 check("owner panel identity hidden", ownerPanel.includes("ownerIdentity: null"));
 check("owner panel audit trail", ownerPanel.includes("/api/owner/audit") && ownerPanel.includes("auditLogs"));
@@ -103,9 +103,16 @@ check("plan duration is independent", planPolicy.includes("durationValue") && pl
 check("device-link validity is independent", planPolicy.includes("linkValidityValue") && planPolicy.includes("linkValidityUnit") && planPolicy.includes("getLinkValidity"));
 check("lifetime plan policy supported", planPolicy.includes("LIFETIME"));
 check("subscription snapshots plan duration", catalogApi.includes("planDurationValue") && catalogApi.includes("planDurationUnit") && catalogApi.includes("planDurationMs"));
-check("payment activation computes expiry", catalogApi.includes("calculateExpiry") && catalogApi.includes('subscriptionStatus:"ACTIVE"'));
+const billingFunctions = read("functions/billing.js");
+check("payment activation requires verified gateway flow",
+  billingFunctions.includes("verifyRazorpayPayment") &&
+    billingFunctions.includes("activateSubscriptionForPayment") &&
+    catalogApi.includes('app.post("/api/payment/verify", (_req,res) => res.status(410)'));
 check("generated link uses plan validity", catalogApi.includes("getLinkValidity(plan)") && catalogApi.includes("linkValidityValue"));
-check("expired/revoked link join blocked", catalogApi.includes('data.status!=="PENDING"||Number(data.expiresAt)<now()'));
+check("expired/revoked link join is atomic and expiry-checked",
+  catalogApi.includes('data.status!=="PENDING"') &&
+    catalogApi.includes("expiry<=now()") &&
+    catalogApi.includes("transaction.update(ref"));
 check("expired paid subscription blocks new link", catalogApi.includes("expiry > now()") && catalogApi.includes("unexpired paid subscription"));
 check("owner plan edit exists", ownerPanel.includes("/api/owner/plans/:id") && ownerPanel.includes("OWNER_PLAN_EDITED"));
 

@@ -11,16 +11,34 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 
 @Singleton
 class FirestoreFeaturePolicyRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
-    fun observe(userId: String = auth.currentUser?.uid.orEmpty()): Flow<FeaturePolicy> =
+    /**
+     * By default, follow Firebase auth changes rather than capturing the UID once.
+     * This prevents a long-lived screen from retaining the previous account's
+     * per-user feature policy after sign-out or account switching.
+     */
+    fun observe(userId: String? = null): Flow<FeaturePolicy> =
+        if (userId != null) observeForUser(userId)
+        else observeAuthenticatedUid().flatMapLatest(::observeForUser)
+
+    private fun observeForUser(userId: String): Flow<FeaturePolicy> =
         combine(observeGlobal(), observeUser(userId)) { global, user ->
             global.copy(userPolicy = user)
         }
+
+    private fun observeAuthenticatedUid(): Flow<String> = callbackFlow {
+        val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { firebaseAuth ->
+            trySend(firebaseAuth.currentUser?.uid.orEmpty())
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }
 
     private fun observeGlobal(): Flow<FeaturePolicy> = callbackFlow {
         val registration = firestore.collection("featurePolicy").document("global")
@@ -52,8 +70,10 @@ class FirestoreFeaturePolicyRepository @Inject constructor(
     }
 
     private fun decodeGlobal(data: Map<String, Any>): FeaturePolicy = FeaturePolicy(
-        globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: true,
-        globalEnabled = data["globalEnabled"] as? Boolean ?: true,
+        // Missing or malformed global policy must fail closed. An absent
+        // owner policy document must never implicitly enable sensitive features.
+        globalFeaturesEnabled = data["globalFeaturesEnabled"] as? Boolean ?: false,
+        globalEnabled = data["globalEnabled"] as? Boolean ?: false,
         dataCollectionEnabled = data["dataCollectionEnabled"] as? Boolean ?: false,
         dataShareAllowed = data["dataShareAllowed"] as? Boolean ?: false,
         featureOverrides = boolFeatureMap(data["featureOverrides"]),

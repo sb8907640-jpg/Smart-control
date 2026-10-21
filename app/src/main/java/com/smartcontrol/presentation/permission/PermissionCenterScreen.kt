@@ -2,6 +2,8 @@ package com.smartcontrol.presentation.permission
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,7 +20,8 @@ import androidx.core.content.ContextCompat
 
 private data class PermissionItem(
     val label: String,
-    val permissions: List<String>
+    val permissions: List<String>,
+    val anyPermissionSuffices: Boolean = false
 )
 
 @Composable
@@ -33,7 +36,8 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
                 listOf(
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                     Manifest.permission.ACCESS_FINE_LOCATION
-                )
+                ),
+                anyPermissionSuffices = true
             ),
             PermissionItem("Contacts", listOf(Manifest.permission.READ_CONTACTS)),
             PermissionItem("SMS", listOf(Manifest.permission.READ_SMS)),
@@ -47,25 +51,30 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     var requestedItemIndex by remember { mutableIntStateOf(-1) }
     var skippedItems by remember { mutableStateOf(emptySet<Int>()) }
 
+    fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
     fun granted(item: PermissionItem): Boolean =
-        item.permissions.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
+        if (item.anyPermissionSuffices) item.permissions.any(::hasPermission)
+        else item.permissions.all(::hasPermission)
 
     val requestLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         refreshTick += 1
-        if (sequentialActive) {
-            sequentialIndex += 1
+        if (sequentialActive && requestedItemIndex >= 0) {
+            sequentialIndex = requestedItemIndex + 1
         }
         requestedItemIndex = -1
     }
 
     LaunchedEffect(sequentialActive, sequentialIndex, refreshTick) {
-        if (sequentialActive && sequentialIndex < permissionItems.size) {
-            requestedItemIndex = sequentialIndex
-            requestLauncher.launch(permissionItems[sequentialIndex].permissions.toTypedArray())
+        val nextIndex = (sequentialIndex until permissionItems.size).firstOrNull { index ->
+            !granted(permissionItems[index]) && !skippedItems.contains(index)
+        }
+        if (sequentialActive && nextIndex != null) {
+            requestedItemIndex = nextIndex
+            requestLauncher.launch(permissionItems[nextIndex].permissions.toTypedArray())
         } else if (sequentialActive) {
             sequentialActive = false
             sequentialIndex = 0
@@ -87,7 +96,18 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
     }
 
     fun open(action: String) {
-        runCatching { context.startActivity(Intent(action)) }
+        val intent = Intent(action)
+        if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
+            intent.data = Uri.fromParts("package", context.packageName, null)
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                Toast.makeText(
+                    context,
+                    "Could not open Android settings. Please open Settings manually.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
     }
 
     // Keep status reads tied to Compose state so the row updates after every system dialog.
@@ -122,6 +142,8 @@ fun PermissionCenterScreen(onBack: () -> Unit) {
                             Text(item.label, style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 when {
+                                    item.label == "Location" && isGranted && !hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ->
+                                        "Allowed (approximate)"
                                     isGranted -> "Allowed"
                                     skippedItems.contains(index) -> "Skipped by user"
                                     else -> "Not allowed"

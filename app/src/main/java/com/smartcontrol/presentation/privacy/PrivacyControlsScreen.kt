@@ -1,6 +1,8 @@
 package com.smartcontrol.presentation.privacy
 
 import android.content.Context
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +25,7 @@ fun PrivacyControlsScreen(onBack: () -> Unit, context: Context) {
     fun save(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
 
     Column(
-        Modifier.fillMaxSize().padding(20.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Privacy Controls", style = MaterialTheme.typography.headlineSmall)

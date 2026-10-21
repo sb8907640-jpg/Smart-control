@@ -26,6 +26,7 @@ fun SafetyAlertsScreen(
     viewModel: SafetyAlertsViewModel = hiltViewModel()
 ) {
     val alerts by viewModel.alerts.collectAsState()
+    val status by viewModel.status.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -53,6 +54,7 @@ fun SafetyAlertsScreen(
                 Text("Create test alert")
             }
         }
+        status?.let { message -> item { Text(message) } }
         if (alerts.isEmpty()) {
             item { Text("No safety alerts.") }
         }

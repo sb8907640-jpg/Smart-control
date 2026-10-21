@@ -4,6 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.smartcontrol.domain.session.RemoteSession
+import com.smartcontrol.domain.session.SessionCapability
+import com.smartcontrol.domain.session.SessionRequest
+import com.smartcontrol.domain.session.SessionStatus
 
 class RemoteCommandSessionGateTest {
 
@@ -27,7 +31,7 @@ class RemoteCommandSessionGateTest {
     @Test
     fun acceptsCommandOnlyForMatchingActiveSession() {
         val gate = RemoteCommandSessionGate { now }
-        val result = gate.accept(command(), "session-1", accessibilityEnabled = true)
+        val result = gate.accept(command(), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), accessibilityEnabled = true, visibleIndicatorActive = true)
         assertTrue(result.isSuccess)
         assertEquals("session-1", result.getOrThrow().sessionId)
     }
@@ -35,31 +39,72 @@ class RemoteCommandSessionGateTest {
     @Test
     fun rejectsMissingActiveSession() {
         val gate = RemoteCommandSessionGate { now }
-        assertFalse(gate.accept(command(), null, true).isSuccess)
+        assertFalse(gate.accept(command(), null, setOf(SessionCapability.REMOTE_CONTROL), true, true).isSuccess)
     }
 
     @Test
     fun rejectsMismatchedSession() {
         val gate = RemoteCommandSessionGate { now }
-        assertFalse(gate.accept(command(), "session-2", true).isSuccess)
+        assertFalse(gate.accept(command(sessionId = "session-2"), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), true, true).isSuccess)
     }
 
     @Test
     fun rejectsExpiredCommand() {
         val gate = RemoteCommandSessionGate { now }
-        assertFalse(gate.accept(command(expiresAtEpochMs = now), "session-1", true).isSuccess)
+        assertFalse(gate.accept(command(expiresAtEpochMs = now), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), true, true).isSuccess)
     }
 
     @Test
     fun rejectsInvalidIdentity() {
         val gate = RemoteCommandSessionGate { now }
-        assertFalse(gate.accept(command(requesterId = ""), "session-1", true).isSuccess)
-        assertFalse(gate.accept(command(targetDeviceId = ""), "session-1", true).isSuccess)
+        assertFalse(gate.accept(command(requesterId = ""), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), true, true).isSuccess)
+        assertFalse(gate.accept(command(targetDeviceId = ""), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), true, true).isSuccess)
     }
 
     @Test
     fun rejectsWhenAccessibilityCapabilityIsUnavailable() {
         val gate = RemoteCommandSessionGate { now }
-        assertFalse(gate.accept(command(), "session-1", accessibilityEnabled = false).isSuccess)
+        assertFalse(gate.accept(command(), remoteSession(SessionStatus.ACTIVE), setOf(SessionCapability.REMOTE_CONTROL), accessibilityEnabled = false, visibleIndicatorActive = true).isSuccess)
+    }
+
+    @Test
+    fun rejectsCommandWhoseRequesterOrTargetDoesNotMatchTheApprovedSession() {
+        val gate = RemoteCommandSessionGate { now }
+        val session = remoteSession(SessionStatus.ACTIVE)
+        val granted = setOf(SessionCapability.REMOTE_CONTROL)
+        assertFalse(gate.accept(command(requesterId = "attacker"), session, granted, true, true).isSuccess)
+        assertFalse(gate.accept(command(targetDeviceId = "other-device"), session, granted, true, true).isSuccess)
+    }
+
+    @Test
+    fun rejectsCommandWithoutExplicitVisibleIndicatorOrCapabilityGrant() {
+        val gate = RemoteCommandSessionGate { now }
+        val session = remoteSession(SessionStatus.ACTIVE)
+        assertFalse(gate.accept(command(), session, emptySet(), true, true).isSuccess)
+        assertFalse(gate.accept(command(), session, setOf(SessionCapability.REMOTE_CONTROL), true, false).isSuccess)
+    }
+
+    private fun remoteSession(status: SessionStatus) = RemoteSession(
+        request = SessionRequest(
+            sessionId = "session-1",
+            requesterId = "requester-1",
+            targetDeviceId = "device-1",
+            capabilities = setOf(SessionCapability.REMOTE_CONTROL),
+            reason = "user approved support",
+            createdAtEpochMs = now
+        ),
+        status = status
+    )
+
+    @Test
+    fun remoteCommandsRequireAnActiveSessionAndVisibleIndicator() {
+        val gate = RemoteCommandSessionGate { now }
+        val granted = setOf(SessionCapability.REMOTE_CONTROL)
+
+        assertFalse(gate.isAllowed(remoteSession(SessionStatus.REQUESTED), SessionCapability.REMOTE_CONTROL, granted, true))
+        assertFalse(gate.isAllowed(remoteSession(SessionStatus.APPROVED), SessionCapability.REMOTE_CONTROL, granted, true))
+        assertTrue(gate.isAllowed(remoteSession(SessionStatus.ACTIVE), SessionCapability.REMOTE_CONTROL, granted, true))
+        assertFalse(gate.isAllowed(remoteSession(SessionStatus.ACTIVE), SessionCapability.REMOTE_CONTROL, emptySet(), true))
+        assertFalse(gate.isAllowed(remoteSession(SessionStatus.ACTIVE), SessionCapability.REMOTE_CONTROL, granted, false))
     }
 }

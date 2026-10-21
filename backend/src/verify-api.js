@@ -70,7 +70,10 @@ class MemoryDoc {
 }
 function seedDb() {
   return new MemoryFirestore({
-    users: { "user-1": { uid: "user-1", status: "ACTIVE" } },
+    users: {
+      "user-1": { uid: "user-1", status: "ACTIVE" },
+      "user-2": { uid: "user-2", status: "ACTIVE" }
+    },
     devices: { "device-1": { userId: "user-1", controllerUid: "user-1", targetDeviceId: "device-1", connectionStatus: "CONNECTED" } },
     plans: { "plan-1": { enabled: true, displayOrder: 1, name: "Test Plan", priceMinor: 29900, durationValue: 1, durationUnit: "MONTHS", linkValidityValue: 10, linkValidityUnit: "MINUTES", features: ["CAMERA"] } },
     consentLogs: { "consent-1": { userId: "user-1", granted: true, scope: ["ALL"], version: "test" } },
@@ -175,14 +178,26 @@ function queryFor(endpoint) {
         body: method === "GET" ? undefined : JSON.stringify(requestBody(endpoint))
       });
       const body = await response.text();
-      const ok = response.status >= 200 && response.status < 300;
+      // These legacy routes intentionally fail closed: direct device linking bypassed
+      // pairing consent, payment verification lacked gateway proof, and link join must
+      // explicitly include receiver consent. Treat those exact responses as the contract.
+      const expectedSafetyStatuses = new Map([
+        ["POST /api/connect", 410],
+        ["POST /api/payment/initiate", 410],
+        ["POST /api/payment/verify", 410],
+        ["POST /api/link/join", 400]
+      ]);
+      const expectedStatus = expectedSafetyStatuses.get(route);
+      const ok = expectedStatus != null
+        ? response.status === expectedStatus
+        : response.status >= 200 && response.status < 300;
       results.push({ route, status: response.status, ok });
-      if (!ok) throw new Error(route + " returned HTTP " + response.status + ": " + body.slice(0, 500));
+      if (!ok) throw new Error(route + " returned unexpected HTTP " + response.status + ": " + body.slice(0, 500));
     }
   } finally {
     await new Promise(resolve => server.close(resolve));
     if (originalSupportWhatsAppNumber === undefined) delete process.env.SUPPORT_WHATSAPP_NUMBER;
     else process.env.SUPPORT_WHATSAPP_NUMBER = originalSupportWhatsAppNumber;
   }
-  console.log("Actual HTTP API verification passed: " + results.length + "/" + API.length + " endpoints returned 2xx.");
+  console.log("Actual HTTP API contract verification passed: " + results.length + "/" + API.length + " endpoints matched expected statuses.");
 })();

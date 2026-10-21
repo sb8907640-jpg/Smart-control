@@ -1,6 +1,8 @@
 package com.smartcontrol.presentation.media
 
 import android.app.Activity
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -67,7 +69,7 @@ fun ScreenRecordingScreen(onBack: () -> Unit) {
     }
 
     Column(
-        Modifier.fillMaxSize().padding(20.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Screen Recording", style = MaterialTheme.typography.headlineSmall)
